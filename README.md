@@ -121,4 +121,4 @@ git push origin feature/your-ticket-id-summary-slug
 3. Detail your testing confirmations within the submission context window and tag the Technical Lead to execute core checks before your sandbox code is allowed inside the main build engine.
 
 
-# [Transcenda Hotels Documentation]([./docs/getting-started.md]([https://github.com/nikowee/transcenda-hotels/blob/main/docs/environment-variables.md](https://nikowee.github.io/transcenda-hotels/)))
+### [Transcenda Hotels Documentation](https://nikowee.github.io/transcenda-hotels/)
