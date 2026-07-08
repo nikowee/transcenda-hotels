@@ -10,7 +10,7 @@ app.use(cors());
 app.use(express.json());
 
 // Base Verification Endpoint
-app.get('/', (req, res) => {
+app.get('/api/health', (req, res) => {
   res.json({ status: 'healthy', project: 'Transcenda Hotels Gateway Operational' });
 });
 
