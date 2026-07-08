@@ -119,3 +119,14 @@ git push origin feature/your-ticket-id-summary-slug
 1. Navigate to the online repository interface on GitHub.
 2. Select **Pull Request** and map your branch parameters precisely: **`base: development`** $\leftarrow$ **`compare: feature/your-branch`**.
 3. Detail your testing confirmations within the submission context window and tag the Technical Lead to execute core checks before your sandbox code is allowed inside the main build engine.
+
+
+# Transcenda Hotels Documentation Quick Links
+- [Getting Started](./getting-started.md)
+- [Development Workflow](./development-workflow.md)
+- [Architecture](./architecture.md)
+- [Frontend Dependencies](./frontend-dependencies.md)
+- [Backend Dependencies](./backend-dependencies.md)
+- [Environment Variables](./environment-variables.md)
+- [Troubleshooting](./troubleshooting.md)
+- [Contributing](./contributing.md)
