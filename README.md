@@ -122,11 +122,11 @@ git push origin feature/your-ticket-id-summary-slug
 
 
 # Transcenda Hotels Documentation Quick Links
-- [Getting Started](./getting-started.md)
-- [Development Workflow](./development-workflow.md)
-- [Architecture](./architecture.md)
-- [Frontend Dependencies](./frontend-dependencies.md)
-- [Backend Dependencies](./backend-dependencies.md)
-- [Environment Variables](./environment-variables.md)
-- [Troubleshooting](./troubleshooting.md)
-- [Contributing](./contributing.md)
+- [Getting Started](./docs/getting-started.md)
+- [Development Workflow](./docs/development-workflow.md)
+- [Architecture](./docs/architecture.md)
+- [Frontend Dependencies](./docs/frontend-dependencies.md)
+- [Backend Dependencies](./docs/backend-dependencies.md)
+- [Environment Variables](./docs/environment-variables.md)
+- [Troubleshooting](./docs/troubleshooting.md)
+- [Contributing](./docs/contributing.md)
