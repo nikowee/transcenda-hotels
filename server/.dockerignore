@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+
+# Environment
+.env
+.env.*
+
+# Version Control
+.git/
+.gitignore
+
+# Build Artifacts
+dist/
+build/
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
