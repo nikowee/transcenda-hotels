@@ -1,3 +1,9 @@
+---
+title: Home
+nav_order: 1
+description: Welcome to the official documentation for the Transcenda Hotels booking platform.
+---
+
 # 🏨 Transcenda Hotels Documentation
 
 Welcome to the official documentation for the Transcenda Hotels booking platform.
@@ -8,14 +14,14 @@ Welcome to the official documentation for the Transcenda Hotels booking platform
 
 | Section | Description |
 | :--- | :--- |
-| [Getting Started](./getting-started.md) | Set up the project locally with Docker |
-| [Development Workflow](./development-workflow.md) | Daily commands, hot reloading, and Git workflow |
-| [Architecture](./architecture.md) | System design, Docker security, and tech stack |
-| [Frontend Dependencies](./frontend-dependencies.md) | React, Vite, Tailwind, and frontend packages |
-| [Backend Dependencies](./backend-dependencies.md) | Express, Supabase, Stripe, and backend packages |
-| [Environment Variables](./environment-variables.md) | Required env vars for Supabase and Stripe |
-| [Troubleshooting](./troubleshooting.md) | Common issues and how to fix them |
-| [Contributing](./contributing.md) | Branching, commits, code style, and PR process |
+| [Getting Started](getting-started) | Set up the project locally with Docker |
+| [Development Workflow](development-workflow) | Daily commands, hot reloading, and Git workflow |
+| [Architecture](architecture) | System design, Docker security, and tech stack |
+| [Frontend Dependencies](frontend-dependencies) | React, Vite, Tailwind, and frontend packages |
+| [Backend Dependencies](backend-dependencies) | Express, Supabase, Stripe, and backend packages |
+| [Environment Variables](environment-variables) | Required env vars for Supabase and Stripe |
+| [Troubleshooting](troubleshooting) | Common issues and how to fix them |
+| [Contributing](contributing) | Branching, commits, code style, and PR process |
 
 ---
 
@@ -32,4 +38,3 @@ cp server/.env.example server/.env
 
 # Launch the entire stack
 docker compose up --build
-```

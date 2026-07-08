@@ -1,3 +1,9 @@
+---
+title: Backend Dependencies
+nav_order: 6
+description: Production and development dependencies for the Express backend.
+---
+
 # 📦 Backend Dependencies
 
 This page lists all production and development dependencies for the Express backend (`server/package.json`), along with explanations of why each was chosen.
@@ -123,4 +129,4 @@ This is required because **tsx** depends on **esbuild**, which uses native `post
 
 ---
 
-> 📖 See [Frontend Dependencies](Frontend-Dependencies) for the client-side package breakdown.
+> 📖 See [Frontend Dependencies](frontend-dependencies) for the client-side package breakdown.

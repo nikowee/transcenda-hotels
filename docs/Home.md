@@ -1,3 +1,9 @@
+---
+title: Welcome
+nav_order: 0
+description: Welcome to Transcenda Hotels - a modern, full-stack hotel booking platform.
+---
+
 # 🏨 Welcome to Transcenda Hotels
 
 > **A modern, full-stack hotel booking platform built with React, Express, Docker, and Supabase.**
@@ -37,14 +43,14 @@ Transcenda Hotels is a production-ready hotel reservation system designed with d
 
 | Page | Description |
 |------|------------|
-| [🏁 Getting Started](Getting-Started) | Prerequisites, setup, and first run |
-| [🛠️ Development Workflow](Development-Workflow) | Hot reloading, Docker commands, local dev |
-| [🏗️ Architecture](Architecture) | System design, data flow, container security |
-| [📦 Frontend Dependencies](Frontend-Dependencies) | Client package breakdown |
-| [📦 Backend Dependencies](Backend-Dependencies) | Server package breakdown |
-| [🔐 Environment Variables](Environment-Variables) | Required config and secrets |
-| [🐛 Troubleshooting](Troubleshooting) | Common issues and fixes |
-| [🤝 Contributing](Contributing) | Branch naming, commits, PRs |
+| [🏁 Getting Started](getting-started) | Prerequisites, setup, and first run |
+| [🛠️ Development Workflow](development-workflow) | Hot reloading, Docker commands, local dev |
+| [🏗️ Architecture](architecture) | System design, data flow, container security |
+| [📦 Frontend Dependencies](frontend-dependencies) | Client package breakdown |
+| [📦 Backend Dependencies](backend-dependencies) | Server package breakdown |
+| [🔐 Environment Variables](environment-variables) | Required config and secrets |
+| [🐛 Troubleshooting](troubleshooting) | Common issues and fixes |
+| [🤝 Contributing](contributing) | Branch naming, commits, PRs |
 
 ---
 
@@ -69,4 +75,4 @@ docker compose up --build
 
 ---
 
-> 💡 **First time?** Head over to the [Getting Started](Getting-Started) guide for a detailed walkthrough.
+> 💡 **First time?** Head over to the [Getting Started](getting-started) guide for a detailed walkthrough.

@@ -1,3 +1,9 @@
+---
+title: Environment Variables
+nav_order: 7
+description: All required environment variables for Transcenda Hotels, how to set them up, and where they're used.
+---
+
 # 🔐 Environment Variables
 
 This page documents all required environment variables for Transcenda Hotels, how to set them up, and where they're used.
@@ -136,4 +142,4 @@ services:
 
 ---
 
-> 📖 See [Troubleshooting](Troubleshooting) for help with common issues.
+> 📖 See [Troubleshooting](troubleshooting) for help with common issues.

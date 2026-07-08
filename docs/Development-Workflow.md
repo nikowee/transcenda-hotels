@@ -1,3 +1,9 @@
+---
+title: Development Workflow
+nav_order: 3
+description: Day-to-day development practices for Transcenda Hotels.
+---
+
 # 🛠️ Development Workflow
 
 This guide covers day-to-day development practices for Transcenda Hotels.
@@ -158,4 +164,4 @@ refactor: extract validation middleware
 
 ---
 
-> 📖 For detailed contribution guidelines, see [Contributing](Contributing).
+> 📖 For detailed contribution guidelines, see [Contributing](contributing).

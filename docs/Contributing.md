@@ -1,3 +1,9 @@
+---
+title: Contributing
+nav_order: 9
+description: Development conventions and pull request process for Transcenda Hotels.
+---
+
 # 🤝 Contributing to Transcenda Hotels
 
 Thank you for your interest in contributing to Transcenda Hotels! This guide outlines our development conventions and pull request process.

@@ -1,3 +1,9 @@
+---
+title: Architecture
+nav_order: 4
+description: High-level architecture of Transcenda Hotels, including containerization, frontend/backend design, and data flow.
+---
+
 # 🏗️ Architecture
 
 This page describes the high-level architecture of Transcenda Hotels, including containerization, frontend/backend design, and data flow.
@@ -253,4 +259,4 @@ User Action (Browser)
 
 ---
 
-> 📖 See [Environment Variables](Environment-Variables) for configuration details, or [Frontend Dependencies](Frontend-Dependencies) / [Backend Dependencies](Backend-Dependencies) for package breakdowns.
+> 📖 See [Environment Variables](environment-variables) for configuration details, or [Frontend Dependencies](frontend-dependencies) / [Backend Dependencies](backend-dependencies) for package breakdowns.

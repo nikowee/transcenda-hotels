@@ -1,3 +1,9 @@
+---
+title: Frontend Dependencies
+nav_order: 5
+description: Production and development dependencies for the React frontend.
+---
+
 # 📦 Frontend Dependencies
 
 This page lists all production and development dependencies for the React frontend (`client/package.json`), along with explanations of why each was chosen.
@@ -96,4 +102,4 @@ The latest TypeScript compiler providing static type checking, better IDE suppor
 
 ---
 
-> 📖 See [Backend Dependencies](Backend-Dependencies) for the server-side package breakdown.
+> 📖 See [Backend Dependencies](backend-dependencies) for the server-side package breakdown.

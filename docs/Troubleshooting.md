@@ -1,3 +1,9 @@
+---
+title: Troubleshooting
+nav_order: 8
+description: Common issues you may encounter while developing with Transcenda Hotels and how to resolve them.
+---
+
 # 🐛 Troubleshooting
 
 This page covers common issues you may encounter while developing with Transcenda Hotels and how to resolve them.
@@ -290,4 +296,4 @@ Express 5 has some API differences from Express 4. If you're migrating, check th
 
 ---
 
-> 💡 **Still stuck?** Check the [Getting Started](Getting-Started) guide to ensure you've completed all setup steps, or open a GitHub issue.
+> 💡 **Still stuck?** Check the [Getting Started](getting-started) guide to ensure you've completed all setup steps, or open a GitHub issue.

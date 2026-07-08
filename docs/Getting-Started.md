@@ -1,3 +1,9 @@
+---
+title: Getting Started
+nav_order: 2
+description: Set up the Transcenda Hotels project on your local machine for development and testing.
+---
+
 # 🏁 Getting Started with Transcenda Hotels
 
 This guide will walk you through setting up the Transcenda Hotels project on your local machine for development and testing.
@@ -51,7 +57,7 @@ The backend requires a `.env` file for configuration. Copy the example file:
 cp server/.env.example server/.env
 ```
 
-> ⚠️ **Important:** If there is no `.env.example` file yet, create `server/.env` manually with the required variables. See the [Environment Variables](Environment-Variables) page for details.
+> ⚠️ **Important:** If there is no `.env.example` file yet, create `server/.env` manually with the required variables. See the [Environment Variables](environment-variables) page for details.
 
 Open `server/.env` and fill in your credentials:
 
@@ -137,4 +143,4 @@ docker compose down -v
 
 ---
 
-> ✅ **You're all set!** Next, check out the [Development Workflow](Development-Workflow) guide for tips on day-to-day development.
+> ✅ **You're all set!** Next, check out the [Development Workflow](development-workflow) guide for tips on day-to-day development.

@@ -1,3 +1,24 @@
-theme: jekyll-theme-cayman
-title: Transcenda Hotels Documentation
+remote_theme: just-the-docs/just-the-docs
+title: Transcenda Hotels
 description: Complete technical documentation for the Transcenda Hotels platform
+color_scheme: light
+
+# Aux links for the upper right navigation
+aux_links:
+  "View on GitHub":
+    - "https://github.com/your-org/transcenda-hotels"
+
+# Makes Aux links open in a new tab
+aux_links_new_tab: true
+
+# Enable or disable the side/mobile menu
+nav_enabled: true
+
+# Heading anchor links
+heading_anchors: true
+
+# Footer content
+footer_content: "Copyright &copy; Transcenda Hotels."
+
+plugins:
+  - jekyll-remote-theme
