@@ -1,23 +1,25 @@
-import { useState } from 'react'
-import { Search } from 'lucide-react'
+import { BrowserRouter, Routes, Route } from 'react-router';
+import LandingPage from './pages/LandingPage';
 
 export default function App() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6 text-center">
-      {/* Visual Indicator Container */}
-      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg shadow-blue-200">
-        <Search className="h-8 w-8" />
-      </div>
-      
-      {/* Typographic Title Element */}
-      <h1 className="mt-6 text-4xl font-extrabold tracking-tight text-slate-900">
-        Trancenda Hotels Architecture Active
-      </h1>
-      
-      {/* Explanatory Boundary Copy */}
-      <p className="mt-2 text-slate-600 max-w-sm">
-        Tailwind v4, React SWC, and Lucide icons are manually wired and completely responsive.
-      </p>
-    </div>
-  )
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/results" element={
+          <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+            <div className="text-center space-y-4">
+              <div className="animate-bounce">
+                <div className="h-16 w-16 bg-blue-100 rounded-full mx-auto flex items-center justify-center">
+                  <span className="text-3xl">🏨</span>
+                </div>
+              </div>
+              <h1 className="text-3xl font-bold text-slate-700">Finding your perfect stay...</h1>
+              <p className="text-slate-400">Results page coming soon!</p>
+            </div>
+          </div>
+        } />
+      </Routes>
+    </BrowserRouter>
+  );
 }
