@@ -19,6 +19,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "fuse.js": "^7.5.0",
     "stripe": "^22.3.0"
   },
   "devDependencies": {

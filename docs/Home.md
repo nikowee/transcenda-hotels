@@ -17,6 +17,8 @@ Transcenda Hotels is a production-ready hotel reservation system designed with d
 - 🔐 **Secure by Default** — Containers run as a non-root `node` user; no root privileges inside Docker.
 - ⚡ **Instant Hot Reload** — Both frontend (Vite + SWC) and backend (tsx watch) update in real time during development.
 - 🐳 **Zero-Config Docker Setup** — One command (`docker compose up --build`) spins up the entire stack.
+- 🔍 **Smart Destination Search** — Fuzzy autocomplete search powered by Fuse.js on the backend with debounced API calls.
+- 🏠 **Landing Page** — Modern hero section with search form, date pickers, and guest/room selectors.
 - 💳 **Stripe Payments** — Full payment processing pipeline ready for integration.
 - 🗄️ **Supabase PostgreSQL** — Cloud-native database with row-level security.
 - 🧩 **TypeScript Everywhere** — End-to-end type safety across frontend and backend.
@@ -49,6 +51,7 @@ Transcenda Hotels is a production-ready hotel reservation system designed with d
 | [📦 Frontend Dependencies](frontend-dependencies) | Client package breakdown |
 | [📦 Backend Dependencies](backend-dependencies) | Server package breakdown |
 | [🔐 Environment Variables](environment-variables) | Required config and secrets |
+| [📡 API Reference](api-reference) | Complete API endpoint documentation |
 | [🐛 Troubleshooting](troubleshooting) | Common issues and fixes |
 | [🤝 Contributing](contributing) | Branch naming, commits, PRs |
 

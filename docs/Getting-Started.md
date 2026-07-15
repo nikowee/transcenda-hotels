@@ -37,13 +37,21 @@ The project structure looks like this:
 transcenda-hotels/
 ├── client/              # React frontend (Vite + Tailwind)
 │   ├── Dockerfile
-│   └── package.json
+│   ├── package.json
+│   └── .env.example
 ├── server/              # Express backend API
 │   ├── Dockerfile
 │   ├── package.json
+│   ├── .env
+│   ├── src/
+│   │   ├── index.ts
+│   │   ├── controllers/
+│   │   │   └── destinationController.ts  # Fuse.js search
+│   │   └── data/
+│   │       └── destinations.json         # Destination dataset
 │   └── .env
-├── data/                # Database migrations and seeds (future)
 ├── docker-compose.yaml  # Orchestrates both services
+├── docs/                # Documentation (Just-the-Docs)
 └── README.md
 ```
 
@@ -51,13 +59,19 @@ transcenda-hotels/
 
 ## 🔐 Creating Environment Files
 
-The backend requires a `.env` file for configuration. Copy the example file:
+Both the backend and frontend require `.env` files for configuration. Copy the example files:
 
 ```bash
+# Backend
 cp server/.env.example server/.env
+
+# Frontend
+cp client/.env.example client/.env
 ```
 
-> ⚠️ **Important:** If there is no `.env.example` file yet, create `server/.env` manually with the required variables. See the [Environment Variables](environment-variables) page for details.
+> ⚠️ **Important:** If there is no `.env.example` file yet, create the `.env` files manually with the required variables. See the [Environment Variables](environment-variables) page for details.
+
+### Backend
 
 Open `server/.env` and fill in your credentials:
 
@@ -66,6 +80,16 @@ SUPABASE_URL=your_supabase_project_url
 SUPABASE_ANON_KEY=your_supabase_anon_key
 STRIPE_SECRET_KEY=your_stripe_secret_key
 ```
+
+### Frontend
+
+The frontend `.env` file configures the API base URL used by the search form and other API calls:
+
+```env
+VITE_API_URL=http://localhost:5000
+```
+
+> 💡 For cloud deployment, change `VITE_API_URL` to your production backend URL (e.g., `https://api.yourdomain.com`).
 
 ---
 
