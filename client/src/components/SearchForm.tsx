@@ -1,31 +1,25 @@
-import { useState, useMemo, React } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import Fuse from 'fuse.js';
+import axios from 'axios';
 import { MapPin, Calendar, Users, Search } from 'lucide-react';
-import { destinations } from '../data/mockDestinations';
 
-export default function SearchForm(){
+const API_URL = import.meta.env.VITE_API_URL;
+
+export default function SearchForm() {
     const navigate = useNavigate();
 
     // State Memory: Tracking what the user types and selects
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedDestId, setSelectedDestId] = useState('');
     const [showSuggestions, setShowSuggestions] = useState(false);
+    const [suggestions, setSuggestions] = useState<Array<{ uid: string; term: string }>>([]);
+    const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
 
     const [checkIn, setCheckIn] = useState('');
     const [checkOut, setCheckOut] = useState('');
     const [guests, setGuests] = useState(2);
     const [rooms, setRooms] = useState(1);
-
-    // Fuse fuzzy searching
-    // useMemo to memoize the Fuse instance so it isnt rerendered on every keystroke
-    const fuse = useMemo(() => new Fuse(destinations, {
-        keys: ['term', 'state'],
-        threshold: 0.3
-    }), []);
-
-    // Search logic: Runs every time a user presses a key
-    const searchResults = searchTerm ? fuse.search(searchTerm).map(result => result.item) : [];
 
     // Form validation & submission
     const handleSearch: React.SubmitEventHandler<HTMLFormElement> = (event) => {
@@ -64,21 +58,52 @@ export default function SearchForm(){
                         className="w-full bg-transparent outline-none placeholder:text-slate-400"
                         value={searchTerm}
                         onChange={(e) => {
-                            setSearchTerm(e.target.value);
+                            const text = e.target.value;
+                            setSearchTerm(text);
                             setSelectedDestId(''); // Reset ID if they start typing again
-                            setShowSuggestions(true);
+                            
+                            // Clear any pending timer
+                            if (debounceTimer) clearTimeout(debounceTimer);
+                            
+                            // Don't search if less than 2 characters
+                            if (text.trim().length < 2) {
+                                setSuggestions([]);
+                                setShowSuggestions(false);
+                                return;
+                            }
+                            
+                            // Set a new timer (300ms delay)
+                            const timer = setTimeout(async () => {
+                                setIsLoading(true);
+                                try {
+                                    const response = await axios.get(`${API_URL}/api/destinations/search?q=${text}`);
+                                    setSuggestions(response.data);
+                                    setShowSuggestions(true);
+                                } catch (error) {
+                                    console.error('Search error:', error);
+                                    setSuggestions([]);
+                                } finally {
+                                    setIsLoading(false);
+                                }
+                            }, 300);
+                            
+                            setDebounceTimer(timer);
                         }}
                         onFocus={() => setShowSuggestions(true)}
                         onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} // Delay hides dropdown so clicks register
                     />
+
+                    {isLoading && (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    )}
                 </div>
 
                 {/* The Autocomplete Dropdown Box */}
-                {showSuggestions && searchResults.length > 0 && (
+                {showSuggestions && suggestions.length > 0 && (
                     <ul className="absolute top-[70px] left-0 z-50 w-full rounded-xl border border-slate-100 bg-white shadow-2xl overflow-hidden">
-                        {searchResults.map((dest) => (
+                        {suggestions.map((dest) => (
                             <li
-                                key={dest.id}
+                                key={dest.uid}
                                 className="cursor-pointer px-4 py-3 hover:bg-blue-50 text-slate-700 hover:text-blue-700"
                                 onClick={() => {
                                     setSearchTerm(dest.term);
