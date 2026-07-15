@@ -249,6 +249,49 @@ Sometimes a simple restart resolves daemon connection issues.
 
 ---
 
+## 🌐 CORS Errors
+
+### Symptom
+```
+Access to XMLHttpRequest at 'http://localhost:5000/api/...' 
+from origin 'http://localhost:3000' has been blocked by CORS policy
+```
+
+### Cause
+The browser blocks cross-origin requests from the frontend (port 3000) to the backend (port 5000) when the CORS headers are missing or misconfigured.
+
+### Fix
+
+**1. Verify the backend has CORS middleware enabled:**
+```typescript
+// server/src/index.ts
+import cors from 'cors';
+app.use(cors());  // ✅ Allows all origins in development
+```
+
+**2. Check the `VITE_API_URL` environment variable:**
+```bash
+# client/.env — should point to the backend
+VITE_API_URL=http://localhost:5000
+```
+
+**3. If running in Docker, ensure the `VITE_API_URL` is NOT set to a Docker internal hostname:**
+```yaml
+# ❌ Wrong — "backend" is not resolvable from your browser
+environment:
+  - VITE_API_URL=http://backend:5000
+
+# ✅ Correct — use localhost (Docker maps the port)
+# VITE_API_URL is read from client/.env instead
+```
+
+**4. For production, configure CORS with an explicit origin:**
+```typescript
+app.use(cors({ origin: 'https://yourfrontend.com' }));
+```
+
+---
+
 ## 🌐 Backend Won't Start
 
 ### Symptom

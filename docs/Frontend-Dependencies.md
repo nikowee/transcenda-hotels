@@ -19,7 +19,6 @@ This page lists all production and development dependencies for the React fronte
 | `react-router` | `^8.1.0` | Client-side routing with loaders, actions, and nested routes |
 | `axios` | `^1.18.1` | HTTP client for API requests to the backend |
 | `lucide-react` | `^1.23.0` | Lightweight, tree-shakeable icon library |
-| `fuse.js` | `^7.4.2` | Fuzzy-search library for client-side search/filter |
 
 ### Why Each Was Chosen
 
@@ -38,9 +37,6 @@ A promise-based HTTP client with automatic JSON parsing, request/response interc
 
 #### 🎨 lucide-react
 A community-driven fork of Feather Icons. Each icon is an individual React component that can be tree-shaken, resulting in zero unused icon code in the final bundle. Chosen over Font Awesome for its smaller footprint and modern SVG-based approach.
-
-#### 🔍 fuse.js
-A lightweight fuzzy-search library that works entirely on the client side. Chosen for implementing search functionality (hotel names, locations, amenities) without requiring additional backend endpoints or database full-text search.
 
 ---
 
@@ -95,8 +91,7 @@ The latest TypeScript compiler providing static type checking, better IDE suppor
 | **Core** | react, react-dom, react-router | ~40 KB (gzipped) |
 | **HTTP** | axios | ~14 KB (gzipped) |
 | **Icons** | lucide-react | Tree-shaken — only used icons |
-| **Search** | fuse.js | ~5 KB (gzipped) |
-| **Total** | All production | ~60 KB (gzipped) |
+| **Total** | All production | ~55 KB (gzipped) |
 
 > 💡 All development dependencies are excluded from the production build by Vite, resulting in a lean final bundle.
 
