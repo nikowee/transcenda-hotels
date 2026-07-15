@@ -12,6 +12,8 @@ This page documents all required environment variables for Transcenda Hotels, ho
 
 ## 📋 Required Variables
 
+### Backend (`server/.env`)
+
 The backend requires a `.env` file located at `server/.env`. Below is the complete list of variables:
 
 | Variable | Required | Description | Example Value |
@@ -45,13 +47,28 @@ The backend requires a `.env` file located at `server/.env`. Below is the comple
 
 ---
 
+### Frontend (`client/.env`)
+
+The frontend uses a `.env` file located at `client/.env` for build-time environment variables:
+
+| Variable | Required | Description | Example Value |
+|----------|----------|-------------|---------------|
+| `VITE_API_URL` | ✅ Yes | Backend API base URL (used by SearchForm and API calls) | `http://localhost:5000` |
+
+> 💡 **Note:** When running via Docker Compose, this value is read from `client/.env` at build time. For cloud deployment, change this to your production backend URL.
+
+---
+
 ## 🛠️ Setup Instructions
 
-### Step 1: Create the `.env` File
+### Step 1: Create the `.env` Files
 
 ```bash
-# From the project root
+# Backend
 cp server/.env.example server/.env
+
+# Frontend
+cp client/.env.example client/.env
 ```
 
 If no `.env.example` exists, create the file manually:

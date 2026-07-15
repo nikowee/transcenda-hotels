@@ -19,6 +19,7 @@ This page lists all production and development dependencies for the Express back
 | `stripe` | `^22.3.0` | Stripe server SDK for payment processing |
 | `axios` | `^1.18.1` | HTTP client for external API calls |
 | `cors` | `^2.8.6` | Cross-Origin Resource Sharing middleware |
+| `fuse.js` | `^7.4.2` | Fuzzy-search library for destination autocomplete |
 | `dotenv` | `^17.4.2` | Loads `.env` file variables into `process.env` |
 
 ### Why Each Was Chosen
@@ -55,6 +56,13 @@ Same HTTP client used on the frontend, chosen for the backend for:
 - **Consistent API** — same API as the frontend, reducing context switching
 - **Interceptors** — logging, error handling, and retry logic
 - **Timeout handling** — preventing hung requests
+
+#### 🔍 fuse.js
+A lightweight fuzzy-search library running server-side to power the destination autocomplete search. When a user types in the search form, the frontend sends a request to `GET /api/destinations/search?q=<query>`, and the backend uses Fuse.js to fuzzy-match against the destinations dataset loaded from `server/src/data/destinations.json`. Chosen for:
+- **Tolerance to typos** — threshold of `0.3` catches partial/imperfect matches
+- **Zero external dependencies** — no external API calls, runs entirely in-process
+- **Fast performance** — in-memory index, responses in milliseconds
+- **Simple API** — configure once at startup, search with a single call
 
 #### 🔓 cors
 Express middleware for handling Cross-Origin Resource Sharing. Enables the frontend (port 3000) to make requests to the backend (port 5000) during development. Chosen for its simplicity and zero-config setup for development.
@@ -105,8 +113,9 @@ These packages provide TypeScript type declarations for Express, CORS, and Node.
 backend/
 ├── express              ← Web framework (core)
 │   └── cors             ← CORS middleware
-├── @supabase/supabase-js ← Database client
-├── stripe               ← Payment processing
+├── fuse.js              ← Fuzzy search (destination autocomplete)
+├── @supabase/supabase-js ← Database client (future)
+├── stripe               ← Payment processing (future)
 ├── axios                ← HTTP client
 ├── dotenv               ← Environment config
 ├── typescript (dev)     ← Type checking

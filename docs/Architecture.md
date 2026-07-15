@@ -24,6 +24,13 @@ This page describes the high-level architecture of Transcenda Hotels, including 
 │                                      │                   │
 │                                      ▼                   │
 │                            ┌──────────────────┐         │
+│                            │  destinations    │         │
+│                            │     .json        │         │
+│                            │  (Fuse.js index) │         │
+│                            └──────────────────┘         │
+│                                      │                   │
+│                                      ▼                   │
+│                            ┌──────────────────┐         │
 │                            │    Supabase      │         │
 │                            │  (PostgreSQL)    │         │
 │                            │   (Cloud-hosted) │         │
@@ -42,7 +49,7 @@ This page describes the high-level architecture of Transcenda Hotels, including 
 | Service | Role | Tech | Port |
 |---------|------|------|------|
 | **Frontend** | User interface & client-side logic | React 19 + Vite 8 + Tailwind 4 | `3000` |
-| **Backend** | REST API, business logic, auth | Express 5 + TypeScript 6 + tsx | `5000` |
+| **Backend** | REST API, business logic, auth, destination search | Express 5 + TypeScript 6 + tsx + Fuse.js | `5000` |
 | **Supabase** | Database & authentication | PostgreSQL (cloud) | External |
 | **Stripe** | Payment processing | Stripe SDK | External |
 
@@ -137,15 +144,19 @@ Oxlint (linting)
 React Router v8 handles client-side routing with a declarative route tree:
 
 ```tsx
-// Conceptual route structure
-<Routes>
-  <Route path="/" element={<Home />} />
-  <Route path="/hotels" element={<HotelList />} />
-  <Route path="/hotels/:id" element={<HotelDetail />} />
-  <Route path="/booking" element={<Booking />} />
-  <Route path="/admin" element={<AdminDashboard />} />
-</Routes>
+// client/src/App.tsx
+<BrowserRouter>
+  <Routes>
+    <Route path="/" element={<LandingPage />} />
+    <Route path="/results" element={<ResultsPage />} />
+  </Routes>
+</BrowserRouter>
 ```
+
+| Route | Page | Description |
+|-------|------|-------------|
+| `/` | `LandingPage` | Hero section with search form, navigation bar |
+| `/results` | `ResultsPage` | Destination search results (placeholder) |
 
 ---
 
@@ -158,22 +169,23 @@ Express 5 + TypeScript 6
     ↓
 tsx watch (development runner)
     ↓
-Supabase SDK (database)
+Fuse.js (fuzzy search engine for destination autocomplete)
     ↓
-Stripe SDK (payments)
+Supabase SDK (database — future)
     ↓
-dotenv (environment config)
+Stripe SDK (payments — future)
 ```
 
 ### API Structure
 
 ```
 server/src/
-├── index.ts              # Entry point, middleware setup
-├── routes/               # Route handlers
-├── controllers/          # Business logic
-├── middleware/           # Auth, validation, error handling
-└── utils/                # Helpers, config, types
+├── index.ts                     # Entry point, middleware setup
+├── controllers/
+│   └── destinationController.ts # Fuse.js-powered destination search
+├── data/
+│   └── destinations.json        # Destination dataset (loaded at startup)
+└── utils/                       # Helpers, config, types (future)
 ```
 
 ### Current Entry Point
@@ -181,6 +193,7 @@ server/src/
 ```typescript
 import express from 'express';
 import cors from 'cors';
+import { searchDestinations } from './controllers/destinationController';
 
 const app = express();
 const PORT = 5000;
@@ -194,10 +207,22 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'healthy', project: 'Transcenda Hotels Gateway Operational' });
 });
 
+// Destination Search (autocomplete)
+app.get('/api/destinations/search', searchDestinations);
+
 app.listen(PORT, () => {
   console.log(`🚀 Transcenda Hotels Backend running on http://localhost:${PORT}`);
 });
 ```
+
+### Destination Search Controller
+
+The destination search uses **Fuse.js**, a client-compatible fuzzy search library, running server-side. Key details:
+
+- **Data source**: `server/src/data/destinations.json` — loaded once at server startup
+- **Fuse options**: `keys: ['term']`, `threshold: 0.3` — tolerates typos and partial matches
+- **Results**: Limited to top 5 matches to keep payloads small
+- **Safety guard**: Returns empty array if query is less than 2 characters
 
 ---
 
@@ -212,8 +237,9 @@ User Action (Browser)
 ┌─────────────────────────────┐
 │  Frontend (React + Vite)    │
 │  • Component renders        │
-│  • User clicks "Book Now"   │
-│  • Axios POST /api/bookings │
+│  • User types in search     │
+│  • Debounce (300ms)         │
+│  • Axios GET /api/...       │
 └──────────┬──────────────────┘
            │ HTTP Request
            ▼
@@ -223,19 +249,22 @@ User Action (Browser)
 │  • JSON body parser         │
 │  • Route handler            │
 │  • Controller logic         │
+│  • Fuse.js fuzzy search     │
 └──────────┬──────────────────┘
            │
      ┌─────┴─────┐
      ▼           ▼
-┌─────────┐ ┌─────────┐
-│ Supabase│ │ Stripe  │
-│ (DB)    │ │(Payment)│
-└─────────┘ └─────────┘
-     │           │
-     └─────┬─────┘
-           ▼
-┌─────────────────────────────┐
-│  Response (JSON)            │
+┌─────────┐ ┌─────────┐      ┌───────────┐
+│destina- │ │Supabase │      │  Stripe   │
+│tions    │ │ (DB)    │      │ (Payment) │
+│.json    │ │(future) │      │ (future)  │
+└─────────┘ └─────────┘      └───────────┘
+     │           │                │
+     └─────┬─────┘                │
+           ▼                      │
+┌─────────────────────────────┐   │
+│  Response (JSON)            │◄──┘
+│  • Destination results      │
 │  • Booking confirmation     │
 │  • Payment status           │
 └──────────┬──────────────────┘
@@ -254,8 +283,15 @@ User Action (Browser)
 | Integration | Direction | Protocol | Data Format |
 |-------------|-----------|----------|-------------|
 | Frontend ↔ Backend | Bidirectional | HTTP REST | JSON |
-| Backend ↔ Supabase | Backend → DB | HTTPS + REST | JSON |
-| Backend ↔ Stripe | Backend → Stripe | HTTPS + REST | JSON |
+| Backend → destinations.json | Backend → File | Read (sync) | JSON |
+| Backend ↔ Supabase | Backend → DB | HTTPS + REST | JSON (future) |
+| Backend ↔ Stripe | Backend → Stripe | HTTPS + REST | JSON (future) |
+
+---
+
+## 📡 API Reference
+
+For a complete list of all available API endpoints with request/response examples, error codes, and usage guides, see the dedicated **[API Reference](api-reference)** page.
 
 ---
 
