@@ -4,10 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "mocha -r tsx src/tests/**/*.test.ts",
+    "test:watch": "mocha -r tsx --watch src/tests/**/*.test.ts"
   },
   "keywords": [],
   "author": "",
@@ -23,10 +24,16 @@
     "stripe": "^22.3.0"
   },
   "devDependencies": {
+    "@types/chai": "^5.2.3",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^26.1.1",
-    "tsx": "^4.23.0",
+    "@types/supertest": "^7.2.1",
+    "chai": "^6.2.2",
+    "mocha": "^11.7.6",
+    "supertest": "^7.2.2",
+    "tsx": "^4.23.1",
     "typescript": "^6.0.3"
   },
   "allowScripts": {
