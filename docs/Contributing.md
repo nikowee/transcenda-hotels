@@ -256,8 +256,11 @@ import { API_BASE_URL } from '@/constants';
 - [ ] chore: Maintenance
 
 ## Testing
-- [ ] Type-check passes
-- [ ] Lint passes
+- [ ] Type-check passes (`npm run type-check`)
+- [ ] Lint passes (`npm run lint`)
+- [ ] Frontend tests pass (`cd client && npm run test`)
+- [ ] Backend tests pass (`cd server && npm run test`)
+- [ ] E2E tests pass (`cd e2e_testing && npx playwright test`)
 - [ ] Tested in Docker
 
 ## Related Issues
@@ -273,6 +276,9 @@ Closes #[issue-number]
 - [ ] Commits follow conventional commit format
 - [ ] Type-check passes (`npm run type-check`)
 - [ ] Lint passes (`npm run lint`)
+- [ ] Frontend tests pass (`cd client && npm run test`)
+- [ ] Backend tests pass (`cd server && npm run test`)
+- [ ] E2E tests pass (`cd e2e_testing && npx playwright test`)
 - [ ] Tested with `docker compose up --build`
 - [ ] PR description is complete
 

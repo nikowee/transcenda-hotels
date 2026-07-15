@@ -129,6 +129,25 @@ frontend | ➜  Local:   http://localhost:3000/
 
 ---
 
+## 🧪 Running Tests
+
+The project includes **22 tests** across three layers:
+
+```bash
+# Frontend: unit + integration (10 tests)
+cd client && npm run test
+
+# Backend: API integration (7 tests)
+cd server && npm run test
+
+# E2E: full system in Docker (5 tests, auto-starts Docker)
+cd e2e_testing && npx playwright test
+```
+
+> 📖 See the [Testing](testing) page for a complete breakdown of all test suites.
+
+---
+
 ## ✅ Verification Steps
 
 1. **Check the health endpoint:**

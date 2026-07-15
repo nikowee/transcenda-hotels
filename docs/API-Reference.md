@@ -1,6 +1,6 @@
 ---
 title: API Reference
-nav_order: 9
+nav_order: 10
 description: Complete API reference for the Transcenda Hotels backend, including endpoints, request/response examples, and error codes.
 ---
 
