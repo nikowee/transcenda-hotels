@@ -1,27 +1,33 @@
-import { type ChildProcess } from 'child_process';
+import { spawn } from 'child_process';
+import path from 'path';
 
 export default async function globalTeardown() {
-  console.log('🛑 Shutting down servers...');
+  const rootDir = path.resolve(__dirname, '..');
 
-  // Kill backend process
-  if (process.env.E2E_BACKEND_PID) {
-    try {
-      process.kill(Number(process.env.E2E_BACKEND_PID), 'SIGTERM');
-    } catch {
-      // Process may already be dead
-    }
-  }
+  console.log('🛑 Stopping Docker containers...');
 
-  // Kill frontend process
-  if (process.env.E2E_FRONTEND_PID) {
-    try {
-      process.kill(Number(process.env.E2E_FRONTEND_PID), 'SIGTERM');
-    } catch {
-      // Process may already be dead
-    }
-  }
+  await new Promise<void>((resolve, reject) => {
+    const dockerDown = spawn('docker', ['compose', 'down'], {
+      cwd: rootDir,
+      stdio: 'pipe',
+      shell: true,
+    });
 
-  // Wait a moment for processes to clean up
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  console.log('✅ Servers shut down');
+    dockerDown.stdout?.on('data', (data: Buffer) => {
+      console.log(`[Docker] ${data.toString().trim()}`);
+    });
+    dockerDown.stderr?.on('data', (data: Buffer) => {
+      console.error(`[Docker] ${data.toString().trim()}`);
+    });
+
+    dockerDown.on('exit', (code) => {
+      if (code === 0) {
+        console.log('✅ Docker containers stopped');
+        resolve();
+      } else {
+        console.warn(`⚠️ docker compose down exited with code ${code}`);
+        resolve(); // Don't fail teardown
+      }
+    });
+  });
 }
