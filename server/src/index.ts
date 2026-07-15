@@ -1,6 +1,6 @@
-// JUST A RANDOM PLACERHOLDER FOR NOW FOR TESTING. SHUUSH!
 import express from 'express';
 import cors from 'cors';
+import { fileURLToPath } from 'url';
 import {searchDestinations} from './controllers/destinationController';
 
 const app = express();
@@ -18,6 +18,14 @@ app.get('/api/health', (req, res) => {
 // Destination Search Endpoint
 app.get('/api/destinations/search', searchDestinations);
 
-app.listen(PORT, () => {
-  console.log(`🚀 Transcenda Hotels Backend running natively on http://localhost:${PORT}`);
-});
+// Export for testing purposes
+export default app;
+
+// Only start server if this file is run directly (not imported in tests)
+const __filename = fileURLToPath(import.meta.url);
+const isDirectRun = process.argv[1] === __filename;
+if (isDirectRun) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Transcenda Hotels Backend running natively on http://localhost:${PORT}`);
+  });
+}

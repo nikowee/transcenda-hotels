@@ -39,3 +39,8 @@ Thumbs.db
 
 # Docker
 .docker/
+
+# Test Suite Output
+coverage/
+e2e_testing/playwright-report/
+e2e_testing/test-results/
