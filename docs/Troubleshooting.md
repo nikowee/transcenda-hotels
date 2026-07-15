@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-nav_order: 8
+nav_order: 11
 description: Common issues you may encounter while developing with Transcenda Hotels and how to resolve them.
 ---
 

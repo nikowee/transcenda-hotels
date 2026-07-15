@@ -127,6 +127,54 @@ The frontend starts at [http://localhost:3000](http://localhost:3000).
 
 ---
 
+## 🧪 Running Tests
+
+The project has three test suites covering different layers of the stack:
+
+| Suite | Tests | Command | Location |
+|-------|-------|---------|----------|
+| **Frontend Unit + Integration** | 10 | `cd client && npm run test` | `client/src/` |
+| **Backend API Integration** | 7 | `cd server && npm run test` | `server/src/tests/` |
+| **E2E (auto-starts Docker)** | 5 | `cd e2e_testing && npx playwright test` | `e2e_testing/tests/` |
+
+### Running Individual Suites
+
+```bash
+# Frontend tests (Vitest)
+cd client && npm run test
+
+# Frontend tests with watch mode
+cd client && npm run test:watch
+
+# Frontend tests with coverage report
+cd client && npm run test:coverage
+
+# Backend tests (Mocha + Supertest)
+cd server && npm run test
+
+# Backend tests with watch mode
+cd server && npm run test:watch
+
+# E2E tests (Playwright — auto-starts Docker containers)
+cd e2e_testing && npx playwright test
+
+# E2E tests with visible browser
+cd e2e_testing && npx playwright test --headed
+```
+
+### E2E Test Lifecycle
+
+Playwright's global setup/teardown handles infrastructure automatically:
+
+1. **Setup:** `docker compose up -d --build` — builds and starts containers
+2. **Wait:** Polls `localhost:3000` and `localhost:5000` until both are ready
+3. **Run:** Executes all E2E tests in Chromium
+4. **Teardown:** `docker compose down` — stops and removes containers
+
+> 📖 For a complete breakdown of every test, see the [Testing](testing) page.
+
+---
+
 ## 🧪 Git Workflow
 
 ### Branch Naming
