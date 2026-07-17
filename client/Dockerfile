@@ -1,5 +1,5 @@
 # Fetch a minimal Linux OS prepackaged with Node.js runtime environment
-FROM node:20-alpine
+FROM node:22-alpine
 
 # Establish our operational workspace path inside the container environment
 WORKDIR /app
