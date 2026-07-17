@@ -1,10 +1,14 @@
 import express from 'express';
 import cors from 'cors';
+import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import {searchDestinations} from './controllers/destinationController';
+import { supabaseAdmin } from './lib/supabaseClient';
+
+dotenv.config();
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
@@ -17,6 +21,21 @@ app.get('/api/health', (req, res) => {
 
 // Destination Search Endpoint
 app.get('/api/destinations/search', searchDestinations);
+
+// Supabase test endpoint (for debugging)
+app.get('/api/supabase-test', async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .limit(1);
+    
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // Export for testing purposes
 export default app;
