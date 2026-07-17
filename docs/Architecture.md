@@ -171,7 +171,7 @@ tsx watch (development runner)
     ↓
 Fuse.js (fuzzy search engine for destination autocomplete)
     ↓
-Supabase SDK (database — future)
+Supabase SDK (database & auth)
     ↓
 Stripe SDK (payments — future)
 ```
@@ -180,11 +180,13 @@ Stripe SDK (payments — future)
 
 ```
 server/src/
-├── index.ts                     # Entry point, middleware setup
+├── index.ts                     # Entry point, middleware & routes setup
 ├── controllers/
 │   └── destinationController.ts # Fuse.js-powered destination search
 ├── data/
 │   └── destinations.json        # Destination dataset (loaded at startup)
+├── lib/
+│   └── supabaseClient.ts        # Supabase admin client & auth helpers
 └── utils/                       # Helpers, config, types (future)
 ```
 
@@ -193,10 +195,14 @@ server/src/
 ```typescript
 import express from 'express';
 import cors from 'cors';
+import dotenv from 'dotenv';
 import { searchDestinations } from './controllers/destinationController';
+import { supabaseAdmin } from './lib/supabaseClient';
+
+dotenv.config();
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
@@ -210,10 +216,65 @@ app.get('/api/health', (req, res) => {
 // Destination Search (autocomplete)
 app.get('/api/destinations/search', searchDestinations);
 
-app.listen(PORT, () => {
-  console.log(`🚀 Transcenda Hotels Backend running on http://localhost:${PORT}`);
+// Supabase test endpoint (debugging)
+app.get('/api/supabase-test', async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .limit(1);
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
+
+export default app;
 ```
+
+### Supabase Client
+
+The backend uses a Supabase **admin client** initialized with the service role key for privileged operations. Located at `server/src/lib/supabaseClient.ts`:
+
+```typescript
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
+
+export const supabaseAdmin = createClient(supabaseUrl, supabaseSecretKey);
+
+// Helper: delete a user by ID (for account management)
+export const deleteUser = async (userId: string) => {
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    if (error) throw error;
+};
+```
+
+The client-side Supabase client (at `client/src/lib/supabaseClient.ts`) uses the **anonymous public key** instead:
+
+```typescript
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabasePubKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+export const supabase = createClient(supabaseUrl, supabasePubKey);
+
+export const getCurrentUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    return user;
+};
+
+export const isAuthenticated = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return !!session;
+};
+```
+
+> **Note:** The client-side client enforces Row-Level Security (RLS) policies, while the server-side admin client bypasses RLS for administrative tasks.
 
 ### Destination Search Controller
 
@@ -257,7 +318,7 @@ User Action (Browser)
 ┌─────────┐ ┌─────────┐      ┌───────────┐
 │destina- │ │Supabase │      │  Stripe   │
 │tions    │ │ (DB)    │      │ (Payment) │
-│.json    │ │(future) │      │ (future)  │
+│.json    │ │         │      │ (future)  │
 └─────────┘ └─────────┘      └───────────┘
      │           │                │
      └─────┬─────┘                │
@@ -284,7 +345,7 @@ User Action (Browser)
 |-------------|-----------|----------|-------------|
 | Frontend ↔ Backend | Bidirectional | HTTP REST | JSON |
 | Backend → destinations.json | Backend → File | Read (sync) | JSON |
-| Backend ↔ Supabase | Backend → DB | HTTPS + REST | JSON (future) |
+| Backend ↔ Supabase | Backend → DB | HTTPS + REST | JSON |
 | Backend ↔ Stripe | Backend → Stripe | HTTPS + REST | JSON (future) |
 
 ---
