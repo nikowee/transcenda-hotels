@@ -15,7 +15,7 @@ This page lists all production and development dependencies for the Express back
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `express` | `^5.2.1` | Web framework for building the REST API |
-| `@supabase/supabase-js` | `^2.110.1` | Supabase client SDK for database and auth |
+| `@supabase/supabase-js` | `^2.110.1` | Supabase client SDK for database and auth (admin client) |
 | `stripe` | `^22.3.0` | Stripe server SDK for payment processing |
 | `axios` | `^1.18.1` | HTTP client for external API calls |
 | `cors` | `^2.8.6` | Cross-Origin Resource Sharing middleware |
@@ -37,9 +37,11 @@ The official Supabase JavaScript client providing:
 - **PostgreSQL access** — query the database with full SQL or the Supabase client API
 - **Row-Level Security** — built-in support for Supabase auth policies
 - **Real-time subscriptions** — listen to database changes (future use)
-- **Authentication** — built-in auth methods (future use)
+- **Authentication** — built-in auth methods for user login/signup
 
 Chosen over raw `pg`/`pg-pool` for its higher-level abstractions, auth integration, and real-time capabilities.
+
+The backend uses the **service role key** to create an admin client for privileged operations (e.g., user management via `deleteUser`), while the frontend uses the **anonymous public key** for client-side auth with Row-Level Security (RLS) enforcement.
 
 #### 💳 stripe
 The official Stripe Node.js SDK for payment processing:
@@ -114,7 +116,7 @@ backend/
 ├── express              ← Web framework (core)
 │   └── cors             ← CORS middleware
 ├── fuse.js              ← Fuzzy search (destination autocomplete)
-├── @supabase/supabase-js ← Database client (future)
+├── @supabase/supabase-js ← Database & auth client
 ├── stripe               ← Payment processing (future)
 ├── axios                ← HTTP client
 ├── dotenv               ← Environment config

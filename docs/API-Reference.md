@@ -27,6 +27,7 @@ All endpoints are prefixed with `/api`.
 |--------|----------|-------------|
 | `GET` | `/api/health` | Health check / liveness probe |
 | `GET` | `/api/destinations/search` | Fuzzy destination autocomplete search |
+| `GET` | `/api/supabase-test` | Supabase database connection test (debugging) |
 
 ---
 
@@ -134,6 +135,52 @@ curl "http://localhost:5000/api/destinations/search?q=R"
 - The search uses **fuzzy matching** with a threshold of `0.3`, so it tolerates typos and partial matches.
 - Results are limited to the **top 5** matches to keep the network payload small.
 - The destination data is loaded from `server/src/data/destinations.json` at server startup.
+
+## `GET /api/supabase-test`
+
+Supabase connection test endpoint for debugging database connectivity. Verifies that the backend can reach the Supabase `profiles` table and return data.
+
+### Request
+
+```
+GET /api/supabase-test
+```
+
+No query parameters or request body required.
+
+### Response `200 OK`
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid-here",
+      "username": "testuser",
+      ...
+    }
+  ]
+}
+```
+
+The `data` array contains up to 1 row from the `profiles` table (if any exist).
+
+### Response `500 Internal Server Error`
+
+```json
+{
+  "success": false,
+  "error": "relation \"profiles\" does not exist"
+}
+```
+
+Returned when the Supabase connection fails or the `profiles` table doesn't exist yet.
+
+### Example
+
+```bash
+curl http://localhost:5000/api/supabase-test
+```
 
 ---
 
