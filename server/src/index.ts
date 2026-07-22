@@ -2,8 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
-import {searchDestinations} from './controllers/destinationController';
-import { supabaseAdmin } from './lib/supabaseClient';
+import {searchDestinations} from './controllers/destinationController.ts';
+import { supabaseAdmin } from './lib/supabaseClient.ts';
+import { getHotelById } from './controllers/hotelroomController.ts';
 
 dotenv.config();
 
@@ -21,6 +22,9 @@ app.get('/api/health', (req, res) => {
 
 // Destination Search Endpoint
 app.get('/api/destinations/search', searchDestinations);
+
+// Hotel Details Endpoint
+app.get('/api/hotels/:id', getHotelById);
 
 // Supabase test endpoint (for debugging)
 app.get('/api/supabase-test', async (req, res) => {

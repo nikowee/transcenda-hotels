@@ -1,7 +1,8 @@
+//temporary page to display hotel results for a given destination
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import axios from 'axios';
-import HotelResultsList from '../components/HotelResultsList';
+import HotelResultsList from '../components/HotelDetailsPage';
 import LoadingPage from '../components/LoadingPage';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -44,7 +45,7 @@ export default function DestinationResultsPage() {
 
     return (
         <div className="min-h-screen bg-slate-50 p-6">
-            <HotelResultsList hotels={hotels} />
+            <HotelResultsList />
         </div>
     );
 }
