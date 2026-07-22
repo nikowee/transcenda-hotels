@@ -1,5 +1,6 @@
+import './env.js';
 import { before, after } from 'mocha';
-import app from '../index';
+import app from '../index.js';
 
 // Log when tests start/end
 before(() => {

@@ -1,7 +1,7 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import request from 'supertest';
-import { app } from './setup';
+import { app } from './setup.js';
 
 describe('Destination Search API', () => {
   

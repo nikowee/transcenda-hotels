@@ -1,31 +1,59 @@
 import { type Request, type Response } from 'express';
-import { insertOne, findOne, generateBookingReference, type BookingData } from '../models/bookingModel.js';
-import { processPayment, type PaymentMethodInput } from '../services/paymentService.js';
+import {
+  insertOne,
+  findOne,
+  attachSession,
+  markPaid,
+  generateBookingReference,
+  type BookingData,
+} from '../models/bookingModel.js';
+import {
+  createCheckoutSession,
+  verifySession,
+  isConfigured,
+  toSafeError,
+} from '../services/paymentService.js';
 import { sendConfirmation } from '../services/emailService.js';
 
 /**
  * Booking controller — the «Express Router» box from the UC4 class diagram.
- *
- * Diagram method names are snake_case; these are camelCase to match the
- * existing destinationController. Mapping:
  *
  *   get_checkout(req, res)         → getCheckout          GET  /api/bookings/checkout
  *   post_guest_details(req, res)   → postGuestDetails     POST /api/bookings/guest-details
  *   post_payment(req, res)         → postPayment          POST /api/bookings/payment
  *   post_confirm_booking(req, res) → postConfirmBooking   POST /api/bookings/confirm
  *
- * The diagram never wires post_confirm_booking into the sequence. It is read
- * here as sequence steps 7-10 (persist + email), split from postPayment so a
- * successful charge is never rolled back by a failed write in the same request.
+ * postPayment no longer charges a card directly. It creates a PENDING booking
+ * and hands back a Stripe-hosted checkout URL, so no card data reaches this
+ * process. postConfirmBooking verifies the completed session against Stripe on
+ * return; the webhook does the same asynchronously, and both are idempotent.
+ *
+ * Prices are never read from a request body. Every amount below is derived from
+ * ROOM_RATES on the server.
  */
 
 const CURRENCY = 'SGD';
+const MAX_NIGHTS = 30;
+const MAX_ROOMS = 8;
 
 interface GuestDetails {
   guestName: string;
   guestEmail: string;
   contactNumber: string;
 }
+
+/**
+ * Placeholder inventory. Unknown IDs are rejected rather than priced, so a
+ * client cannot invent a room to get a cheaper rate.
+ * TODO: replace with AscendaService.searchHotels once feature/search-results
+ * merges — MergedHotel.price is the real source.
+ */
+const ROOM_RATES: Record<string, number> = {
+  'standard-queen': 180,
+  'deluxe-king': 240,
+  'executive-suite': 420,
+  'family-room': 310,
+};
 
 /** Alternative flow 1a: detect missing/invalid guest details */
 const validateGuestDetails = (body: Partial<GuestDetails>): Record<string, string> => {
@@ -37,13 +65,13 @@ const validateGuestDetails = (body: Partial<GuestDetails>): Record<string, strin
 
   if (!name) {
     errors.guestName = 'Full name is required.';
-  } else if (name.length < 2) {
+  } else if (name.length < 2 || name.length > 100) {
     errors.guestName = 'Please enter your full name.';
   }
 
   if (!email) {
     errors.guestEmail = 'Email address is required.';
-  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 254) {
     errors.guestEmail = 'Please enter a valid email address.';
   }
 
@@ -56,58 +84,97 @@ const validateGuestDetails = (body: Partial<GuestDetails>): Record<string, strin
   return errors;
 };
 
-const countNights = (checkIn: string, checkOut: string): number => {
-  const start = new Date(checkIn);
-  const end = new Date(checkOut);
-  const ms = end.getTime() - start.getTime();
-  return Math.max(1, Math.round(ms / 86_400_000));
-};
+interface StayInput {
+  hotelId: string;
+  roomId: string;
+  checkIn: string;
+  checkOut: string;
+  guests: number;
+  rooms: number;
+}
+
+interface Quote extends StayInput {
+  nights: number;
+  currency: string;
+  nightlyRate: number;
+  subtotal: number;
+  taxes: number;
+  totalPrice: number;
+}
+
+const isIsoDate = (value: unknown): value is string =>
+  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
 
 /**
- * Nightly rate placeholder. There is no hotel/room price source yet — the
- * results page is still a stub — so the rate is derived deterministically from
- * roomId to keep quotes stable across a session.
- * TODO: replace with the real rate lookup once UC3 lands.
+ * Single source of truth for pricing. Both the displayed quote and the amount
+ * sent to Stripe come from here, so the two can never disagree.
  */
-const nightlyRate = (roomId: string): number => {
-  const seed = [...roomId].reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return 180 + (seed % 12) * 15;
+const buildQuote = (input: unknown): { quote: Quote } | { error: string } => {
+  const raw = (input ?? {}) as Record<string, unknown>;
+
+  const hotelId = typeof raw.hotelId === 'string' ? raw.hotelId.trim() : '';
+  const roomId = typeof raw.roomId === 'string' ? raw.roomId.trim() : '';
+  const checkIn = raw.checkIn;
+  const checkOut = raw.checkOut;
+  const guests = Number(raw.guests);
+  const rooms = Number(raw.rooms);
+
+  if (!hotelId || hotelId.length > 64) return { error: 'A valid hotelId is required.' };
+
+  const nightlyRate = ROOM_RATES[roomId];
+  if (nightlyRate === undefined) return { error: 'That room type is not available.' };
+
+  if (!isIsoDate(checkIn) || !isIsoDate(checkOut)) {
+    return { error: 'checkIn and checkOut must be YYYY-MM-DD dates.' };
+  }
+
+  const nights = Math.round(
+    (Date.parse(checkOut) - Date.parse(checkIn)) / 86_400_000
+  );
+  if (nights < 1) return { error: 'Check-out must be after check-in.' };
+  if (nights > MAX_NIGHTS) return { error: `Stays are limited to ${MAX_NIGHTS} nights.` };
+
+  if (!Number.isInteger(guests) || guests < 1 || guests > 20) {
+    return { error: 'Guests must be between 1 and 20.' };
+  }
+  if (!Number.isInteger(rooms) || rooms < 1 || rooms > MAX_ROOMS) {
+    return { error: `Rooms must be between 1 and ${MAX_ROOMS}.` };
+  }
+
+  const subtotal = nightlyRate * nights * rooms;
+  const taxes = Math.round(subtotal * 0.09 * 100) / 100;
+  const totalPrice = Math.round((subtotal + taxes) * 100) / 100;
+
+  if (!Number.isFinite(totalPrice) || totalPrice <= 0) {
+    return { error: 'Could not price that stay.' };
+  }
+
+  return {
+    quote: {
+      hotelId, roomId, checkIn, checkOut, guests, rooms,
+      nights, currency: CURRENCY, nightlyRate, subtotal, taxes, totalPrice,
+    },
+  };
 };
 
-/** Sequence step 1-2: GET /checkout → render checkout with a priced quote */
+/** Sequence steps 1-2: GET /checkout → a priced quote for display only. */
 export const getCheckout = async (req: Request, res: Response): Promise<void> => {
   try {
-    const hotelId = (req.query.hotelId as string) || 'demo-hotel';
-    const roomId = (req.query.roomId as string) || 'deluxe-king';
-    const checkIn = req.query.checkIn as string;
-    const checkOut = req.query.checkOut as string;
-    const guests = Number(req.query.guests) || 2;
-    const rooms = Number(req.query.rooms) || 1;
+    const result = buildQuote({
+      hotelId: req.query.hotelId,
+      roomId: req.query.roomId,
+      checkIn: req.query.checkIn,
+      checkOut: req.query.checkOut,
+      guests: req.query.guests,
+      rooms: req.query.rooms,
+    });
 
-    if (!checkIn || !checkOut) {
-      res.status(400).json({ error: 'checkIn and checkOut are required.' });
+    if ('error' in result) {
+      res.status(400).json({ error: result.error });
       return;
     }
 
-    const nights = countNights(checkIn, checkOut);
-    const rate = nightlyRate(roomId);
-    const subtotal = rate * nights * rooms;
-    const taxes = Math.round(subtotal * 0.09 * 100) / 100;
-
-    res.json({
-      hotelId,
-      roomId,
-      checkIn,
-      checkOut,
-      guests,
-      rooms,
-      nights,
-      currency: CURRENCY,
-      nightlyRate: rate,
-      subtotal,
-      taxes,
-      totalPrice: Math.round((subtotal + taxes) * 100) / 100,
-    });
+    res.json(result.quote);
   } catch (error) {
     console.error('Checkout quote exception:', error);
     res.status(500).json({ error: 'Could not build your checkout summary.' });
@@ -120,7 +187,6 @@ export const postGuestDetails = async (req: Request, res: Response): Promise<voi
     const errors = validateGuestDetails(req.body ?? {});
 
     if (Object.keys(errors).length > 0) {
-      // 2a: return the page's error message set; client resumes from step 1
       res.status(422).json({ valid: false, errors });
       return;
     }
@@ -132,48 +198,18 @@ export const postGuestDetails = async (req: Request, res: Response): Promise<voi
   }
 };
 
-/** Sequence steps 4-6 + alternative flow 6a-9a */
+/**
+ * Sequence steps 4-5. Creates the PENDING booking, then a Stripe-hosted
+ * checkout session priced from server state, and returns where to redirect.
+ */
 export const postPayment = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { amount, paymentMethod } = req.body ?? {};
-
-    if (typeof amount !== 'number' || amount <= 0) {
-      res.status(400).json({ success: false, errorMessage: 'A valid amount is required.' });
+    if (!isConfigured()) {
+      res.status(503).json({ error: 'Payments are not available right now.' });
       return;
     }
 
-    const method = paymentMethod as PaymentMethodInput | undefined;
-    if (!method?.cardNumber || !method.expiry || !method.cvc || !method.nameOnCard) {
-      res.status(422).json({
-        success: false,
-        errorMessage: 'Complete card details are required.',
-      });
-      return;
-    }
-
-    const result = await processPayment(amount, CURRENCY, method);
-
-    if (!result.success) {
-      // 6a-8a: notify the user, let them supply an alternate method
-      res.status(402).json({
-        success: false,
-        errorMessage: result.errorMessage,
-        declineCode: result.declineCode,
-      });
-      return;
-    }
-
-    res.json({ success: true, transactionId: result.transactionId });
-  } catch (error) {
-    console.error('Payment processing exception:', error);
-    res.status(500).json({ success: false, errorMessage: 'Payment could not be processed.' });
-  }
-};
-
-/** Sequence steps 7-10: persist the booking, then send confirmation */
-export const postConfirmBooking = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { guestDetails, stay, transactionId } = req.body ?? {};
+    const { guestDetails, stay } = req.body ?? {};
 
     const errors = validateGuestDetails(guestDetails ?? {});
     if (Object.keys(errors).length > 0) {
@@ -181,54 +217,120 @@ export const postConfirmBooking = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    if (!transactionId) {
-      res.status(400).json({ error: 'A completed payment is required before confirming.' });
+    const result = buildQuote(stay);
+    if ('error' in result) {
+      res.status(400).json({ error: result.error });
       return;
     }
-
-    if (!stay?.checkIn || !stay?.checkOut || typeof stay?.totalPrice !== 'number') {
-      res.status(400).json({ error: 'Stay details are incomplete.' });
-      return;
-    }
+    const { quote } = result;
 
     const booking: BookingData = {
       guestName: guestDetails.guestName.trim(),
       guestEmail: guestDetails.guestEmail.trim(),
       contactNumber: guestDetails.contactNumber.trim(),
-      roomId: stay.roomId ?? 'deluxe-king',
-      hotelId: stay.hotelId ?? 'demo-hotel',
-      checkIn: stay.checkIn,
-      checkOut: stay.checkOut,
-      totalPrice: stay.totalPrice,
-      paymentStatus: 'PAID',
+      roomId: quote.roomId,
+      hotelId: quote.hotelId,
+      checkIn: quote.checkIn,
+      checkOut: quote.checkOut,
+      totalPrice: quote.totalPrice,
+      currency: quote.currency,
+      paymentStatus: 'PENDING',
       bookingReference: generateBookingReference(),
     };
 
-    // Step 7-8: insertOne(bookingData) → confirm write success
+    // Written before payment so a successful charge can never be orphaned.
     const record = await insertOne(booking);
 
-    // Step 9-10: sendConfirmation(email, bookingDetails) → delivery confirmed.
-    // Awaited so the response can report delivery, but a bounce never fails the
-    // booking — the record is already committed.
-    const receipt = await sendConfirmation(record.guestEmail, record);
+    const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
+    const session = await createCheckoutSession({
+      bookingReference: record.bookingReference,
+      amount: quote.totalPrice,
+      currency: quote.currency,
+      guestEmail: record.guestEmail,
+      description: `${quote.nights} night${quote.nights > 1 ? 's' : ''} · ${quote.roomId}`,
+      successUrl: `${appUrl}/confirmation?ref=${record.bookingReference}&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${appUrl}/checkout?cancelled=1`,
+    });
 
-    res.status(201).json({
-      booking: record,
-      emailDelivered: receipt.delivered,
+    await attachSession(record.bookingReference, session.sessionId);
+
+    res.json({
+      bookingReference: record.bookingReference,
+      redirectUrl: session.redirectUrl,
     });
   } catch (error) {
-    console.error('Booking confirmation exception:', error);
-    res.status(500).json({ error: 'Your payment succeeded but the booking could not be saved. Please contact support.' });
+    const safe = toSafeError(error);
+    res.status(502).json({ error: safe.message, correlationId: safe.correlationId });
   }
 };
 
-/** Supports the confirmation page on reload, and UC5 later */
+/**
+ * Sequence steps 6-10. Called when the browser returns from Stripe. Payment
+ * state is read from Stripe, never from the request. Idempotent: markPaid
+ * returns null if the webhook already flipped this booking.
+ */
+export const postConfirmBooking = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { sessionId, bookingReference } = req.body ?? {};
+
+    if (typeof sessionId !== 'string' || typeof bookingReference !== 'string') {
+      res.status(400).json({ error: 'sessionId and bookingReference are required.' });
+      return;
+    }
+
+    const payment = await verifySession(sessionId);
+
+    if (payment.bookingReference !== bookingReference) {
+      res.status(400).json({ error: 'That payment does not belong to this booking.' });
+      return;
+    }
+
+    if (!payment.paid) {
+      res.status(402).json({ error: 'Payment has not completed.' });
+      return;
+    }
+
+    const booking = await findOne({ bookingReference });
+    if (!booking) {
+      res.status(404).json({ error: 'Booking not found.' });
+      return;
+    }
+
+    // Cross-check the charged amount against what we priced.
+    if (payment.amountTotal !== null) {
+      const expected = Math.round(booking.totalPrice * 100);
+      if (payment.amountTotal !== expected) {
+        console.error(
+          `Amount mismatch on ${bookingReference}: charged ${payment.amountTotal}, expected ${expected}`
+        );
+        res.status(409).json({ error: 'Payment amount did not match the booking.' });
+        return;
+      }
+    }
+
+    const updated = await markPaid(bookingReference, payment.paymentIntentId ?? 'unknown');
+
+    // Non-null only on the first transition, so the email sends exactly once.
+    if (updated) {
+      const receipt = await sendConfirmation(updated.guestEmail, updated);
+      res.status(200).json({ booking: updated, emailDelivered: receipt.delivered });
+      return;
+    }
+
+    res.status(200).json({ booking: { ...booking, paymentStatus: 'PAID' }, emailDelivered: true });
+  } catch (error) {
+    const safe = toSafeError(error);
+    res.status(502).json({ error: safe.message, correlationId: safe.correlationId });
+  }
+};
+
+/** Supports the confirmation page, and UC5 later. */
 export const getBookingByReference = async (req: Request, res: Response): Promise<void> => {
   try {
     const reference = req.params.reference;
 
-    if (typeof reference !== 'string' || !reference.trim()) {
-      res.status(400).json({ error: 'A booking reference is required.' });
+    if (typeof reference !== 'string' || !/^TRX-[A-Z0-9]{6,16}$/.test(reference)) {
+      res.status(400).json({ error: 'A valid booking reference is required.' });
       return;
     }
 

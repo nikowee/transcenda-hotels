@@ -4,13 +4,17 @@ import { randomBytes } from 'crypto';
  * BookingModel — the «Database Model» box from the UC4 class diagram.
  *
  * The diagram draws a Mongo-flavoured surface (`insertOne` / `findOne`) but this
- * project runs Supabase/Postgres, so the two method names are kept as the public
- * API while the bodies speak SQL through supabase-js. Table DDL lives alongside
- * this file in ../data/bookings.sql
+ * project runs Supabase/Postgres, so those names are kept as the public API
+ * while the bodies speak SQL through supabase-js. Table DDL lives alongside this
+ * file in ../data/bookings.sql
  *
- * Attributes mirror the diagram exactly. Postgres columns are snake_case, so
- * toRow/fromRow handle the boundary rather than leaking naming drift upward.
+ * Bookings are written PENDING before the customer is sent to pay, then flipped
+ * to PAID by the Stripe webhook. A charge can therefore never succeed against a
+ * booking that does not exist.
  */
+
+export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED';
+
 export interface BookingData {
   guestName: string;
   guestEmail: string;
@@ -20,13 +24,16 @@ export interface BookingData {
   checkIn: string;
   checkOut: string;
   totalPrice: number;
-  paymentStatus: string;
+  currency: string;
+  paymentStatus: PaymentStatus;
   bookingReference: string;
 }
 
 export interface BookingRecord extends BookingData {
   id: string;
   createdAt: string;
+  stripeSessionId: string | null;
+  paymentIntentId: string | null;
 }
 
 type BookingRow = {
@@ -39,22 +46,23 @@ type BookingRow = {
   check_in: string;
   check_out: string;
   total_price: number;
-  payment_status: string;
+  currency: string;
+  payment_status: PaymentStatus;
   booking_reference: string;
+  stripe_session_id: string | null;
+  payment_intent_id: string | null;
   created_at: string;
 };
 
 const TABLE = 'bookings';
 
 /**
- * Supabase is optional at boot so the checkout flow stays demoable without
- * credentials. When it is absent every write lands in this Map instead, which
- * keeps the UC4 sequence (steps 7-8) observable end to end.
+ * Supabase is optional at boot so the flow stays demoable without credentials.
+ * Not suitable for more than one process, and cleared on every restart.
  */
 const memoryStore = new Map<string, BookingRecord>();
 
 export const isSupabaseConfigured = (): boolean => {
-  // Explicit opt-out, for running the flow against placeholder credentials.
   if (process.env.BOOKINGS_STORAGE === 'memory') return false;
   return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY);
 };
@@ -77,6 +85,7 @@ const toRow = (data: BookingData) => ({
   check_in: data.checkIn,
   check_out: data.checkOut,
   total_price: data.totalPrice,
+  currency: data.currency,
   payment_status: data.paymentStatus,
   booking_reference: data.bookingReference,
 });
@@ -91,18 +100,18 @@ const fromRow = (row: BookingRow): BookingRecord => ({
   checkIn: row.check_in,
   checkOut: row.check_out,
   totalPrice: Number(row.total_price),
+  currency: row.currency,
   paymentStatus: row.payment_status,
   bookingReference: row.booking_reference,
+  stripeSessionId: row.stripe_session_id,
+  paymentIntentId: row.payment_intent_id,
   createdAt: row.created_at,
 });
 
-/**
- * Booking references are the customer-facing handle (TRX-9F2K7A), matching the
- * format the Manage Booking prototype already expects.
- */
+/** Customer-facing handle (TRX-9F2K7A), matching what Manage Booking expects. */
 export const generateBookingReference = (): string => {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1
-  const bytes = randomBytes(6);
+  const bytes = randomBytes(10);
   let suffix = '';
   for (const byte of bytes) {
     suffix += alphabet[byte % alphabet.length];
@@ -110,13 +119,15 @@ export const generateBookingReference = (): string => {
   return `TRX-${suffix}`;
 };
 
-/** Sequence diagram step 7: insertOne(bookingData) */
+/** Sequence step 7: insertOne(bookingData) — always PENDING at this point. */
 export const insertOne = async (data: BookingData): Promise<BookingRecord> => {
   if (!isSupabaseConfigured()) {
     const record: BookingRecord = {
       ...data,
       id: randomBytes(16).toString('hex'),
       createdAt: new Date().toISOString(),
+      stripeSessionId: null,
+      paymentIntentId: null,
     };
     memoryStore.set(record.bookingReference, record);
     return record;
@@ -133,7 +144,6 @@ export const insertOne = async (data: BookingData): Promise<BookingRecord> => {
   return fromRow(row as BookingRow);
 };
 
-/** findOne({ bookingReference }) — used by the confirmation page and, later, UC5 */
 export const findOne = async (
   query: { bookingReference: string }
 ): Promise<BookingRecord | null> => {
@@ -150,4 +160,73 @@ export const findOne = async (
 
   if (error) throw new Error(`Booking lookup failed: ${error.message}`);
   return row ? fromRow(row as BookingRow) : null;
+};
+
+/** Records the Stripe session against the pending booking, before redirecting. */
+export const attachSession = async (
+  bookingReference: string,
+  stripeSessionId: string
+): Promise<void> => {
+  if (!isSupabaseConfigured()) {
+    const record = memoryStore.get(bookingReference);
+    if (record) memoryStore.set(bookingReference, { ...record, stripeSessionId });
+    return;
+  }
+
+  const supabase = await getClient();
+  const { error } = await supabase
+    .from(TABLE)
+    .update({ stripe_session_id: stripeSessionId })
+    .eq('booking_reference', bookingReference);
+
+  if (error) throw new Error(`Session attach failed: ${error.message}`);
+};
+
+/**
+ * Idempotent PENDING → PAID transition. Returns the record only on the first
+ * successful flip, so callers can send the confirmation email exactly once even
+ * if Stripe redelivers the webhook.
+ */
+export const markPaid = async (
+  bookingReference: string,
+  paymentIntentId: string
+): Promise<BookingRecord | null> => {
+  if (!isSupabaseConfigured()) {
+    const record = memoryStore.get(bookingReference);
+    if (!record || record.paymentStatus === 'PAID') return null;
+    const updated: BookingRecord = { ...record, paymentStatus: 'PAID', paymentIntentId };
+    memoryStore.set(bookingReference, updated);
+    return updated;
+  }
+
+  const supabase = await getClient();
+  const { data: row, error } = await supabase
+    .from(TABLE)
+    .update({ payment_status: 'PAID', payment_intent_id: paymentIntentId })
+    .eq('booking_reference', bookingReference)
+    .eq('payment_status', 'PENDING') // guard makes redelivery a no-op
+    .select()
+    .maybeSingle();
+
+  if (error) throw new Error(`Payment status update failed: ${error.message}`);
+  return row ? fromRow(row as BookingRow) : null;
+};
+
+export const markFailed = async (bookingReference: string): Promise<void> => {
+  if (!isSupabaseConfigured()) {
+    const record = memoryStore.get(bookingReference);
+    if (record && record.paymentStatus === 'PENDING') {
+      memoryStore.set(bookingReference, { ...record, paymentStatus: 'FAILED' });
+    }
+    return;
+  }
+
+  const supabase = await getClient();
+  const { error } = await supabase
+    .from(TABLE)
+    .update({ payment_status: 'FAILED' })
+    .eq('booking_reference', bookingReference)
+    .eq('payment_status', 'PENDING');
+
+  if (error) throw new Error(`Payment status update failed: ${error.message}`);
 };

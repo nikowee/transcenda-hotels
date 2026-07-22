@@ -30,7 +30,7 @@ export const sendConfirmation = async (
         `   to:        ${email}`,
         `   reference: ${bookingDetails.bookingReference}`,
         `   stay:      ${formatStayDates(bookingDetails.checkIn, bookingDetails.checkOut)}`,
-        `   total:     ${bookingDetails.totalPrice.toFixed(2)}`,
+        `   total:     ${bookingDetails.currency} ${bookingDetails.totalPrice.toFixed(2)}`,
       ].join('\n')
     );
 

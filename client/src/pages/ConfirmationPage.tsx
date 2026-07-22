@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
-import { Link, useLocation, useSearchParams } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router';
 import axios from 'axios';
 import {
   AlertCircle,
   BedDouble,
   Calendar,
   CheckCircle2,
+  Clock,
   Loader2,
   Mail,
   MapPin,
@@ -17,56 +18,95 @@ import type { BookingRecord } from '../types/booking';
 const API_URL = import.meta.env.VITE_API_URL;
 
 /**
- * ConfirmationPage — sequence diagram step 11, and the "Display Booking
- * Confirmation" use case. Replaces confirmation.ejs.
+ * ConfirmationPage — sequence step 11, and the "Display Booking Confirmation"
+ * use case. Replaces confirmation.ejs.
  *
- * The booking arrives via router state on the happy path; a page reload falls
- * back to GET /api/bookings/:reference so the confirmation stays shareable.
+ * Reached by redirect back from Stripe, so router state does not survive the
+ * trip and everything is re-fetched. Payment status is only ever read from the
+ * server, which in turn reads it from Stripe — nothing here decides whether a
+ * booking is paid.
+ *
+ * If the webhook has not landed yet the booking is briefly PENDING, so this
+ * polls a few times before settling.
  */
 
-interface ConfirmationState {
-  booking?: BookingRecord;
-  emailDelivered?: boolean;
-}
+const POLL_INTERVAL_MS = 2000;
+const MAX_POLLS = 5;
 
-const formatMoney = (amount: number) =>
-  `SGD ${amount.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const formatMoney = (amount: number, currency: string) =>
+  `${currency} ${amount.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function ConfirmationPage() {
-  const location = useLocation();
   const [searchParams] = useSearchParams();
-  const state = (location.state ?? {}) as ConfirmationState;
-
-  const [booking, setBooking] = useState<BookingRecord | null>(state.booking ?? null);
+  const [booking, setBooking] = useState<BookingRecord | null>(null);
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(!state.booking);
+  const [isLoading, setIsLoading] = useState(true);
 
   const reference = searchParams.get('ref');
+  const sessionId = searchParams.get('session_id');
+  const hasRun = useRef(false);
 
   useEffect(() => {
-    if (booking || !reference) {
-      setIsLoading(false);
-      return;
-    }
+    // StrictMode double-mounts in dev; confirming twice is harmless server-side
+    // but there is no reason to do it.
+    if (hasRun.current) return;
+    hasRun.current = true;
 
     let cancelled = false;
 
-    const loadBooking = async () => {
-      try {
-        const response = await axios.get<BookingRecord>(`${API_URL}/api/bookings/${reference}`);
-        if (!cancelled) setBooking(response.data);
-      } catch {
-        if (!cancelled) setError('We could not find that booking reference.');
-      } finally {
-        if (!cancelled) setIsLoading(false);
+    const finalise = async () => {
+      if (!reference) {
+        setError('No booking reference was provided.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Sequence steps 6-10: verify the completed session server-side. The
+      // webhook does the same independently, whichever arrives first wins.
+      if (sessionId) {
+        try {
+          await axios.post(`${API_URL}/api/bookings/confirm`, {
+            sessionId,
+            bookingReference: reference,
+          });
+        } catch {
+          // Non-fatal: the webhook is the authoritative path. Fall through and
+          // read whatever state the booking is actually in.
+        }
+      }
+
+      for (let attempt = 0; attempt < MAX_POLLS; attempt += 1) {
+        if (cancelled) return;
+
+        try {
+          const response = await axios.get<BookingRecord>(
+            `${API_URL}/api/bookings/${reference}`
+          );
+          if (cancelled) return;
+
+          setBooking(response.data);
+          setIsLoading(false);
+
+          if (response.data.paymentStatus !== 'PENDING') return;
+        } catch {
+          if (cancelled) return;
+          setError('We could not find that booking reference.');
+          setIsLoading(false);
+          return;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
       }
     };
 
-    loadBooking();
+    finalise();
     return () => {
       cancelled = true;
     };
-  }, [booking, reference]);
+  }, [reference, sessionId]);
+
+  const isPending = booking?.paymentStatus === 'PENDING';
+  const isFailed = booking?.paymentStatus === 'FAILED';
 
   return (
     <div className="relative min-h-screen w-full bg-slate-900 px-4 pt-24 pb-16 sm:px-6 lg:px-8">
@@ -82,7 +122,7 @@ export default function ConfirmationPage() {
         {isLoading && (
           <div className="flex items-center justify-center gap-3 py-24 text-slate-300">
             <Loader2 className="h-6 w-6 animate-spin" />
-            Retrieving your booking…
+            Confirming your booking…
           </div>
         )}
 
@@ -103,24 +143,54 @@ export default function ConfirmationPage() {
         {!isLoading && booking && (
           <>
             <header className="mb-8 text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/15 ring-1 ring-blue-400/30">
-                <CheckCircle2 className="h-9 w-9 text-blue-400" />
+              <div
+                className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ring-1 ${
+                  isFailed
+                    ? 'bg-red-500/15 ring-red-400/30'
+                    : isPending
+                      ? 'bg-amber-500/15 ring-amber-400/30'
+                      : 'bg-blue-500/15 ring-blue-400/30'
+                }`}
+              >
+                {isFailed ? (
+                  <AlertCircle className="h-9 w-9 text-red-400" />
+                ) : isPending ? (
+                  <Clock className="h-9 w-9 text-amber-400" />
+                ) : (
+                  <CheckCircle2 className="h-9 w-9 text-blue-400" />
+                )}
               </div>
+
               <h1 className="mt-5 text-4xl font-extrabold tracking-tighter text-white md:text-5xl">
-                You're all{' '}
-                <span className="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
-                  booked.
-                </span>
+                {isFailed ? (
+                  <>Payment didn't go through.</>
+                ) : isPending ? (
+                  <>Confirming your payment…</>
+                ) : (
+                  <>
+                    You're all{' '}
+                    <span className="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
+                      booked.
+                    </span>
+                  </>
+                )}
               </h1>
+
               <p className="mt-3 text-slate-300">
-                A confirmation has been sent to{' '}
-                <span className="font-semibold text-white">{booking.guestEmail}</span>
+                {isFailed ? (
+                  <>Nothing was charged. You can try booking again at any time.</>
+                ) : isPending ? (
+                  <>
+                    This usually takes a few seconds. Your reference is safe to keep — refresh this
+                    page if it doesn't update.
+                  </>
+                ) : (
+                  <>
+                    A confirmation has been sent to{' '}
+                    <span className="font-semibold text-white">{booking.guestEmail}</span>
+                  </>
+                )}
               </p>
-              {state.emailDelivered === false && (
-                <p className="mt-2 text-sm text-amber-300">
-                  We couldn't deliver the email just now — your booking is confirmed regardless.
-                </p>
-              )}
             </header>
 
             <div className="rounded-2xl bg-white p-6 shadow-xl md:p-8">
@@ -133,7 +203,15 @@ export default function ConfirmationPage() {
                     {booking.bookingReference}
                   </p>
                 </div>
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200">
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${
+                    isFailed
+                      ? 'bg-red-50 text-red-700 ring-red-200'
+                      : isPending
+                        ? 'bg-amber-50 text-amber-700 ring-amber-200'
+                        : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                  }`}
+                >
                   {booking.paymentStatus}
                 </span>
               </div>
@@ -177,9 +255,11 @@ export default function ConfirmationPage() {
               </div>
 
               <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-5">
-                <span className="text-sm font-semibold text-slate-500">Total paid</span>
+                <span className="text-sm font-semibold text-slate-500">
+                  {isPending ? 'Total' : isFailed ? 'Amount' : 'Total paid'}
+                </span>
                 <span className="text-2xl font-extrabold text-slate-900">
-                  {formatMoney(booking.totalPrice)}
+                  {formatMoney(booking.totalPrice, booking.currency)}
                 </span>
               </div>
             </div>
@@ -189,7 +269,7 @@ export default function ConfirmationPage() {
                 to="/"
                 className="inline-flex h-12 items-center rounded-xl bg-white px-8 font-bold text-slate-900 shadow-sm transition-colors hover:bg-slate-100"
               >
-                Book another stay
+                {isFailed ? 'Try again' : 'Book another stay'}
               </Link>
             </div>
           </>

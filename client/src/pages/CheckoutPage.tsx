@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import axios from 'axios';
 import {
   AlertCircle,
   ArrowLeft,
   BedDouble,
   Calendar,
-  CreditCard,
+  ExternalLink,
   Loader2,
-  Lock,
   Mail,
   MapPin,
   Phone,
@@ -16,12 +15,7 @@ import {
   User,
   Users,
 } from 'lucide-react';
-import type {
-  CheckoutQuote,
-  GuestDetails,
-  GuestFieldErrors,
-  PaymentMethodInput,
-} from '../types/booking';
+import type { CheckoutQuote, GuestDetails, GuestFieldErrors } from '../types/booking';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -30,49 +24,31 @@ const API_URL = import.meta.env.VITE_API_URL;
  *
  * Replaces the checkout.ejs template from the class diagram: the diagram was
  * drawn against a server-rendered EJS monolith, while this codebase is a
- * decoupled SPA, so `render(page, data, errorMessage)` becomes local state and
- * the server returns JSON instead of HTML.
+ * decoupled SPA, so `render(page, data, errorMessage)` becomes local state.
  *
- * Sequence diagram steps map to:
- *   1-2  mount + GET /api/bookings/checkout      → priced quote
- *   3    submit guest details                    → POST /api/bookings/guest-details
- *   1a-3a invalid details                        → fieldErrors, stay on step 1
- *   4-6  submit payment                          → POST /api/bookings/payment
- *   6a-9a payment failure                        → paymentError, stay on step 2
- *   7-10 persist + email                         → POST /api/bookings/confirm
- *   11   confirmation                            → navigate to /confirmation
+ * This page never collects card details. Payment happens on a Stripe-hosted
+ * checkout page, so no PAN, expiry or CVC is ever entered into, stored by, or
+ * transmitted through our client or server.
+ *
+ * Sequence steps map to:
+ *   1-2  mount + GET /api/bookings/checkout   → priced quote (display only)
+ *   3    submit guest details                 → POST /api/bookings/guest-details
+ *   1a-3a invalid details                     → fieldErrors, stay on step 1
+ *   4-5  confirm and pay                      → POST /api/bookings/payment
+ *                                             → redirect to Stripe
+ *   6-11 handled on return in ConfirmationPage, and by the webhook
  */
 
-type Step = 'guest' | 'payment';
+type Step = 'guest' | 'review';
 
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 
 const emptyGuest: GuestDetails = { guestName: '', guestEmail: '', contactNumber: '' };
-const emptyPayment: PaymentMethodInput = {
-  nameOnCard: '',
-  cardNumber: '',
-  expiry: '',
-  cvc: '',
-};
 
 const formatMoney = (amount: number, currency: string) =>
   `${currency} ${amount.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-/** 4242 4242 4242 4242 as you type */
-const formatCardNumber = (value: string) =>
-  value
-    .replace(/\D/g, '')
-    .slice(0, 19)
-    .replace(/(.{4})/g, '$1 ')
-    .trim();
-
-const formatExpiry = (value: string) => {
-  const digits = value.replace(/\D/g, '').slice(0, 4);
-  return digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
-};
-
 export default function CheckoutPage() {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
   const [step, setStep] = useState<Step>('guest');
@@ -82,10 +58,10 @@ export default function CheckoutPage() {
   const [guest, setGuest] = useState<GuestDetails>(emptyGuest);
   const [fieldErrors, setFieldErrors] = useState<GuestFieldErrors>({});
 
-  const [payment, setPayment] = useState<PaymentMethodInput>(emptyPayment);
-  const [paymentError, setPaymentError] = useState('');
-
+  const [payError, setPayError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const wasCancelled = searchParams.get('cancelled') === '1';
 
   // Falls back to a near-term stay so /checkout is reachable directly, before
   // the results page is wired up to pass real room selections through.
@@ -117,10 +93,12 @@ export default function CheckoutPage() {
           setQuote(response.data);
           setQuoteError('');
         }
-      } catch {
-        if (!cancelled) {
-          setQuoteError('We could not load your booking summary. Please try again.');
-        }
+      } catch (error) {
+        if (cancelled) return;
+        const message = axios.isAxiosError(error)
+          ? (error.response?.data?.error ?? 'We could not load your booking summary.')
+          : 'We could not load your booking summary.';
+        setQuoteError(message);
       }
     };
 
@@ -138,10 +116,9 @@ export default function CheckoutPage() {
 
     try {
       await axios.post(`${API_URL}/api/bookings/guest-details`, guest);
-      setStep('payment');
+      setStep('review');
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 422) {
-        // 2a: re-render this step carrying the error messages
         setFieldErrors(error.response.data.errors ?? {});
       } else {
         setFieldErrors({ guestName: 'Something went wrong. Please try again.' });
@@ -151,54 +128,36 @@ export default function CheckoutPage() {
     }
   };
 
-  // Sequence steps 4-10 (+ alternative flow 6a-9a)
-  const handlePaymentSubmit: React.SubmitEventHandler<HTMLFormElement> = async (event) => {
-    event.preventDefault();
+  /**
+   * Sequence steps 4-5. The server prices the stay itself and returns a
+   * Stripe-hosted URL; nothing about the amount is sent from here.
+   */
+  const handlePay = async () => {
     if (!quote) return;
 
     setIsSubmitting(true);
-    setPaymentError('');
+    setPayError('');
 
     try {
-      // Steps 4-6
-      const paymentResponse = await axios.post(`${API_URL}/api/bookings/payment`, {
-        amount: quote.totalPrice,
-        paymentMethod: payment,
-      });
-
-      // Steps 7-10
-      const confirmResponse = await axios.post(`${API_URL}/api/bookings/confirm`, {
+      const response = await axios.post(`${API_URL}/api/bookings/payment`, {
         guestDetails: guest,
         stay: {
           hotelId: quote.hotelId,
           roomId: quote.roomId,
           checkIn: quote.checkIn,
           checkOut: quote.checkOut,
-          totalPrice: quote.totalPrice,
+          guests: quote.guests,
+          rooms: quote.rooms,
         },
-        transactionId: paymentResponse.data.transactionId,
       });
 
-      // Step 11
-      navigate(`/confirmation?ref=${confirmResponse.data.booking.bookingReference}`, {
-        state: {
-          booking: confirmResponse.data.booking,
-          emailDelivered: confirmResponse.data.emailDelivered,
-        },
-      });
+      // Leaves our origin entirely — card entry happens on Stripe.
+      window.location.assign(response.data.redirectUrl);
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response) {
-        // 7a-8a: tell them it failed and invite an alternate method (9a: resume step 4)
-        setPaymentError(
-          error.response.data.errorMessage ??
-            error.response.data.error ??
-            'Payment could not be processed. Please try another method.'
-        );
-        setPayment((current) => ({ ...current, cardNumber: '', cvc: '' }));
-      } else {
-        setPaymentError('We could not reach the payment gateway. Please try again.');
-      }
-    } finally {
+      const message = axios.isAxiosError(error)
+        ? (error.response?.data?.error ?? 'We could not start your payment.')
+        : 'We could not reach the payment service.';
+      setPayError(message);
       setIsSubmitting(false);
     }
   };
@@ -231,6 +190,13 @@ export default function CheckoutPage() {
           <StepIndicator step={step} />
         </header>
 
+        {wasCancelled && (
+          <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <p>You cancelled the payment. Nothing was charged — pick up where you left off.</p>
+          </div>
+        )}
+
         {quoteError && (
           <div className="mb-6 flex items-start gap-3 rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">
             <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
@@ -249,14 +215,14 @@ export default function CheckoutPage() {
                 onSubmit={handleGuestSubmit}
               />
             ) : (
-              <PaymentForm
-                payment={payment}
-                error={paymentError}
+              <ReviewAndPay
+                guest={guest}
+                error={payError}
                 isSubmitting={isSubmitting}
                 total={quote ? formatMoney(quote.totalPrice, quote.currency) : ''}
-                onChange={setPayment}
+                canPay={Boolean(quote)}
                 onBack={() => setStep('guest')}
-                onSubmit={handlePaymentSubmit}
+                onPay={handlePay}
               />
             )}
           </main>
@@ -271,7 +237,7 @@ export default function CheckoutPage() {
 function StepIndicator({ step }: { step: Step }) {
   const steps: Array<{ id: Step | 'done'; label: string }> = [
     { id: 'guest', label: 'Guest details' },
-    { id: 'payment', label: 'Payment' },
+    { id: 'review', label: 'Review & pay' },
     { id: 'done', label: 'Confirmation' },
   ];
   const activeIndex = step === 'guest' ? 0 : 1;
@@ -401,36 +367,26 @@ function GuestDetailsForm({ guest, errors, isSubmitting, onChange, onSubmit }: G
   );
 }
 
-interface PaymentFormProps {
-  payment: PaymentMethodInput;
+interface ReviewProps {
+  guest: GuestDetails;
   error: string;
   isSubmitting: boolean;
   total: string;
-  onChange: (payment: PaymentMethodInput) => void;
+  canPay: boolean;
   onBack: () => void;
-  onSubmit: React.SubmitEventHandler<HTMLFormElement>;
+  onPay: () => void;
 }
 
-function PaymentForm({
-  payment,
-  error,
-  isSubmitting,
-  total,
-  onChange,
-  onBack,
-  onSubmit,
-}: PaymentFormProps) {
+function ReviewAndPay({ guest, error, isSubmitting, total, canPay, onBack, onPay }: ReviewProps) {
   return (
-    <form onSubmit={onSubmit} noValidate className="space-y-5">
+    <div className="space-y-5">
       <div>
-        <h2 className="text-xl font-bold text-slate-800">Payment details</h2>
-        <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
-          <Lock className="h-3.5 w-3.5" />
-          Encrypted in transit and processed by our payment gateway.
+        <h2 className="text-xl font-bold text-slate-800">Review and pay</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Check your details, then continue to our payment provider.
         </p>
       </div>
 
-      {/* Alternative flow 7a-8a */}
       {error && (
         <div
           role="alert"
@@ -438,60 +394,36 @@ function PaymentForm({
         >
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
           <div>
-            <p className="font-bold">Payment failed</p>
+            <p className="font-bold">We couldn't start your payment</p>
             <p className="mt-0.5">{error}</p>
-            <p className="mt-1 text-red-600">Please try a different card or payment method.</p>
           </div>
         </div>
       )}
 
-      <Field label="Name on card" icon={<User className="h-5 w-5 text-blue-600" />}>
-        <input
-          type="text"
-          className={inputClass}
-          placeholder="JANE TAN"
-          value={payment.nameOnCard}
-          onChange={(event) => onChange({ ...payment, nameOnCard: event.target.value })}
-        />
-      </Field>
+      <dl className="divide-y divide-slate-100 rounded-xl bg-slate-50 px-4">
+        <div className="flex items-center gap-3 py-3">
+          <User className="h-4 w-4 shrink-0 text-blue-600" />
+          <dt className="sr-only">Name</dt>
+          <dd className="text-sm text-slate-700">{guest.guestName}</dd>
+        </div>
+        <div className="flex items-center gap-3 py-3">
+          <Mail className="h-4 w-4 shrink-0 text-blue-600" />
+          <dt className="sr-only">Email</dt>
+          <dd className="text-sm text-slate-700">{guest.guestEmail}</dd>
+        </div>
+        <div className="flex items-center gap-3 py-3">
+          <Phone className="h-4 w-4 shrink-0 text-blue-600" />
+          <dt className="sr-only">Contact number</dt>
+          <dd className="text-sm text-slate-700">{guest.contactNumber}</dd>
+        </div>
+      </dl>
 
-      <Field label="Card number" icon={<CreditCard className="h-5 w-5 text-blue-600" />}>
-        <input
-          type="text"
-          inputMode="numeric"
-          className={inputClass}
-          placeholder="4242 4242 4242 4242"
-          value={payment.cardNumber}
-          onChange={(event) =>
-            onChange({ ...payment, cardNumber: formatCardNumber(event.target.value) })
-          }
-        />
-      </Field>
-
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Expiry" icon={<Calendar className="h-5 w-5 text-blue-600" />}>
-          <input
-            type="text"
-            inputMode="numeric"
-            className={inputClass}
-            placeholder="MM/YY"
-            value={payment.expiry}
-            onChange={(event) => onChange({ ...payment, expiry: formatExpiry(event.target.value) })}
-          />
-        </Field>
-
-        <Field label="CVC" icon={<ShieldCheck className="h-5 w-5 text-blue-600" />}>
-          <input
-            type="text"
-            inputMode="numeric"
-            className={inputClass}
-            placeholder="123"
-            value={payment.cvc}
-            onChange={(event) =>
-              onChange({ ...payment, cvc: event.target.value.replace(/\D/g, '').slice(0, 4) })
-            }
-          />
-        </Field>
+      <div className="flex items-start gap-2.5 rounded-xl bg-blue-50 p-4 text-sm text-blue-900">
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+        <p>
+          You'll enter your card on our payment provider's secure page. Transcenda never sees or
+          stores your card details.
+        </p>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row">
@@ -504,24 +436,25 @@ function PaymentForm({
           Back
         </button>
         <button
-          type="submit"
-          disabled={isSubmitting}
+          type="button"
+          onClick={onPay}
+          disabled={isSubmitting || !canPay}
           className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-8 font-bold text-white shadow-md shadow-blue-200 transition-colors hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 disabled:cursor-not-allowed disabled:bg-blue-400"
         >
           {isSubmitting ? (
             <>
               <Loader2 className="h-5 w-5 animate-spin" />
-              Processing…
+              Redirecting…
             </>
           ) : (
             <>
-              <Lock className="h-4 w-4" />
+              <ExternalLink className="h-4 w-4" />
               Pay {total}
             </>
           )}
         </button>
       </div>
-    </form>
+    </div>
   );
 }
 
