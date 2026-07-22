@@ -3,6 +3,13 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import {searchDestinations} from './controllers/destinationController';
+import {
+  getCheckout,
+  postGuestDetails,
+  postPayment,
+  postConfirmBooking,
+  getBookingByReference,
+} from './controllers/bookingController.js';
 import { supabaseAdmin } from './lib/supabaseClient';
 
 dotenv.config();
@@ -21,6 +28,13 @@ app.get('/api/health', (req, res) => {
 
 // Destination Search Endpoint
 app.get('/api/destinations/search', searchDestinations);
+
+// UC4 — Book & Make Payment
+app.get('/api/bookings/checkout', getCheckout);
+app.post('/api/bookings/guest-details', postGuestDetails);
+app.post('/api/bookings/payment', postPayment);
+app.post('/api/bookings/confirm', postConfirmBooking);
+app.get('/api/bookings/:reference', getBookingByReference);
 
 // Supabase test endpoint (for debugging)
 app.get('/api/supabase-test', async (req, res) => {
