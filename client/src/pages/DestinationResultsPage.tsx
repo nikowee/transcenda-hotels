@@ -39,7 +39,7 @@ export default function DestinationResultsPage() {
     }
 
     if (hotels === null) {
-        return <LoadingPage message="Finding your perfect stay..." />;
+        return <LoadingPage />;
     }
 
     return (
