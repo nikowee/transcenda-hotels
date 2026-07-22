@@ -103,7 +103,7 @@ export const searchHotels = async (params: SearchParams): Promise<MergedHotel[]>
 
     // Poll until completed is true or until max attempts have reached.
     const MAX_POLLS = 15;
-    const POLL_INTERVAL = 2000; // 2 seconds
+    const POLL_INTERVAL = 3000; // 3 seconds
     let attempts = 0;
     let allHotels: PriceItem[] = priceResponse.data.hotels || [];
 
@@ -138,6 +138,12 @@ export const searchHotels = async (params: SearchParams): Promise<MergedHotel[]>
         const detailResponse = await axios.get<HotelDetails>(`${BASE_URL}/hotels/${priceItem.id}`);
       
         const details = detailResponse.data;
+
+        // Skip entries where the API returned incomplete data
+        if (!details.id) {
+            console.warn(`Hotel ${priceItem.id} returned no id from details API, skipping`);
+            return null;
+        }
       
         return {
             id: details.id,
@@ -151,28 +157,20 @@ export const searchHotels = async (params: SearchParams): Promise<MergedHotel[]>
             longitude: details.longitude,
             description: details.description || '',
             amenities: details.amenities || [],
-            images: constructImageUrls(details.id, details.image_details),
+            images: details.image_details? constructImageUrls(details.image_details) : [],
       };
     } catch (error) {
-      console.warn(`Failed to fetch details for hotel ${priceItem.id}`);
-        return {
-            id: priceItem.id,
-            name: `Hotel ${priceItem.id}`,
-            price: priceItem.price,
-            searchRank: priceItem.searchRank,        
-            rating: 0,
-            categories: [], 
-            address: '',
-            latitude: 0,
-            longitude: 0,
-            description: '',
-            amenities: [],
-            images: [],
-        };
+        if (error instanceof Error) {
+            console.warn(`Failed to fetch details for hotel ${priceItem.id} with error: ${error.message}`);
+        }
+       
+        return null;
     }
   });
 
-  const mergedHotels = await Promise.all(hotelDetailsPromises);
+  const mergedHotels = (await Promise.all(hotelDetailsPromises)).filter(
+    (h): h is MergedHotel => h !== null
+  );
   
   // Sort by searchRank in ascending order (lower rank means higher priority I think)
   mergedHotels.sort((a, b) => a.searchRank - b.searchRank);
