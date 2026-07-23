@@ -46,8 +46,7 @@ export default function HotelDetailPage() {
             .catch(() => setError('Failed to load hotel details.'));
     }, [id]);
 
-    if (error) return <p className="text-center text-red-500 mt-12">{error}</p>;
-    if (!hotel) return <LoadingPage />;
+    if (!hotel) return <LoadingPage error={error} />;
 
     const galleryImages = Array.from(
         { length: hotel.image_details.count },
