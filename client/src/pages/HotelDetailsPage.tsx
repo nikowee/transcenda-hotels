@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 import axios from 'axios';
 import LoadingPage from './LoadingPage';
 import type { HotelDetail } from '../types/hotel';
 import { amenityLabels } from '../lib/amenityLabels';
+import RoomList from '../components/RoomList';
+import type { RoomOption } from '../types/room';
 
 const API_URL = import.meta.env.VITE_API_URL;
+
+
+
+
 
 export default function HotelDetailPage() {
     const { id } = useParams();
@@ -13,6 +19,24 @@ export default function HotelDetailPage() {
     const [error, setError] = useState<string | null>(null);
     const [activeImageIndex, setActiveImageIndex] = useState(0);
     const [visibleCount, setVisibleCount] = useState(12);
+
+    const [searchParams] = useSearchParams();
+    const destId = searchParams.get('dest');
+    const checkIn = searchParams.get('in');
+    const checkOut = searchParams.get('out');
+    const guests = searchParams.get('guests');
+
+    const [rooms, setRooms] = useState<RoomOption[] | null>(null);
+
+    useEffect(() => {
+        if (!id || !destId || !checkIn || !checkOut || !guests) return;
+
+        axios.get(`${API_URL}/api/hotels/${id}/price`, {
+            params: { destination_id: destId, checkin: checkIn, checkout: checkOut, guests },
+        })
+            .then((res) => setRooms(res.data.rooms))
+            .catch(() => setRooms([]));
+    }, [id, destId, checkIn, checkOut, guests]);
 
     useEffect(() => {
         if (!id) return;
@@ -81,6 +105,14 @@ export default function HotelDetailPage() {
                     </span>
                 ))}
             </div>
+
+            <h2 className="text-xl font-bold text-slate-700 mt-6">Available Rooms</h2>
+            {rooms === null ? (
+                <p className="text-slate-400">Loading rooms...</p>
+            ) : (
+                <RoomList rooms={rooms} />
+            )}
         </div>
+
     );
 }

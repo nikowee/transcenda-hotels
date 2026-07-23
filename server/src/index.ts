@@ -4,7 +4,8 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import {searchDestinations} from './controllers/destinationController';
 import { supabaseAdmin } from './lib/supabaseClient';
-import { getHotelById } from './controllers/hotelController';
+import { getHotelById, getHotelPrices, getRoomPrices } from './controllers/hotelController';
+
 
 dotenv.config();
 
@@ -25,6 +26,8 @@ app.get('/api/destinations/search', searchDestinations);
 
 // Hotel Details Endpoint
 app.get('/api/hotels/:id', getHotelById);
+app.get('/api/hotels/:destId/prices', getHotelPrices);
+app.get('/api/hotels/:id/price', getRoomPrices);
 
 // Supabase test endpoint (for debugging)
 app.get('/api/supabase-test', async (req, res) => {
