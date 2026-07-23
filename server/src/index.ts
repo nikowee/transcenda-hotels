@@ -37,6 +37,22 @@ app.get('/api/supabase-test', async (req, res) => {
   }
 });
 
+//Supabase delete user from users' table
+app.delete('/api/users/:uid', async (req, res) => {
+  try {
+    const userId = req.params.uid;
+    
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    
+    if (error) throw error;
+    
+    res.json({ success: true, message: `User ${userId} successfully deleted.` });
+  } catch (error: any) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Export for testing purposes
 export default app;
 
