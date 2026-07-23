@@ -27,6 +27,9 @@ interface PriceItem {
 }
 
 // Reponse structure for Ascendas /api/hotels/:id endpoint.
+// Note: amenities and categories are typed as 'any' because the API returns
+// them as objects (e.g. {"wifi":true,"pool":true}) rather than arrays.
+// We transform them into arrays in the helper functions below.
 interface HotelDetails {
     id: string;
     name: string;
@@ -35,8 +38,8 @@ interface HotelDetails {
     latitude: number;
     longitude: number;
     description: string;
-    amenities: string[];
-    categories: string[];
+    amenities: any;
+    categories: any;
     image_details: {
         prefix: string;
         suffix: string;
@@ -59,6 +62,22 @@ export interface MergedHotel {
     categories: string[];
     images: string[];
 }
+
+// ── Helper: Transform categories object to array of names ──
+const transformCategories = (categories: any): string[] => {
+    if (!categories) return [];
+    if (Array.isArray(categories)) return categories;
+    // If it's an object, extract the 'name' from each category
+    return Object.values(categories)
+        .filter((c: any): c is { name: string } => c && typeof c === 'object' && typeof c.name === 'string')
+        .map((c: { name: string }) => c.name);
+};
+
+// ── Helper: Strip HTML tags from description ──
+const cleanDescription = (description: string): string => {
+    if (!description) return '';
+    return description.replace(/<[^>]*>/g, '').trim();
+};
 
 // Helper function to simulate delay.
 // E.g. sleep(2000) to sleep for 2 seconds.
@@ -151,12 +170,11 @@ export const searchHotels = async (params: SearchParams): Promise<MergedHotel[]>
             price: priceItem.price,
             searchRank: priceItem.searchRank,
             rating: details.rating || 0,
-            categories: details.categories || [],
+            categories: transformCategories(details.categories),
             address: details.address,
             latitude: details.latitude,
             longitude: details.longitude,
-            description: details.description || '',
-            amenities: details.amenities || [],
+            description: cleanDescription(details.description || ''),
             images: details.image_details? constructImageUrls(details.image_details) : [],
       };
     } catch (error) {
