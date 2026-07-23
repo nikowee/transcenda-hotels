@@ -2,9 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
-import {searchDestinations} from './controllers/destinationController.ts';
-import { supabaseAdmin } from './lib/supabaseClient.ts';
-import { getHotelById } from './controllers/hotelroomController.ts';
+import {searchDestinations} from './controllers/destinationController';
+import { supabaseAdmin } from './lib/supabaseClient';
+import { getHotelById } from './controllers/hotelController';
 
 dotenv.config();
 
