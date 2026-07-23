@@ -7,7 +7,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path='results' element={
+        <Route path="/results" element={
           <div className="min-h-screen bg-slate-50 flex items-center justify-center">
             <div className="text-center space-y-4">
               <div className="animate-bounce">
