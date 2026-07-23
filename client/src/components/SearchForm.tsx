@@ -77,7 +77,6 @@ export default function SearchForm() {
                                 setIsLoading(true);
                                 try {
                                     const response = await axios.get(`${API_URL}/api/destinations/search?q=${text}`);
-                                    // TODO: Change to use Supabase API when ready for full list of destinations
                                     setSuggestions(response.data);
                                     setShowSuggestions(true);
                                 } catch (error) {
