@@ -1,5 +1,17 @@
 import { type Request, type Response } from 'express';
-import { searchHotels, type MergedHotel } from '../services/ascendaServices';
+import { searchHotels, type MergedHotel } from '../services/ascendaServices.ts';
+import { redis, CACHE_TTL } from '../lib/redisClient.ts';
+
+// Build a unique cache key according to the search parameters.
+const buildCacheKey = (params: {
+  destination_id: string;
+  checkin: string;
+  checkout: string;
+  guests: string;
+}): string => {
+  return `search:${params.destination_id}:${params.checkin}:${params.checkout}:${params.guests}`;
+};
+
 
 export const getHotelSearchResults = async (req: Request, res: Response) => {
   try {
@@ -39,18 +51,44 @@ export const getHotelSearchResults = async (req: Request, res: Response) => {
         console.log(`Multiple rooms: ${roomsCount} rooms with ${guestsPerRoom} guests each → "${guestsParam}"`);
     }
 
+    // Build cache key
+    const cacheKey = buildCacheKey({
+      destination_id: destination_id as string,
+      checkin: checkin as string,
+      checkout: checkout as string,
+      guests: guestsParam as string,
+    });
 
-    // Call service
-    console.log('Calling Ascenda service...');
-    const hotels: MergedHotel[] = await searchHotels({
+    // Check Redis cache for the cache key
+    console.log(`🔍 Checking cache for: ${cacheKey}`);
+    const cachedData = await redis.get(cacheKey);
+
+    let hotels: MergedHotel[];
+
+    if (cachedData){
+      // Cache hit
+      console.log(`✅ Cache HIT for: ${cacheKey}`);
+      hotels = JSON.parse(cachedData);
+    } else {
+      // Cache miss
+      console.log(`❌ Cache MISS for: ${cacheKey}. Fetching from Ascenda...`);
+
+      // Fetch from Ascenda API
+      hotels = await searchHotels({
         destination_id: destination_id as string,
         checkin: checkin as string,
         checkout: checkout as string,
         guests: guestsParam,
-    });
-    console.log(`Received ${hotels.length} hotels from service`);
+       });
+      console.log(`Received ${hotels.length} hotels from service`);
 
-
+      // Cache in Redis with TTL
+      console.log(`💾 Storing ${hotels.length} hotels in cache (TTL: ${CACHE_TTL}s)`);
+      await redis.set(cacheKey, JSON.stringify(hotels), {
+        expiration: {type: 'EX', value: CACHE_TTL}
+      });
+    };
+    
     // Paginate the results
     const pageNum = parseInt(page as string, 10);
     const sizeNum = parseInt(pageSize as string, 10);
@@ -66,7 +104,7 @@ export const getHotelSearchResults = async (req: Request, res: Response) => {
         page: pageNum,
         pageSize: sizeNum,
         totalPages: Math.ceil(hotels.length / sizeNum)
-    });
+  });
 
   } catch (error: any) {
     // Error handling
