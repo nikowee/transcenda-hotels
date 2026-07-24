@@ -13,4 +13,11 @@ export interface HotelDetail {
         suffix: string;
         count: number;
     };
+    // Guest rating (TrustYou). Optional — not every hotel returns it.
+    trustyou?: {
+        score?: {
+            overall: number | null;
+        };
+    };
+    number_reviews?: number;
 }
