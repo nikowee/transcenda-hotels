@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router';
 import axios from 'axios';
+import Navbar from '../components/Navbar';
 import HotelCard from '../components/hotels/HotelCard';
 import Pagination from '../components/hotels/Pagination';
 import FilterPanel from '../components/hotels/FilterPanel';
@@ -35,6 +36,7 @@ export default function ResultsPage() {
     const navigate = useNavigate();
 
     const destinationId = searchParams.get('dest');
+    const destinationName = searchParams.get('name') || destinationId;
     const checkin = searchParams.get('in');
     const checkout = searchParams.get('out');
     const guests = searchParams.get('guests') || '1';
@@ -67,7 +69,6 @@ export default function ResultsPage() {
                         rooms,
                         page: currentPage,
                         pageSize,
-                        // ── ✅ NEW: Send filters and sort to backend ──
                         starRating: appliedFilters.starRating,
                         minGuestRating: appliedFilters.minGuestRating,
                         minPrice: appliedFilters.minPrice,
@@ -115,14 +116,15 @@ export default function ResultsPage() {
     // ── Error state ──
     if (error) {
         return (
-            <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
+            <div className="min-h-screen bg-brand-surface flex items-center justify-center p-4">
+                <Navbar />
+                <div className="bg-brand-surface-soft rounded-xl shadow-lg p-8 max-w-md w-full text-center mt-20">
                     <div className="text-4xl mb-4">😅</div>
-                    <h2 className="text-xl font-semibold text-slate-800 mb-2">Oops!</h2>
-                    <p className="text-slate-600 mb-4">{error}</p>
+                    <h2 className="text-xl font-semibold text-brand-text-primary mb-2">Oops!</h2>
+                    <p className="text-brand-text-secondary mb-4">{error}</p>
                     <button
                         onClick={() => window.history.back()}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                        className="px-4 py-2 bg-brand-accent-dark text-white rounded-lg hover:bg-brand-accent transition"
                     >
                         Go Back
                     </button>
@@ -134,22 +136,23 @@ export default function ResultsPage() {
     // ── Loading state ──
     if (loading) {
         return (
-            <div className="min-h-screen bg-slate-50 p-6">
-                <div className="max-w-6xl mx-auto">
-                    <div className="bg-white rounded-xl shadow-sm p-6 mb-6 animate-pulse">
-                        <div className="h-6 bg-slate-200 rounded w-1/3 mb-2" />
-                        <div className="h-4 bg-slate-200 rounded w-1/2" />
+            <div className="min-h-screen bg-brand-surface">
+                <Navbar />
+                <div className="px-6 lg:px-10 pt-28">
+                    <div className="bg-brand-surface-soft rounded-xl p-6 mb-6 animate-pulse">
+                        <div className="h-6 bg-brand-surface-muted rounded w-1/3 mb-2" />
+                        <div className="h-4 bg-brand-surface-muted rounded w-1/2" />
                     </div>
                     <div className="space-y-4">
                         {[1, 2, 3].map((i) => (
-                            <div key={i} className="bg-white rounded-xl shadow-sm p-4 animate-pulse">
+                            <div key={i} className="bg-brand-surface-soft rounded-xl p-4 animate-pulse">
                                 <div className="flex gap-4">
-                                    <div className="w-48 h-32 bg-slate-200 rounded-lg" />
+                                    <div className="w-48 h-32 bg-brand-surface-muted rounded-lg" />
                                     <div className="flex-1 space-y-3">
-                                        <div className="h-5 bg-slate-200 rounded w-1/3" />
-                                        <div className="h-4 bg-slate-200 rounded w-1/4" />
-                                        <div className="h-4 bg-slate-200 rounded w-1/2" />
-                                        <div className="h-8 bg-slate-200 rounded w-24 mt-2" />
+                                        <div className="h-5 bg-brand-surface-muted rounded w-1/3" />
+                                        <div className="h-4 bg-brand-surface-muted rounded w-1/4" />
+                                        <div className="h-4 bg-brand-surface-muted rounded w-1/2" />
+                                        <div className="h-8 bg-brand-surface-muted rounded w-24 mt-2" />
                                     </div>
                                 </div>
                             </div>
@@ -162,73 +165,82 @@ export default function ResultsPage() {
 
     // ── Main render ──
     return (
-        <div className="min-h-screen bg-slate-50 p-6">
-            <div className="max-w-6xl mx-auto">
-                {/* ── Search Summary ── */}
-                <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-                    <h1 className="text-2xl font-bold text-slate-800">
-                        Hotels in {destinationId}
-                    </h1>
-                    <p className="text-slate-500">
-                        {total} hotels found · {guests} guest{parseInt(guests) > 1 ? 's' : ''} · {rooms} room{parseInt(rooms) > 1 ? 's' : ''}
-                    </p>
-                    <p className="text-sm text-slate-400">
-                        {checkin} → {checkout}
-                    </p>
-                </div>
+        <div className="min-h-screen bg-brand-surface">
+            {/* Background gradient – matches landing page */}
+            <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/40 via-brand-surface to-black pointer-events-none z-0" />
 
-                {/* ── Filter Panel + Results ── */}
-                <div className="flex flex-col lg:flex-row gap-6">
-                    {/* ── Filter Panel ── */}
-                    <div className="lg:w-64 flex-shrink-0">
-                        <FilterPanel
-                            filters={filters}
-                            onFilterChange={setFilters}
-                            onApply={handleApplyFilters}
-                            onClear={handleClearFilters}
-                        />
+            <div className="relative z-10">
+                {/* Shared Navbar */}
+                <Navbar />
+
+                {/* Page content – full width with generous side padding */}
+                <div className="px-6 lg:px-10 pt-28 pb-16">
+                    {/* ── Search Summary ── */}
+                    <div className="bg-brand-surface-soft/80 backdrop-blur-sm rounded-xl border border-brand-glass-border p-6 mb-6">
+                        <h1 className="text-2xl font-bold text-brand-text-primary">
+                            Hotels in {destinationName}
+                        </h1>
+                        <p className="text-brand-text-secondary mt-1">
+                            {total} hotels found · {guests} guest{parseInt(guests) > 1 ? 's' : ''} · {rooms} room{parseInt(rooms) > 1 ? 's' : ''}
+                        </p>
+                        <p className="text-sm text-brand-text-muted mt-0.5">
+                            {checkin} → {checkout}
+                        </p>
                     </div>
 
-                    {/* ── Results ── */}
-                    <div className="flex-1">
-                        <div className="flex justify-between items-center mb-4">
-                            <p className="text-sm text-slate-500">
-                                {hotels.length} hotels shown · {total} total
-                                {appliedFilters.starRating !== null && ` · ${appliedFilters.starRating}★`}
-                                {appliedFilters.minGuestRating !== null && ` · ${appliedFilters.minGuestRating}+ rating`}
-                            </p>
-                            <SortDropdown value={sortBy} onChange={setSortBy} />
+                    {/* ── Filter Panel + Results ── */}
+                    <div className="flex flex-col lg:flex-row gap-8">
+                        {/* ── Filter Panel ── */}
+                        <div className="lg:w-80 flex-shrink-0">
+                            <FilterPanel
+                                filters={filters}
+                                onFilterChange={setFilters}
+                                onApply={handleApplyFilters}
+                                onClear={handleClearFilters}
+                            />
                         </div>
 
-                        {hotels.length === 0 ? (
-                            <div className="bg-white rounded-xl shadow-sm p-12 text-center">
-                                <div className="text-4xl mb-4">🔍</div>
-                                <h2 className="text-xl font-semibold text-slate-700">No hotels match your filters</h2>
-                                <p className="text-slate-500">Try adjusting your filter criteria</p>
+                        {/* ── Results ── */}
+                        <div className="flex-1 min-w-0">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
+                                <p className="text-sm text-brand-text-muted">
+                                    {hotels.length} hotels shown · {total} total
+                                    {appliedFilters.starRating !== null && ` · ${appliedFilters.starRating}★`}
+                                    {appliedFilters.minGuestRating !== null && ` · ${appliedFilters.minGuestRating}+ rating`}
+                                </p>
+                                <SortDropdown value={sortBy} onChange={setSortBy} />
                             </div>
-                        ) : (
-                            <>
-                                <div className="space-y-4">
-                                    {hotels.map((hotel) => (
-                                        <HotelCard
-                                            key={hotel.id}
-                                            hotel={hotel}
-                                            onSelect={() => handleSelectHotel(hotel.id)}
-                                        />
-                                    ))}
-                                </div>
 
-                                {totalPages > 1 && (
-                                    <div className="mt-6 flex justify-center">
-                                        <Pagination
-                                            currentPage={currentPage}
-                                            totalPages={totalPages}
-                                            onPageChange={setCurrentPage}
-                                        />
+                            {hotels.length === 0 ? (
+                                <div className="bg-brand-surface-soft rounded-xl border border-brand-glass-border p-12 text-center">
+                                    <div className="text-4xl mb-4">🔍</div>
+                                    <h2 className="text-xl font-semibold text-brand-text-primary mb-1">No hotels match your filters</h2>
+                                    <p className="text-brand-text-muted">Try adjusting your filter criteria</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="space-y-5">
+                                        {hotels.map((hotel) => (
+                                            <HotelCard
+                                                key={hotel.id}
+                                                hotel={hotel}
+                                                onSelect={() => handleSelectHotel(hotel.id)}
+                                            />
+                                        ))}
                                     </div>
-                                )}
-                            </>
-                        )}
+
+                                    {totalPages > 1 && (
+                                        <div className="mt-8 flex justify-center">
+                                            <Pagination
+                                                currentPage={currentPage}
+                                                totalPages={totalPages}
+                                                onPageChange={setCurrentPage}
+                                            />
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>

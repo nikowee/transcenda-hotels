@@ -27,13 +27,13 @@ export default function FilterPanel({
     };
 
     return (
-        <div className="bg-white rounded-xl shadow-sm p-6 space-y-6">
+        <div className="bg-brand-surface-soft rounded-xl border border-brand-glass-border p-6 space-y-6">
             {/* ── Title ── */}
-            <h2 className="text-lg font-semibold text-slate-800">Filters</h2>
+            <h2 className="text-lg font-semibold text-brand-text-primary">Filters</h2>
 
             {/* ── Star Rating ── */}
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
+                <label className="block text-sm font-medium text-brand-text-secondary mb-2">
                     Star Rating
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -43,8 +43,8 @@ export default function FilterPanel({
                             onClick={() => handleStarChange(filters.starRating === rating ? null : rating)}
                             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
                                 filters.starRating === rating
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                    ? 'bg-brand-accent text-white'
+                                    : 'bg-brand-surface-muted text-brand-text-secondary hover:bg-brand-border'
                             }`}
                         >
                             {'★'.repeat(rating)}
@@ -56,7 +56,7 @@ export default function FilterPanel({
 
             {/* ── Guest Rating ── */}
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
+                <label className="block text-sm font-medium text-brand-text-secondary mb-2">
                     Guest Rating
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -66,8 +66,8 @@ export default function FilterPanel({
                             onClick={() => handleGuestRatingChange(rating)}
                             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
                                 filters.minGuestRating === rating
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                    ? 'bg-brand-accent text-white'
+                                    : 'bg-brand-surface-muted text-brand-text-secondary hover:bg-brand-border'
                             }`}
                         >
                             {rating ? `${rating}+` : 'All'}
@@ -78,7 +78,7 @@ export default function FilterPanel({
 
             {/* ── Price Range ── */}
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
+                <label className="block text-sm font-medium text-brand-text-secondary mb-2">
                     Price Range (SGD)
                 </label>
                 <div className="flex items-center gap-3">
@@ -87,16 +87,16 @@ export default function FilterPanel({
                         placeholder="Min"
                         value={filters.minPrice ?? ''}
                         onChange={(e) => handlePriceChange('minPrice', e.target.value)}
-                        className="w-24 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                        className="w-24 px-3 py-2 bg-brand-surface border border-brand-border rounded-lg text-sm text-brand-text-primary placeholder:text-brand-text-muted focus:ring-2 focus:ring-brand-accent focus:border-brand-accent outline-none transition"
                         min={0}
                     />
-                    <span className="text-slate-400">to</span>
+                    <span className="text-brand-text-muted">to</span>
                     <input
                         type="number"
                         placeholder="Max"
                         value={filters.maxPrice ?? ''}
                         onChange={(e) => handlePriceChange('maxPrice', e.target.value)}
-                        className="w-24 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                        className="w-24 px-3 py-2 bg-brand-surface border border-brand-border rounded-lg text-sm text-brand-text-primary placeholder:text-brand-text-muted focus:ring-2 focus:ring-brand-accent focus:border-brand-accent outline-none transition"
                         min={0}
                     />
                 </div>
@@ -106,13 +106,13 @@ export default function FilterPanel({
             <div className="flex gap-3 pt-2">
                 <button
                     onClick={onApply}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
+                    className="flex-1 px-4 py-2 bg-brand-accent-dark text-white rounded-lg hover:bg-brand-accent transition text-sm font-medium"
                 >
                     Apply Filters
                 </button>
                 <button
                     onClick={onClear}
-                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition text-sm font-medium"
+                    className="px-4 py-2 bg-brand-surface-muted text-brand-text-secondary rounded-lg hover:bg-brand-border transition text-sm font-medium"
                 >
                     Clear
                 </button>

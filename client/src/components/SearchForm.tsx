@@ -59,7 +59,7 @@ export default function SearchForm() {
         }
 
         // Redirect to results page and pass the data in the URL
-        navigate(`/results?dest=${selectedDestId}&in=${checkIn}&out=${checkOut}&guests=${guests}&rooms=${rooms}`);
+        navigate(`/results?dest=${selectedDestId}&name=${encodeURIComponent(searchTerm)}&in=${checkIn}&out=${checkOut}&guests=${guests}&rooms=${rooms}`);
     };
 
     return (

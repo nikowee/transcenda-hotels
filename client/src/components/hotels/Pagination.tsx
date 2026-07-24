@@ -55,8 +55,8 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
         disabled={currentPage === 1}
         className={`p-2 rounded-lg border transition ${
           currentPage === 1
-            ? 'border-slate-200 text-slate-300 cursor-not-allowed'
-            : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+            ? 'border-brand-border text-brand-text-muted cursor-not-allowed'
+            : 'border-brand-border text-brand-text-secondary hover:bg-brand-surface-muted'
         }`}
         aria-label="Previous page"
       >
@@ -71,10 +71,10 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
           disabled={page === '...' || page === currentPage}
           className={`min-w-[40px] h-10 rounded-lg border transition ${
             page === currentPage
-              ? 'bg-blue-600 text-white border-blue-600'
+              ? 'bg-brand-accent text-white border-brand-accent'
               : page === '...'
-              ? 'border-transparent cursor-default'
-              : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+              ? 'border-transparent cursor-default text-brand-text-muted'
+              : 'border-brand-border text-brand-text-secondary hover:bg-brand-surface-muted'
           }`}
         >
           {page}
@@ -87,8 +87,8 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
         disabled={currentPage === totalPages}
         className={`p-2 rounded-lg border transition ${
           currentPage === totalPages
-            ? 'border-slate-200 text-slate-300 cursor-not-allowed'
-            : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+            ? 'border-brand-border text-brand-text-muted cursor-not-allowed'
+            : 'border-brand-border text-brand-text-secondary hover:bg-brand-surface-muted'
         }`}
         aria-label="Next page"
       >
