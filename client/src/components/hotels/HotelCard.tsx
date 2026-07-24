@@ -1,20 +1,7 @@
 import { useState } from 'react';
 import { Star, MapPin } from 'lucide-react';
+import type { Hotel } from '../../types';
 
-interface Hotel {
-  id: string;
-  name: string;
-  price: number;
-  searchRank: number;
-  rating: number;
-  categories: string[];
-  address: string;
-  latitude: number;
-  longitude: number;
-  description: string;
-  amenities: string[];
-  images: string[];
-}
 
 interface HotelCardProps {
   hotel: Hotel;

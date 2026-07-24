@@ -123,7 +123,7 @@ export const searchHotels = async (params: SearchParams): Promise<MergedHotel[]>
     // Poll until completed is true or until max attempts have reached.
     // This can be a while loop since it only returns anything at all when completed=true
     // but I'm keeping this in case the API is fixed to return partial results in the future as per the docs.
-    const MAX_POLLS = 8;
+    const MAX_POLLS = 10;
     const POLL_INTERVAL = 4000; // 4 seconds
     let attempts = 0;
     let allHotelPrices: PriceItem[] = priceResponse.data.hotels || [];

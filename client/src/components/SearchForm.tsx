@@ -13,13 +13,20 @@ export default function SearchForm() {
     const [selectedDestId, setSelectedDestId] = useState('');
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [suggestions, setSuggestions] = useState<Array<{ uid: string; term: string }>>([]);
-    const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
+    const [debounceTimer, setDebounceTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
     const [isLoading, setIsLoading] = useState(false);
 
     const [checkIn, setCheckIn] = useState('');
     const [checkOut, setCheckOut] = useState('');
     const [guests, setGuests] = useState(2);
     const [rooms, setRooms] = useState(1);
+
+    // Calculate the minimum check-in date (3 days from now)
+    const getMinCheckInDate = () => {
+        const date = new Date();
+        date.setDate(date.getDate() + 3);
+        return date.toISOString().split('T')[0]; // YYYY-MM-DD format
+    };
 
     // Form validation & submission
     const handleSearch: React.SubmitEventHandler<HTMLFormElement> = (event) => {
@@ -35,6 +42,19 @@ export default function SearchForm() {
         }
         if (new Date(checkIn) >= new Date(checkOut)) {
             alert("Check-out date must be after Check-in date.");
+            return;
+        }
+
+        // Ensure check-in is at least 3 days from today
+        const minDate = new Date();
+        minDate.setDate(minDate.getDate() + 3);
+        minDate.setHours(0, 0, 0, 0);
+
+        const checkInDate = new Date(checkIn);
+        checkInDate.setHours(0, 0, 0, 0);
+
+        if (checkInDate < minDate) {
+            alert("Check-in date must be at least 3 days from today.");
             return;
         }
 
@@ -127,6 +147,7 @@ export default function SearchForm() {
                         type="date" 
                         className="bg-transparent outline-none text-sm text-slate-700 cursor-pointer"
                         value={checkIn}
+                        min={getMinCheckInDate()}
                         onChange={(e) => setCheckIn(e.target.value)}
                     />
                     <span className="text-slate-300">-</span>

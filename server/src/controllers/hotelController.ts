@@ -25,6 +25,11 @@ export const getHotelSearchResults = async (req: Request, res: Response) => {
       rooms,
       page = '1',            // Default to page 1
       pageSize = '20',       // Default to 20 results per page
+      starRating,
+      minGuestRating,
+      minPrice,
+      maxPrice,
+      sortBy = 'searchRank_asc'
     } = req.query;
 
     // Validate required parameters
@@ -88,22 +93,64 @@ export const getHotelSearchResults = async (req: Request, res: Response) => {
         expiration: {type: 'EX', value: CACHE_TTL}
       });
     };
+
+    // Apply filters
+    let filteredHotels = [...hotels];
+
+    if (starRating) {
+      const rating = parseInt(starRating as string, 10);
+      filteredHotels = filteredHotels.filter(h => Math.round(h.rating) === rating);
+    }
+
+    if (minGuestRating) {
+      const minRating = parseFloat(minGuestRating as string);
+      filteredHotels = filteredHotels.filter(h => h.rating >= minRating);
+    }
+
+    if (minPrice) {
+      const min = parseFloat(minPrice as string);
+      filteredHotels = filteredHotels.filter(h => h.price >= min);
+    }
+
+    if (maxPrice) {
+      const max = parseFloat(maxPrice as string);
+      filteredHotels = filteredHotels.filter(h => h.price <= max);
+    }
+
+
+    // Apply sort 
+    switch (sortBy) {
+      case 'price_asc':
+        filteredHotels.sort((a, b) => a.price - b.price);
+        break;
+      case 'price_desc':
+        filteredHotels.sort((a, b) => b.price - a.price);
+        break;
+      case 'rating_desc':
+        filteredHotels.sort((a, b) => b.rating - a.rating);
+        break;
+      case 'searchRank_asc':
+      default:
+        filteredHotels.sort((a, b) => a.searchRank - b.searchRank);
+        break;
+    }
     
+
     // Paginate the results
     const pageNum = parseInt(page as string, 10);
     const sizeNum = parseInt(pageSize as string, 10);
     const startIndex = (pageNum - 1) * sizeNum;
     const endIndex = startIndex + sizeNum;
-    const paginatedHotels = hotels.slice(startIndex, endIndex);
+    const paginatedHotels = filteredHotels.slice(startIndex, endIndex);
 
 
     // Return response
     res.json({
         hotels: paginatedHotels,
-        total: hotels.length,
+        total: filteredHotels.length,
         page: pageNum,
         pageSize: sizeNum,
-        totalPages: Math.ceil(hotels.length / sizeNum)
+        totalPages: Math.ceil(filteredHotels.length / sizeNum)
   });
 
   } catch (error: any) {
