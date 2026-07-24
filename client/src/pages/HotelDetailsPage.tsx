@@ -35,7 +35,10 @@ export default function HotelDetailPage() {
             params: { destination_id: destId, checkin: checkIn, checkout: checkOut, guests },
         })
             .then((res) => setRooms(res.data.rooms))
-            .catch(() => setRooms([]));
+            .catch((err) => {
+                console.error('Room prices fetch failed:', err); // rooms section has no dedicated error UI yet
+                setRooms([]);
+            });
     }, [id, destId, checkIn, checkOut, guests]);
 
     useEffect(() => {
@@ -43,7 +46,25 @@ export default function HotelDetailPage() {
 
         axios.get(`${API_URL}/api/hotels/${id}`)
             .then((res) => setHotel(res.data))
-            .catch(() => setError('Failed to load hotel details.'));
+            .catch((err) => {
+                if (axios.isAxiosError(err)) {
+                    if (err.response) {
+                        // Server responded with an error status (404, 500, 502, etc.)
+                        const serverMessage = err.response.data?.error;
+                        setError(
+                            `Failed to load hotel details (${err.response.status}): ${serverMessage ?? err.response.statusText}`
+                        );
+                    } else if (err.request) {
+                        // Request was sent but no response came back (connection reset, timeout, etc.)
+                        setError('Failed to load hotel details: no response from server. Please check your connection.');
+                    } else {
+                        // Something went wrong setting up the request
+                        setError(`Failed to load hotel details: ${err.message}`);
+                    }
+                } else {
+                    setError('Failed to load hotel details: an unexpected error occurred.');
+                }
+            });
     }, [id]);
 
     if (!hotel) return <LoadingPage error={error} />;
