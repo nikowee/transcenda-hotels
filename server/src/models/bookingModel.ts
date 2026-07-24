@@ -3,14 +3,12 @@ import { randomBytes } from 'crypto';
 /**
  * BookingModel — the «Database Model» box from the UC4 class diagram.
  *
- * The diagram draws a Mongo-flavoured surface (`insertOne` / `findOne`) but this
- * project runs Supabase/Postgres, so those names are kept as the public API
- * while the bodies speak SQL through supabase-js. Table DDL lives alongside this
- * file in ../data/bookings.sql
+ * The diagram's Mongo-flavoured `insertOne` / `findOne` names are kept as the
+ * public API; the bodies speak SQL through supabase-js. DDL in ../data/bookings.sql
  *
  * Bookings are written PENDING before the customer is sent to pay, then flipped
- * to PAID by the Stripe webhook. A charge can therefore never succeed against a
- * booking that does not exist.
+ * to PAID by the webhook, so a charge can never land on a booking that does not
+ * exist.
  */
 
 export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED';

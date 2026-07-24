@@ -3,8 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { http, HttpResponse } from 'msw';
-import { server } from '../tests/setup';
-import CheckoutPage from './CheckoutPage';
+import { server } from './setup';
+import CheckoutPage from '../pages/CheckoutPage';
 
 /**
  * UC4 checkout page.

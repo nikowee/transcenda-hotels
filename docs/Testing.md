@@ -14,53 +14,97 @@ This page documents the complete testing suite for Transcenda Hotels, covering a
 
 ```
                     ┌─────────────────────────────────────┐
-                    │       E2E Tests (5 tests)          │
+                    │        E2E Tests (5 tests)          │
                     │  Playwright — full system in Docker │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │   Integration Tests (11 tests)      │
-                    │  Frontend: MSW + Vitest (4 tests)   │
-                    │  Backend:  Mocha + Supertest (7)    │
+                    │    Integration Tests (56 tests)     │
+                    │  Frontend: MSW + Vitest (18)        │
+                    │  Backend:  Mocha + Supertest (36)   │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │     Unit Tests (6 tests)            │
-                    │  Vitest + Testing Library           │
-                    │  Isolated component behavior        │
+                    │       Unit Tests (33 tests)         │
+                    │  Vitest + Testing Library (6)       │
+                    │  Mocha + Chai (27)                  │
                     └─────────────────────────────────────┘
 ```
 
-| Layer | Tests | Tools | Location |
+Every client suite lives in `client/src/tests/`; every server suite lives in
+`server/src/tests/`. Tests are not co-located with source — keeping them out of
+`src/pages` and `src/components` is also what keeps them out of the coverage
+report, which excludes `src/tests/`.
+
+| Suite | Tests | Tools | Location |
 |-------|-------|-------|----------|
-| **Unit** | 6 | Vitest + React Testing Library | `client/src/components/SearchForm.test.tsx` |
-| **Frontend Integration** | 4 | MSW + Vitest | `client/src/tests/SearchForm.integration.test.tsx` |
-| **Backend Integration** | 7 | Mocha + Chai + Supertest | `server/src/tests/destination.test.ts` |
-| **E2E** | 5 | Playwright | `e2e_testing/tests/` |
-| **Total** | **22** | — | — |
+| `SearchForm.test.tsx` | 6 | Vitest + RTL, `vi.mock('axios')` | `client/src/tests/` |
+| `SearchForm.integration.test.tsx` | 4 | MSW + Vitest | `client/src/tests/` |
+| `CheckoutPage.test.tsx` | 6 | MSW + Vitest | `client/src/tests/` |
+| `ConfirmationPage.test.tsx` | 8 | MSW + Vitest | `client/src/tests/` |
+| `destination.test.ts` | 7 | Mocha + Chai + Supertest | `server/src/tests/` |
+| `booking.test.ts` | 29 | Mocha + Chai + Supertest | `server/src/tests/` |
+| `paymentService.test.ts` | 14 | Mocha + Chai | `server/src/tests/` |
+| `rateLimit.test.ts` | 8 | Mocha + Chai | `server/src/tests/` |
+| `bookingModel.test.ts` | 5 | Mocha + Chai | `server/src/tests/` |
+| E2E specs | 5 | Playwright | `e2e_testing/tests/` |
+| **Total** | **92** | — | — |
 
 ---
 
 ## 🚀 Quick Start
 
 ```bash
-# === Run ALL tests ===
-
-# Frontend: unit + integration (10 tests)
+# Frontend: 24 tests
 cd client && npm run test
 
-# Backend: API integration (7 tests)
+# Backend: 63 tests
 cd server && npm run test
 
-# E2E: full system in Docker (5 tests, auto-starts Docker)
-cd e2e_testing && npx playwright test
+# E2E: 5 tests, auto-starts Docker
+cd e2e_testing && npm ci && npx playwright install chromium && npx playwright test
 ```
+
+The backend suite needs no Stripe or Supabase credentials — `server/src/tests/env.ts`
+defaults `PAYMENTS_MODE=simulate` and `BOOKINGS_STORAGE=memory` before the app is
+imported.
+
+### Running one suite or one test
+
+```bash
+cd server && npx mocha -r tsx src/tests/booking.test.ts
+cd server && npm test -- -g "ignores a client-supplied"
+
+cd client && npx vitest run src/tests/CheckoutPage.test.tsx
+cd client && npx vitest run -t "never renders a card"
+cd client && npx vitest --ui          # browser UI
+```
+
+---
+
+## 🔒 UC4 security regression tests
+
+The booking suites exist mainly to hold shut defects that were once live. Each of
+these maps to a specific vulnerability — see
+[UC4 — Book & Make Payment]({{ site.baseurl }}/UC4-Book-And-Make-Payment):
+
+| Test | Defect it prevents |
+|------|--------------------|
+| `ignores a client-supplied amount` | Price set from the request body |
+| `ignores a price smuggled inside the stay object` | Same, via a nested field |
+| `refuses to price an unknown room type` | Rate invented from an arbitrary `roomId` |
+| `rejects a forged session id` | Payment step bypassed entirely |
+| `is idempotent across repeated confirmations` | Double booking / double email |
+| `never accepts an unverified payload` | Spoofed Stripe webhook |
+| `throttles repeated payment attempts` | Card-testing oracle |
+| `never renders a card input` (client) | PCI SAQ D scope creep |
+| `CORS in development` (4 origin variants) | Allowlist pinned to one spelling |
 
 ---
 
 ## 🧩 Phase 1: Unit Tests (6 tests)
 
-**Location:** `client/src/components/SearchForm.test.tsx`
+**Location:** `client/src/tests/SearchForm.test.tsx`
 **Tools:** Vitest + React Testing Library + `vi.mock('axios')`
 
 These tests validate the `SearchForm` component in isolation — no real API calls, no browser.

@@ -1,3 +1,9 @@
+---
+title: UC4 — Book & Make Payment
+nav_order: 8
+description: Design diagrams and security properties for the booking and payment flow.
+---
+
 # UC4 — Book & Make Payment
 
 Design diagrams for UC4, redrawn against the stack this repo actually runs.

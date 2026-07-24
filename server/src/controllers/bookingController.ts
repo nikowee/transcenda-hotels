@@ -36,6 +36,18 @@ const CURRENCY = 'SGD';
 const MAX_NIGHTS = 30;
 const MAX_ROOMS = 8;
 
+/**
+ * Storage faults carry configuration detail (connection strings, key prefixes)
+ * that must not reach a response body, so the cause is logged against a
+ * correlation id and only the id travels out — the same contract toSafeError
+ * uses for Stripe, but without the payment-flavoured wording.
+ */
+const logStorageFailure = (operation: string, error: unknown): string => {
+  const correlationId = `db_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  console.error(`[storage ${correlationId}] ${operation} failed:`, error);
+  return correlationId;
+};
+
 interface GuestDetails {
   guestName: string;
   guestEmail: string;
@@ -239,7 +251,21 @@ export const postPayment = async (req: Request, res: Response): Promise<void> =>
     };
 
     // Written before payment so a successful charge can never be orphaned.
-    const record = await insertOne(booking);
+    let record;
+    try {
+      record = await insertOne(booking);
+    } catch (error) {
+      // A booking-write failure is not a payment failure. Routing it through
+      // toSafeError reports "Payment could not be processed", which sends the
+      // reader to Stripe while the real cause — table not created, wrong
+      // Supabase key — is only visible in the log.
+      const correlationId = logStorageFailure('insertOne', error);
+      res.status(503).json({
+        error: 'We could not save your booking. Please try again in a moment.',
+        correlationId,
+      });
+      return;
+    }
 
     const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
     const session = await createCheckoutSession({
@@ -343,7 +369,7 @@ export const getBookingByReference = async (req: Request, res: Response): Promis
 
     res.json(record);
   } catch (error) {
-    console.error('Booking lookup exception:', error);
-    res.status(500).json({ error: 'Could not retrieve that booking.' });
+    const correlationId = logStorageFailure('findOne', error);
+    res.status(503).json({ error: 'Could not retrieve that booking.', correlationId });
   }
 };

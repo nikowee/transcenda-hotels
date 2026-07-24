@@ -322,6 +322,41 @@ describe('UC4 — Book & Make Payment', () => {
     });
   });
 
+  // Regression: the allowlist was once pinned to the single literal
+  // "http://localhost:3000", so opening the app on 127.0.0.1 or the LAN address
+  // Vite prints as "Network:" silently broke every API call — the destination
+  // dropdown just stopped appearing, with no visible error.
+  describe('CORS in development', () => {
+    const localOrigins = [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'http://10.32.37.20:3000',
+      'http://192.168.1.50:3000',
+    ];
+
+    for (const origin of localOrigins) {
+      it(`allows ${origin}`, async () => {
+        const response = await request(app)
+          .get('/api/destinations/search')
+          .query({ q: 'singapore' })
+          .set('Origin', origin);
+
+        expect(response.status).to.equal(200);
+        expect(response.headers['access-control-allow-origin']).to.equal(origin);
+      });
+    }
+
+    it('does not grant a foreign origin, and does not 500 doing so', async () => {
+      const response = await request(app)
+        .get('/api/destinations/search')
+        .query({ q: 'singapore' })
+        .set('Origin', 'https://evil.com');
+
+      expect(response.headers['access-control-allow-origin']).to.be.undefined;
+      expect(response.status).to.not.equal(500);
+    });
+  });
+
   describe('rate limiting', () => {
     it('throttles repeated payment attempts from one address', async () => {
       const statuses: number[] = [];

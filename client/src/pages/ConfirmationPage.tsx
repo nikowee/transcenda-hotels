@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import axios from 'axios';
 import {
@@ -33,30 +33,49 @@ const API_URL = import.meta.env.VITE_API_URL;
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLLS = 5;
 
+/**
+ * A 404 is an answer — that reference does not exist. Every other failure
+ * (5xx, network, CORS) means the lookup failed, not that the booking did, and
+ * the two must not read the same: telling someone who has just paid that their
+ * booking cannot be found, when the truth is that the API is down, is the worst
+ * wrong answer this page can give.
+ */
+type PageError = { title: string; detail: string };
+
+const NOT_FOUND: PageError = {
+  title: 'Booking not found',
+  detail: 'We could not find that booking reference.',
+};
+
+const UNREACHABLE: PageError = {
+  title: 'We could not reach our booking service',
+  detail:
+    'Your payment may still have gone through. Keep your reference, and refresh this page in a moment.',
+};
+
 const formatMoney = (amount: number, currency: string) =>
   `${currency} ${amount.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function ConfirmationPage() {
   const [searchParams] = useSearchParams();
   const [booking, setBooking] = useState<BookingRecord | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<PageError | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const reference = searchParams.get('ref');
   const sessionId = searchParams.get('session_id');
-  const hasRun = useRef(false);
 
   useEffect(() => {
-    // StrictMode double-mounts in dev; confirming twice is harmless server-side
-    // but there is no reason to do it.
-    if (hasRun.current) return;
-    hasRun.current = true;
-
+    // Deliberately no run-once ref here. StrictMode double-mounts in dev, and a
+    // guard that skips the second mount leaves the first mount's work orphaned
+    // behind an already-tripped `cancelled` flag — the page then never leaves
+    // its loading state. Confirming twice is idempotent server-side (markPaid
+    // only transitions once, so the email still sends once), so let it re-run.
     let cancelled = false;
 
     const finalise = async () => {
       if (!reference) {
-        setError('No booking reference was provided.');
+        setError({ ...NOT_FOUND, detail: 'No booking reference was provided.' });
         setIsLoading(false);
         return;
       }
@@ -85,14 +104,27 @@ export default function ConfirmationPage() {
           if (cancelled) return;
 
           setBooking(response.data);
+          setError(null);
           setIsLoading(false);
 
           if (response.data.paymentStatus !== 'PENDING') return;
-        } catch {
+        } catch (fetchError) {
           if (cancelled) return;
-          setError('We could not find that booking reference.');
-          setIsLoading(false);
-          return;
+
+          // Only a 404 is conclusive. Anything else gets the remaining attempts
+          // before the page gives up, so a brief backend blip does not report a
+          // paid booking as missing.
+          if (axios.isAxiosError(fetchError) && fetchError.response?.status === 404) {
+            setError(NOT_FOUND);
+            setIsLoading(false);
+            return;
+          }
+
+          if (attempt === MAX_POLLS - 1) {
+            setError(UNREACHABLE);
+            setIsLoading(false);
+            return;
+          }
         }
 
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
@@ -129,8 +161,13 @@ export default function ConfirmationPage() {
         {!isLoading && error && (
           <div className="rounded-2xl bg-white p-8 text-center shadow-xl">
             <AlertCircle className="mx-auto h-12 w-12 text-red-500" />
-            <h1 className="mt-4 text-2xl font-bold text-slate-800">Booking not found</h1>
-            <p className="mt-2 text-slate-500">{error}</p>
+            <h1 className="mt-4 text-2xl font-bold text-slate-800">{error.title}</h1>
+            <p className="mt-2 text-slate-500">{error.detail}</p>
+            {reference && (
+              <p className="mt-3 font-mono text-sm font-bold tracking-tight text-slate-700">
+                {reference}
+              </p>
+            )}
             <Link
               to="/"
               className="mt-6 inline-flex h-12 items-center rounded-xl bg-blue-600 px-8 font-bold text-white shadow-md shadow-blue-200 transition-colors hover:bg-blue-700"

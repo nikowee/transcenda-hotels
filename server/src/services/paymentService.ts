@@ -7,17 +7,13 @@ import Stripe from 'stripe';
 /**
  * PaymentService — the «External API» box from the UC4 class diagram.
  *
- * Uses Stripe Checkout Sessions: the customer is redirected to a Stripe-hosted
- * page, so card data never reaches this server or our client bundle. That keeps
- * the platform at PCI SAQ A rather than SAQ D, and needs no client-side Stripe
- * dependency.
- *
- * The diagram's processPayment(amount, currency) becomes createCheckoutSession
- * + verifySession. The «External API» boundary is unchanged — only the handoff
- * mechanism differs, because the original signature required us to hold the PAN.
+ * Stripe Checkout Sessions: the customer pays on a Stripe-hosted page, so card
+ * data never reaches this server or the client bundle — PCI SAQ A, not SAQ D.
+ * The diagram's processPayment(amount, currency) is therefore split into
+ * createCheckoutSession + verifySession; its signature required holding the PAN.
  */
 
-/** Pinned explicitly: the ^22 caret range would otherwise let this drift on any lockfile refresh. */
+/** Pinned: the ^22 caret range would let the wire version drift on any lockfile refresh. */
 const STRIPE_API_VERSION = '2026-06-24.dahlia';
 
 const secretKey = process.env.STRIPE_SECRET_KEY;
