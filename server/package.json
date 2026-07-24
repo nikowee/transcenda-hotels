@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "..\\start-dev.bat",
+    "dev": "npx tsx watch src/index.ts",
     "build": "tsc",
     "type-check": "tsc --noEmit",
     "test": "mocha --exit -r tsx src/tests/**/*.test.ts",

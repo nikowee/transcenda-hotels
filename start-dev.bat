@@ -1,6 +1,4 @@
 @echo off
 echo 🔄 Starting Redis...
 docker compose up -d redis
-echo 🚀 Starting backend dev server...
-cd /d "%~dp0server"
-npx tsx watch src/index.ts
+echo ✅ Redis is running in the background.
