@@ -121,13 +121,15 @@ export const searchHotels = async (params: SearchParams): Promise<MergedHotel[]>
         );
 
     // Poll until completed is true or until max attempts have reached.
-    const MAX_POLLS = 15;
-    const POLL_INTERVAL = 3000; // 3 seconds
+    // This can be a while loop since it only returns anything at all when completed=true
+    // but I'm keeping this in case the API is fixed to return partial results in the future as per the docs.
+    const MAX_POLLS = 8;
+    const POLL_INTERVAL = 4000; // 4 seconds
     let attempts = 0;
-    let allHotels: PriceItem[] = priceResponse.data.hotels || [];
+    let allHotelPrices: PriceItem[] = priceResponse.data.hotels || [];
 
     while (!priceResponse.data.completed && attempts < MAX_POLLS) {
-        console.log(`Polling... (${attempts + 1}/${MAX_POLLS}) - Found ${allHotels.length} hotels so far`);
+        console.log(`Polling... (${attempts + 1}/${MAX_POLLS}) - Found ${allHotelPrices.length} hotels so far`);
         
         await sleep(POLL_INTERVAL);
         priceResponse = await axios.get<PriceResponse>(
@@ -137,63 +139,64 @@ export const searchHotels = async (params: SearchParams): Promise<MergedHotel[]>
         
         // Update hotels array and avoid duplicates using set
         const newHotels = priceResponse.data.hotels || [];
-        const existingIds = new Set(allHotels.map(h => h.id));
+        const existingIds = new Set(allHotelPrices.map(h => h.id));
         for (const hotel of newHotels) {
             if (!existingIds.has(hotel.id)) {
-                allHotels.push(hotel);
+                allHotelPrices.push(hotel);
                 existingIds.add(hotel.id);
             }
         }
     
         attempts++;
     }
-    console.log(`Polling complete. Found ${allHotels.length} hotels.`);
+    console.log(`Polling complete. Found ${allHotelPrices.length} hotels.`);
 
     // Fetch hotel details for each hotel
     console.log('Fetching hotel details...');
 
-    const hotelDetailsPromises = allHotels.map(async (priceItem) => {
-    try {
-        const detailResponse = await axios.get<HotelDetails>(`${BASE_URL}/hotels/${priceItem.id}`);
-      
-        const details = detailResponse.data;
+    const hotelDetailsResponse = await axios.get<HotelDetails[]>(`${BASE_URL}/hotels`,
+        { params: {destination_id: params.destination_id} }
+    );
 
-        // Skip entries where the API returned incomplete data
-        if (!details.id) {
-            console.warn(`Hotel ${priceItem.id} returned no id from details API, skipping`);
-            return null;
+    // Create a map of the hotel data for quick lookup by hotel ID
+    const hotelDetailsMap = new Map<string, HotelDetails>();
+    for (const hotelDetail of hotelDetailsResponse.data){
+        // Only map hotels if their destination IDs exist
+        if (hotelDetail.id){
+            hotelDetailsMap.set(hotelDetail.id, hotelDetail);
         }
-      
-        return {
-            id: details.id,
-            name: details.name,
-            price: priceItem.price,
-            searchRank: priceItem.searchRank,
-            rating: details.rating || 0,
-            categories: transformCategories(details.categories),
-            address: details.address,
-            latitude: details.latitude,
-            longitude: details.longitude,
-            description: cleanDescription(details.description || ''),
-            images: details.image_details? constructImageUrls(details.image_details) : [],
-      };
-    } catch (error) {
-        if (error instanceof Error) {
-            console.warn(`Failed to fetch details for hotel ${priceItem.id} with error: ${error.message}`);
-        }
-       
-        return null;
     }
-  });
 
-  const mergedHotels = (await Promise.all(hotelDetailsPromises)).filter(
-    (h): h is MergedHotel => h !== null
-  );
-  
-  // Sort by searchRank in ascending order (lower rank means higher priority I think)
-  mergedHotels.sort((a, b) => a.searchRank - b.searchRank);
+    // Merging Logic
+    const mergedHotels: MergedHotel[] = [];
 
-  console.log(`Merged ${mergedHotels.length} hotels with details.`);
+    for (const hotelPrice of allHotelPrices){
+        const hotelDetail = hotelDetailsMap.get(hotelPrice.id);
+        if (!hotelDetail) {
+            console.debug(`⚠️ Skipping hotel ${hotelPrice.id} (no details found)`);
+            continue;
+        }
+
+        mergedHotels.push({
+            id: hotelDetail.id,
+            name: hotelDetail.name || `Hotel ${hotelDetail.id}`,
+            price: hotelPrice.price,
+            searchRank: hotelPrice.searchRank,
+            rating: hotelDetail.rating || 0,
+            categories: transformCategories(hotelDetail.categories),
+            address: hotelDetail.address || '',
+            latitude: hotelDetail.latitude || 0,
+            longitude: hotelDetail.longitude || 0,
+            description: cleanDescription(hotelDetail.description || ''),
+            amenities: [],
+            images: hotelDetail.image_details ? constructImageUrls(hotelDetail.image_details) : [],
+        });
+    }
   
-  return mergedHotels;
+    // Sort by searchRank in ascending order (lower rank means higher priority I think)
+    mergedHotels.sort((a, b) => a.searchRank - b.searchRank);
+
+    console.log(`✅ Merged ${mergedHotels.length} valid hotels out of ${allHotelPrices.length} price entries`);
+
+    return mergedHotels;
 }
