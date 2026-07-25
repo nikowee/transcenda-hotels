@@ -19,22 +19,29 @@ This page documents the complete testing suite for Transcenda Hotels, covering a
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │     Contract Tests (61 tests)       │
-                    │  nock — real Stripe SDK, faked wire │
+                    │     Contract Tests (83 tests)       │
+                    │  nock — real SDK/client, faked wire │
+                    │  Stripe (64) · Ascenda hotels (19)  │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │    Integration Tests (199 tests)    │
-                    │  Frontend: MSW + Vitest (71)        │
-                    │  Backend:  Mocha + Supertest (128)  │
+                    │    Integration Tests (221 tests)    │
+                    │  Frontend: MSW + Vitest (83)        │
+                    │  Backend:  Mocha + Supertest (138)  │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │      Unit Tests (136 tests)         │
+                    │      Unit Tests (139 tests)         │
                     │  Vitest + Testing Library (6)       │
-                    │  Mocha + Chai (130)                 │
+                    │  Mocha + Chai (133)                 │
                     └─────────────────────────────────────┘
 ```
+
+Both external dependencies are faked the same way and at the same layer — nock
+intercepts the socket, so the real Stripe SDK and the real axios client build
+real requests and parse real payloads. Nothing in `src/` knows it is under test,
+and the suite is offline: `globalSetup.ts` blocks outbound sockets outright, so a
+call that escapes its interceptor fails rather than quietly reaching production.
 
 Every client suite lives in `client/src/tests/`; every server suite lives in
 `server/src/tests/`. Tests are not co-located with source — keeping them out of
@@ -45,14 +52,15 @@ report, which excludes `src/tests/`.
 |-------|-------|-------|----------|
 | `SearchForm.test.tsx` | 6 | Vitest + RTL, `vi.mock('axios')` | `client/src/tests/` |
 | `SearchForm.integration.test.tsx` | 4 | MSW + Vitest | `client/src/tests/` |
-| `CheckoutPage.test.tsx` | 16 | MSW + Vitest | `client/src/tests/` |
-| `PaymentPage.test.tsx` | 34 | MSW + Vitest, mocked Stripe Elements | `client/src/tests/` |
+| `CheckoutPage.test.tsx` | 18 | MSW + Vitest | `client/src/tests/` |
+| `PaymentPage.test.tsx` | 39 | MSW + Vitest, mocked Stripe Elements | `client/src/tests/` |
 | `ConfirmationPage.test.tsx` | 17 | MSW + Vitest | `client/src/tests/` |
+| `DemoStayButton.test.tsx` | 5 | MSW + Vitest | `client/src/tests/` |
 | `destination.test.ts` | 7 | Mocha + Chai + Supertest | `server/src/tests/` |
 | `booking.test.ts` | 46 | Mocha + Chai + Supertest | `server/src/tests/` |
 | `buildQuote.test.ts` | 59 | Mocha + Chai | `server/src/tests/` |
 | `bookingModel.test.ts` | 24 | Mocha + Chai | `server/src/tests/` |
-| `paymentIntent.test.ts` | 58 | Mocha + Chai + Supertest | `server/src/tests/` |
+| `paymentIntent.test.ts` | 59 | Mocha + Chai + Supertest | `server/src/tests/` |
 | `recordPaidBooking.test.ts` | 21 | Mocha + Chai | `server/src/tests/` |
 | `paymentService.test.ts` | 14 | Mocha + Chai | `server/src/tests/` |
 | `rateLimit.test.ts` | 8 | Mocha + Chai | `server/src/tests/` |
@@ -60,19 +68,29 @@ report, which excludes `src/tests/`.
 | `stripePaymentIntents.test.ts` | 25 | Mocha + Chai + **nock** | `server/src/tests/` |
 | `stripeRefunds.test.ts` | 11 | Mocha + Chai + **nock** | `server/src/tests/` |
 | `stripeWebhook.test.ts` | 21 | Mocha + Chai + Supertest | `server/src/tests/` |
+| `hotelRoomService.test.ts` | 17 | Mocha + Chai + **nock** | `server/src/tests/` |
+| `supplierPricing.test.ts` | 8 | Mocha + Chai + Supertest + **nock** | `server/src/tests/` |
+| `demoStay.test.ts` | 9 | Mocha + Chai + Supertest + **nock** | `server/src/tests/` |
 | `booking-flow.spec.ts` | 11 | Playwright | `e2e_testing/tests/` |
 | `search-*.spec.ts` | 5 | Playwright | `e2e_testing/tests/` |
-| **Total** | **412** | — | — |
+| **Total** | **459** | — | — |
+
+Plus **3 pending** — the billing-address storage round trip in
+`paymentIntent.test.ts`. They are skipped, not deleted: the six `billing_*`
+columns are not on the deployed table yet, so `bookingModel.toRow` has the
+matching writes commented out under the token `BILLING-PENDING-MIGRATION`.
+Grep that token, run `server/src/data/migrations/001_billing_address.sql`, and
+un-skip all four together.
 
 ---
 
 ## 🚀 Quick Start
 
 ```bash
-# Frontend: 77 tests
+# Frontend: 89 tests
 cd client && npm run test
 
-# Backend: 319 tests
+# Backend: 354 tests (+3 pending)
 cd server && npm run test
 
 # E2E: 16 tests, auto-starts Docker
@@ -87,6 +105,61 @@ The backend suite needs no Stripe or Supabase credentials and makes no outbound
 network calls. `server/src/tests/env.ts` sets the defaults before the app is
 imported: `PAYMENTS_MODE=simulate`, `BOOKINGS_STORAGE=memory`, and fake Stripe
 keys that exist only so a client can be constructed.
+
+### Booking a real hotel by hand
+
+The four demo room slugs need no network, which is what keeps the suite offline —
+but it also means walking `deluxe-king` through checkout never exercises the
+supplier at all. To see the live path, let the server pick:
+
+```bash
+curl -s localhost:5000/api/bookings/demo-stay | jq '.stay'
+```
+
+Every call returns a different city, hotel, room, party and set of dates, priced
+by Ascenda at whatever it costs today. The response carries a `checkoutQuery`
+that drops straight into the browser:
+
+```bash
+open "http://localhost:3000/checkout?$(curl -s localhost:5000/api/bookings/demo-stay | jq -r .checkoutQuery)"
+```
+
+The same thing sits behind **Surprise me with a stay** on the landing page.
+
+`indicativeTotal` in the response is a label, never an amount: it is deliberately
+absent from `checkoutQuery`, and `/checkout` reprices from its own supplier call.
+Nothing the browser holds can influence what is charged.
+
+### Delivering a webhook by hand
+
+The webhook is the only thing that turns a captured charge into a booking when
+the customer never returns from the payment page, and it is also the path you
+cannot reach from a browser — Stripe has no route to localhost without the CLI's
+tunnel.
+
+You do not need the CLI. A signature is an HMAC-SHA256 over
+`<timestamp>.<raw body>` keyed on the endpoint secret, which is arithmetic this
+repo can do itself. Generate a secret, restart the server so it loads the same
+one, and sign your own deliveries:
+
+```bash
+cd server
+npm run stripe:secret -- --write      # writes STRIPE_WEBHOOK_SECRET into .env
+PAYMENTS_MODE=simulate npm run dev    # restart to pick it up
+
+npm run stripe:send                   # book, then deliver the completion event
+npm run stripe:send -- --tamper       # flip a byte after signing → expect 400
+npm run stripe:send -- --event charge.refunded --payment-intent sim_pi_...
+```
+
+`stripe:send` mints a real checkout session through `/api/bookings/payment`
+first, then delivers the event for it without ever visiting the confirmation
+page — which is precisely the scenario the handler exists for. The server log
+should answer with `Webhook recovered booking <id> for session <id>`.
+
+Nothing about the server is relaxed to make this work. `constructWebhookEvent`
+is the same code that runs in production, which is why `--tamper` is worth
+running: it proves the check that makes the other runs meaningful.
 
 ### Running one suite or one test
 

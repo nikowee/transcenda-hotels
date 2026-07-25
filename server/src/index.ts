@@ -11,6 +11,7 @@ import {
   postConfirmBooking,
   getBookingById,
   getBookingsByUser,
+  getDemoStay,
 } from './controllers/bookingController.js';
 import { handleStripeWebhook } from './controllers/webhookController.js';
 import { rateLimit } from './middleware/rateLimit.js';
@@ -96,7 +97,24 @@ app.get('/api/destinations/search', searchDestinations);
 const paymentLimiter = rateLimit({ windowMs: 60_000, max: 10 });
 const lookupLimiter = rateLimit({ windowMs: 60_000, max: 30 });
 
-app.get('/api/bookings/checkout', getCheckout);
+/**
+ * Looser than the lookups because quoting is what a guest does while making up
+ * their mind — changing dates, adding a room, going back a page — and a limit
+ * tuned for enumeration would throttle ordinary browsing.
+ *
+ * It exists at all because a quote can now reach the supplier. What actually
+ * bounds that is hotelRoomService's cache: only a stay this server has not
+ * priced before costs an outbound call, so re-quoting the same stay is free and
+ * this limit is what caps the rate of *distinct* ones.
+ */
+const quoteLimiter = rateLimit({ windowMs: 60_000, max: 60 });
+
+app.get('/api/bookings/checkout', quoteLimiter, getCheckout);
+
+// Literal, so it must sit above /:id like the others. Throttled hardest of the
+// three: every call is a guaranteed outbound price search that no cache can
+// absorb, because picking a fresh stay is the entire point.
+app.get('/api/bookings/demo-stay', rateLimit({ windowMs: 60_000, max: 12 }), getDemoStay);
 app.post('/api/bookings/guest-details', lookupLimiter, postGuestDetails);
 app.post('/api/bookings/payment', paymentLimiter, postPayment);
 // Elements flow: returns a client secret instead of a redirect, so the card is

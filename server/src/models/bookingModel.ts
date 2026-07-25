@@ -66,13 +66,29 @@ const toRow = (input: BookingInput) => ({
   guest_last_name: input.guest.lastName,
   guest_email: input.guest.email,
   guest_phone: input.guest.phone,
-  billing_line1: input.billing?.line1 ?? null,
-  billing_line2: input.billing?.line2 ?? null,
-  billing_city: input.billing?.city ?? null,
-  billing_state: input.billing?.state ?? null,
-  billing_postal_code: input.billing?.postalCode ?? null,
-  // character(2) — normalised on write so the stored code is always comparable.
-  billing_country: input.billing?.country ? input.billing.country.toUpperCase().slice(0, 2) : null,
+  /**
+   * BILLING-PENDING-MIGRATION — grep this token to restore. See
+   * ../data/migrations/001_billing_address.sql.
+   *
+   * The six billing_* columns are not on the deployed table yet. PostgREST
+   * rejects an insert wholesale if any column in it is unknown, so leaving these
+   * in does not merely fail to store the address — it fails the entire booking,
+   * after the charge has already been captured. That is the worst possible place
+   * to discover a schema gap, and it is what the two e2e failures are.
+   *
+   * Commented out rather than deleted because nothing else about the billing
+   * address changes: the form still collects it, validateBillingAddress still
+   * enforces it, and it still travels to Stripe in the PaymentIntent's
+   * billing_details for the AVS check. Only the write to our own table is
+   * suspended. Uncomment once the migration is applied.
+   */
+  // billing_line1: input.billing?.line1 ?? null,
+  // billing_line2: input.billing?.line2 ?? null,
+  // billing_city: input.billing?.city ?? null,
+  // billing_state: input.billing?.state ?? null,
+  // billing_postal_code: input.billing?.postalCode ?? null,
+  // // character(2) — normalised on write so the stored code is always comparable.
+  // billing_country: input.billing?.country ? input.billing.country.toUpperCase().slice(0, 2) : null,
   price_paid: input.pricePaid,
   payment_id: input.paymentId,
   payee_id: input.payeeId,
@@ -104,8 +120,15 @@ const fromRow = (row: BookingRow): BookingRecord => ({
     phone: row.guest_phone,
     specialRequests: row.special_requests,
   },
-  // Absent for any booking written before the billing columns existed, and for
-  // a webhook recovery whose metadata predates them.
+  /**
+   * BILLING-PENDING-MIGRATION — this read needs no change and is left alone.
+   *
+   * A column that does not exist is simply absent from a `select('*')` response,
+   * so row.billing_line1 is undefined and this resolves to null — the same
+   * answer it already gives for a booking written before the columns existed.
+   * Commenting it out too would mean two places to restore and would break
+   * reads the moment the migration lands.
+   */
   billing: row.billing_line1
     ? {
         line1: row.billing_line1,

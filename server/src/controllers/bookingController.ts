@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { type Request, type Response } from 'express';
 import { insertOne, findById, findByPaymentId, findByUserId } from '../models/bookingModel.js';
 import { sendConfirmation } from '../services/emailService.js';
@@ -21,6 +21,12 @@ import {
   toSafeError,
   type VerifiedPayment,
 } from '../services/paymentService.js';
+import {
+  demoRateTable,
+  resolveRateTable,
+  type RateTable,
+} from '../services/hotelRoomService.js';
+import { pickDemoStay } from '../services/demoStayService.js';
 
 /**
  * Booking controller — the «Express Router» box from the UC4 class diagram.
@@ -39,8 +45,10 @@ import {
  * charge cleared. What the customer typed has to survive that redirect, so it
  * travels in the session metadata rather than in a database row.
  *
- * Prices are never read from a request body. Every amount below is derived from
- * ROOM_RATES on the server, both when quoting and when charging.
+ * Prices are never read from a request body. Every amount below comes from a
+ * rate table built server-side by hotelRoomService — the supplier's own rates
+ * for a real room, the demo catalogue for the four offline slugs — both when
+ * quoting and when charging.
  */
 
 /**
@@ -55,8 +63,6 @@ export const MAX_GUESTS = 20;
 
 /** Fits inside one Stripe metadata value, which is the real constraint. */
 const MAX_SPECIAL_REQUESTS = 500;
-
-const TAX_RATE = 0.09;
 
 /**
  * Version-agnostic on purpose. Pinning the variant nibbles to v4 would reject
@@ -82,19 +88,6 @@ const logStorageFailure = (operation: string, error: unknown): string => {
   const correlationId = `db_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   console.error(`[storage ${correlationId}] ${operation} failed:`, error);
   return correlationId;
-};
-
-/**
- * Placeholder inventory. Unknown IDs are rejected rather than priced, so a
- * client cannot invent a room to get a cheaper rate.
- * TODO: replace with AscendaService.searchHotels once feature/search-results
- * merges — MergedHotel.price is the real source.
- */
-const ROOM_RATES: Record<string, number> = {
-  'standard-queen': 180,
-  'deluxe-king': 240,
-  'executive-suite': 420,
-  'family-room': 310,
 };
 
 /**
@@ -285,7 +278,15 @@ const toRoomTypeList = (value: unknown): string[] | null => {
  * Exported for direct testing: this is the whole price-integrity guarantee, and
  * exercising it only through HTTP left most of its outcomes unreached.
  */
-export const buildQuote = (input: unknown): { quote: Quote } | { error: string } => {
+export const buildQuote = (
+  input: unknown,
+  /**
+   * Omitted, the four offline demo rooms are all that can be priced. The live
+   * path passes a table that also carries the supplier's rooms for this exact
+   * stay — see quoteStay, which is what the HTTP handlers call.
+   */
+  rates?: RateTable
+): { quote: Quote } | { error: string } => {
   const raw = (input ?? {}) as Record<string, unknown>;
 
   const destinationId = asTrimmed(raw.destinationId);
@@ -307,18 +308,6 @@ export const buildQuote = (input: unknown): { quote: Quote } | { error: string }
   const roomTypes = toRoomTypeList(raw.roomTypes);
   if (!roomTypes || roomTypes.length < 1 || roomTypes.length > MAX_ROOMS) {
     return { error: `Select between 1 and ${MAX_ROOMS} rooms.` };
-  }
-
-  const nightlyRates: number[] = [];
-  for (const roomType of roomTypes) {
-    // Object.hasOwn, not a plain lookup: ROOM_RATES['constructor'] resolves to a
-    // function off Object.prototype rather than undefined, so `=== undefined`
-    // waves prototype keys straight past this guard. They are then multiplied into
-    // a NaN subtotal and only stopped by the isFinite check at the bottom — safe,
-    // but by accident, and with the wrong error.
-    const rate = Object.hasOwn(ROOM_RATES, roomType) ? ROOM_RATES[roomType] : undefined;
-    if (rate === undefined) return { error: 'That room type is not available.' };
-    nightlyRates.push(rate);
   }
 
   if (!isIsoDate(startDate) || !isIsoDate(endDate)) {
@@ -343,9 +332,38 @@ export const buildQuote = (input: unknown): { quote: Quote } | { error: string }
     return { error: `A booking is limited to ${MAX_GUESTS} guests.` };
   }
 
-  const nightlyTotal = nightlyRates.reduce((sum, rate) => sum + rate, 0);
-  const subtotal = Math.round(nightlyTotal * nights * 100) / 100;
-  const taxes = Math.round(subtotal * TAX_RATE * 100) / 100;
+  /**
+   * Priced after the dates are known, because a supplier quote is for a stay
+   * rather than for a night — the table handed in is built for these exact
+   * check-in and check-out dates and is meaningless without them.
+   *
+   * Object.hasOwn, not a plain lookup: rates['constructor'] resolves to a
+   * function off Object.prototype rather than undefined, so `=== undefined`
+   * waves prototype keys straight past this guard. They are then multiplied into
+   * a NaN subtotal and only stopped by the isFinite check at the bottom — safe,
+   * but by accident, and with the wrong error.
+   */
+  const table = rates ?? demoRateTable(nights);
+
+  const nightlyRates: number[] = [];
+  const roomLabels: string[] = [];
+  let subtotal = 0;
+  let taxes = 0;
+
+  for (const roomType of roomTypes) {
+    const room = Object.hasOwn(table, roomType) ? table[roomType] : undefined;
+    if (!room) return { error: 'That room type is not available.' };
+
+    nightlyRates.push(room.nightlyRate);
+    roomLabels.push(room.label);
+    subtotal += room.subtotal;
+    taxes += room.taxes;
+  }
+
+  subtotal = Math.round(subtotal * 100) / 100;
+  taxes = Math.round(taxes * 100) / 100;
+
+  const nightlyTotal = Math.round(nightlyRates.reduce((sum, rate) => sum + rate, 0) * 100) / 100;
   const totalPrice = Math.round((subtotal + taxes) * 100) / 100;
 
   if (!Number.isFinite(totalPrice) || totalPrice <= 0) {
@@ -355,9 +373,83 @@ export const buildQuote = (input: unknown): { quote: Quote } | { error: string }
   return {
     quote: {
       destinationId, hotelId, hotelName, roomTypes, startDate, endDate, adults, children,
-      nights, currency: CURRENCY, nightlyRates, nightlyTotal, subtotal, taxes, totalPrice,
+      nights, currency: CURRENCY, roomLabels, nightlyRates, nightlyTotal, subtotal, taxes,
+      totalPrice,
     },
   };
+};
+
+/**
+ * Ascenda counts heads per room and spells it "2" for one room, "2|2" for two.
+ * Guests are spread as evenly as the party divides, because a room asked to
+ * sleep the whole party is quoted at a different rate — or reported unavailable
+ * — than the same rooms asked to sleep two each.
+ */
+const toGuestsParam = (adults: number, children: number, rooms: number): string => {
+  const total = adults + children;
+  const base = Math.floor(total / rooms);
+  const remainder = total % rooms;
+
+  return Array.from({ length: rooms }, (_, index) =>
+    String(Math.max(1, base + (index < remainder ? 1 : 0)))
+  ).join('|');
+};
+
+/**
+ * buildQuote with the rate table fetched first — what every HTTP handler calls.
+ *
+ * The stay is read twice: loosely here, only far enough to address the supplier,
+ * and then properly inside buildQuote, which stays the sole authority on whether
+ * a stay is valid. Anything this pre-read cannot make sense of falls through
+ * with no table, so a malformed request gets buildQuote's specific error rather
+ * than a supplier lookup failure that says nothing about what was wrong.
+ */
+export const quoteStay = async (
+  input: unknown
+): Promise<{ quote: Quote } | { error: string; status?: number }> => {
+  const raw = (input ?? {}) as Record<string, unknown>;
+
+  const roomTypes = toRoomTypeList(raw.roomTypes) ?? [];
+  const hotelId = asTrimmed(raw.hotelId);
+  const destinationId = asTrimmed(raw.destinationId);
+  const startDate = raw.startDate;
+  const endDate = raw.endDate;
+
+  const addressable =
+    hotelId !== '' &&
+    destinationId !== '' &&
+    roomTypes.length > 0 &&
+    roomTypes.length <= MAX_ROOMS &&
+    isIsoDate(startDate) &&
+    isIsoDate(endDate);
+
+  if (!addressable) return buildQuote(input);
+
+  const nights = Math.round((Date.parse(endDate) - Date.parse(startDate)) / 86_400_000);
+  if (!Number.isFinite(nights) || nights < 1 || nights > MAX_NIGHTS) return buildQuote(input);
+
+  const adults = Number(raw.adults);
+  const children = raw.children === undefined || raw.children === null ? 0 : Number(raw.children);
+  if (!Number.isInteger(adults) || adults < 1 || !Number.isInteger(children) || children < 0) {
+    return buildQuote(input);
+  }
+
+  const lookup = await resolveRateTable(
+    {
+      hotelId,
+      destinationId,
+      checkin: startDate,
+      checkout: endDate,
+      guests: toGuestsParam(adults, children, roomTypes.length),
+      nights,
+      currency: CURRENCY,
+    },
+    roomTypes
+  );
+
+  if (!lookup.ok) return { error: lookup.error, status: lookup.status };
+
+  return buildQuote(input, lookup.table);
 };
 
 /**
@@ -374,6 +466,20 @@ interface CarriedBooking {
   billing: BillingAddress | null;
   stay: StayDetails;
   userId: string | null;
+  /**
+   * What the stay was quoted at when the payment was created, in major units.
+   *
+   * Written by the server into Stripe's own metadata store, which the browser
+   * can neither read back nor alter, so this is as trustworthy as re-deriving
+   * the price and — unlike re-deriving it — cannot move. Supplier rates change
+   * between minting a PaymentIntent and confirming it; without this the
+   * confirm-time amount check would reject a charge that already succeeded and
+   * strand the guest with a payment and no booking.
+   *
+   * Null for a session created before this key existed, which falls back to the
+   * reprice.
+   */
+  quotedTotal: number | null;
 }
 
 const toSessionMetadata = (carried: CarriedBooking): Record<string, string> => {
@@ -382,6 +488,7 @@ const toSessionMetadata = (carried: CarriedBooking): Record<string, string> => {
   return {
     guest: JSON.stringify(identity),
     stay: JSON.stringify(carried.stay),
+    ...(carried.quotedTotal !== null ? { quotedTotal: carried.quotedTotal.toFixed(2) } : {}),
     // Its own key rather than nested in guest: each Stripe metadata value is
     // capped at 500 characters, and an address plus an identity can exceed that.
     ...(carried.billing ? { billing: JSON.stringify(carried.billing) } : {}),
@@ -406,12 +513,17 @@ const fromSessionMetadata = (metadata: Record<string, string>): CarriedBooking |
       ? (JSON.parse(metadata.billing) as Partial<BillingAddress>)
       : null;
 
+    const quotedTotal = Number(metadata.quotedTotal);
+
     return {
       guest: { ...normaliseGuest(guest), specialRequests: metadata.specialRequests ?? null },
       billing:
         billing && typeof billing === 'object' ? normaliseBilling(billing) : null,
       stay,
       userId: metadata.userId ?? null,
+      // Number('') is 0 and Number(undefined) is NaN, so both the absent key and
+      // an empty one have to fail this test rather than only one of them.
+      quotedTotal: Number.isFinite(quotedTotal) && quotedTotal > 0 ? quotedTotal : null,
     };
   } catch {
     return null;
@@ -471,18 +583,68 @@ export const recordPaidBooking = async (
   }
 
   // Re-priced from the stay rather than trusting any total that travelled with
-  // the browser, then compared against what Stripe actually captured.
-  const result = buildQuote(carried.stay);
-  if ('error' in result) {
+  // the browser.
+  const result = await quoteStay(carried.stay);
+  const repriced = 'error' in result ? null : result.quote;
+
+  /**
+   * A stay that will not reprice is not the same as a stay that was never sold.
+   *
+   * Supplier room keys are scoped to the price search that issued them: ask
+   * Ascenda for the same hotel and dates twice and "Premier Courtyard Room King"
+   * comes back under a different uuid each time. Once hotelRoomService's cache
+   * entry has expired, re-pricing a genuine booking therefore fails with "that
+   * room type is not available" rather than with a different number — and a
+   * webhook redelivered hours later hits precisely that.
+   *
+   * When this server quoted and charged the stay itself, the metadata is a
+   * complete record of what was sold and the reprice was only ever a
+   * cross-check. Refusing the insert because the check cannot be run turns a
+   * recoverable charge into a lost one. With no quoted total there is nothing to
+   * fall back on and the refusal stands.
+   */
+  if (!repriced && carried.quotedTotal === null) {
     console.error(
-      `Paid session ${payment.paymentIntentId} carries an unpriceable stay: ${result.error}`
+      `Paid session ${payment.paymentIntentId} carries an unpriceable stay: ` +
+        `${(result as { error: string }).error}`
     );
     return { ok: false, status: 409, error: 'That payment does not match a bookable stay.' };
   }
-  const { quote } = result;
+
+  if (!repriced) {
+    console.warn(
+      `Could not reprice ${payment.paymentIntentId} — recording it at the quoted ` +
+        `${carried.quotedTotal} ${CURRENCY}. Supplier room keys rotate per search, ` +
+        'so this is expected once the rate cache has expired.'
+    );
+  }
+
+  const nights = Math.round(
+    (Date.parse(carried.stay.endDate) - Date.parse(carried.stay.startDate)) / 86_400_000
+  );
+
+  /**
+   * The amount to check against is the one this server quoted when it created
+   * the payment, not the one a fresh lookup returns now.
+   *
+   * Both are server-side figures — the metadata was written by preparePayment
+   * and lives in Stripe, where the browser cannot reach it — so this is exactly
+   * as strong against a tampered total. What it is not vulnerable to is the
+   * supplier moving its rates mid-checkout, which the reprice alone would read
+   * as fraud and answer with a 409, leaving a captured charge and no booking.
+   */
+  const expectedPrice = carried.quotedTotal ?? repriced!.totalPrice;
+  const currency = repriced?.currency ?? CURRENCY;
+
+  if (repriced && carried.quotedTotal !== null && carried.quotedTotal !== repriced.totalPrice) {
+    console.warn(
+      `Rate drift on ${payment.paymentIntentId}: quoted ${carried.quotedTotal} ${currency}, ` +
+        `now ${repriced.totalPrice}. Honouring the quoted price.`
+    );
+  }
 
   if (payment.amountTotal !== null) {
-    const expected = toMinorUnits(quote.totalPrice, quote.currency);
+    const expected = toMinorUnits(expectedPrice, currency);
     if (payment.amountTotal !== expected) {
       console.error(
         `Amount mismatch on ${payment.paymentIntentId}: charged ${payment.amountTotal}, expected ${expected}`
@@ -491,12 +653,15 @@ export const recordPaidBooking = async (
     }
   }
 
-  if (payment.currency && payment.currency.toUpperCase() !== quote.currency.toUpperCase()) {
+  if (payment.currency && payment.currency.toUpperCase() !== currency.toUpperCase()) {
     console.error(
-      `Currency mismatch on ${payment.paymentIntentId}: charged ${payment.currency}, expected ${quote.currency}`
+      `Currency mismatch on ${payment.paymentIntentId}: charged ${payment.currency}, expected ${currency}`
     );
     return { ok: false, status: 409, error: 'Payment currency did not match the booking.' };
   }
+
+  /** The reprice when there was one, the metadata when there was not. */
+  const stay = repriced ?? { ...carried.stay, nights };
 
   try {
     const booking = await insertOne({
@@ -504,17 +669,19 @@ export const recordPaidBooking = async (
       guest: carried.guest,
       billing: carried.billing,
       stay: {
-        destinationId: quote.destinationId,
-        hotelId: quote.hotelId,
-        hotelName: quote.hotelName,
-        roomTypes: quote.roomTypes,
-        startDate: quote.startDate,
-        endDate: quote.endDate,
-        adults: quote.adults,
-        children: quote.children,
+        destinationId: stay.destinationId,
+        hotelId: stay.hotelId,
+        hotelName: stay.hotelName,
+        roomTypes: stay.roomTypes,
+        startDate: stay.startDate,
+        endDate: stay.endDate,
+        adults: stay.adults,
+        children: stay.children,
       },
-      nights: quote.nights,
-      pricePaid: quote.totalPrice,
+      nights: stay.nights,
+      // What the guest was actually charged, which is the quoted price whenever
+      // one was carried — never a rate that moved after they paid it.
+      pricePaid: expectedPrice,
       paymentId: payment.paymentIntentId,
       // payee_id is NOT NULL and a guest checkout produces no Stripe Customer,
       // so the payer's email is the identifier of last resort.
@@ -561,10 +728,47 @@ export const recordPaidBooking = async (
   }
 };
 
+/**
+ * GET /demo-stay → a real hotel, real room and real dates, picked at random.
+ *
+ * Returns the stay plus the query string that drops it into /checkout, so the
+ * caller does not have to know how to spell a checkout URL. Nothing is priced
+ * here that the checkout will not price again from the same supplier call —
+ * indicativeTotal is a label, not an amount.
+ */
+export const getDemoStay = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const stay = await pickDemoStay();
+
+    if (!stay) {
+      res.status(503).json({
+        error: 'Could not find an available stay to demo just now. Try again in a moment.',
+      });
+      return;
+    }
+
+    const query = new URLSearchParams({
+      destinationId: stay.destinationId,
+      hotelId: stay.hotelId,
+      hotelName: stay.hotelName,
+      roomTypes: stay.roomTypes.join(','),
+      startDate: stay.startDate,
+      endDate: stay.endDate,
+      adults: String(stay.adults),
+      children: String(stay.children),
+    });
+
+    res.json({ stay, checkoutQuery: query.toString() });
+  } catch (error) {
+    console.error('Demo stay selection failed:', error);
+    res.status(502).json({ error: 'Could not reach the hotel service.' });
+  }
+};
+
 /** Sequence steps 1-2: GET /checkout → a priced quote for display only. */
 export const getCheckout = async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = buildQuote({
+    const result = await quoteStay({
       destinationId: req.query.destinationId,
       hotelId: req.query.hotelId,
       hotelName: req.query.hotelName,
@@ -576,7 +780,9 @@ export const getCheckout = async (req: Request, res: Response): Promise<void> =>
     });
 
     if ('error' in result) {
-      res.status(400).json({ error: result.error });
+      // A supplier fault carries its own status (502/504); a rejected stay has
+      // none and is the caller's problem.
+      res.status(result.status ?? 400).json({ error: result.error });
       return;
     }
 
@@ -662,6 +868,8 @@ interface PreparedPayment {
   billing: BillingAddress;
   metadata: Record<string, string>;
   description: string;
+  /** Same booking attempt → same key → Stripe replays one intent, not many. */
+  idempotencyKey: string;
 }
 
 type PrepareOutcome =
@@ -670,14 +878,14 @@ type PrepareOutcome =
 
 /**
  * Everything both payment flows must do before money is involved: validate the
- * guest, reprice the stay from ROOM_RATES, and pack what has to survive the trip
- * to Stripe.
+ * guest, price the stay from the supplier's rates, and pack what has to survive
+ * the trip to Stripe.
  *
  * Shared rather than duplicated because a divergence here is a divergence in
  * what gets charged versus what gets stored — the two endpoints must build the
  * same amount from the same input every time.
  */
-const preparePayment = (body: unknown): PrepareOutcome => {
+const preparePayment = async (body: unknown): Promise<PrepareOutcome> => {
   const { guestDetails, stay, userId } = (body ?? {}) as Record<string, unknown>;
 
   const { billingAddress } = (body ?? {}) as Record<string, unknown>;
@@ -700,9 +908,9 @@ const preparePayment = (body: unknown): PrepareOutcome => {
     };
   }
 
-  const result = buildQuote(stay);
+  const result = await quoteStay(stay);
   if ('error' in result) {
-    return { ok: false, status: 400, body: { error: result.error } };
+    return { ok: false, status: result.status ?? 400, body: { error: result.error } };
   }
   const { quote } = result;
 
@@ -728,6 +936,7 @@ const preparePayment = (body: unknown): PrepareOutcome => {
       children: quote.children,
     },
     userId: userId ? String(userId) : null,
+    quotedTotal: quote.totalPrice,
   });
 
   // Stripe rejects the whole request if any value is over the limit, which would
@@ -744,6 +953,37 @@ const preparePayment = (body: unknown): PrepareOutcome => {
     };
   }
 
+  /**
+   * Stable across retries of the same booking attempt, different for anything
+   * else. Stripe replays the original intent for a repeated key, which is what
+   * stops /payment minting a fresh one every time it mounts — a refresh or a
+   * second trip through checkout used to leave abandoned intents behind.
+   *
+   * The priced total is folded in deliberately. Keyed on the stay alone, a
+   * re-quoted booking would be handed back the old intent at the old amount,
+   * and the guest would be charged a price this server no longer offers. Rate
+   * drift is common enough with a live supplier that this is not theoretical.
+   *
+   * Guest email is in the key so two people booking the same room for the same
+   * nights get their own intents rather than sharing one.
+   */
+  const idempotencyKey = createHash('sha256')
+    .update(
+      JSON.stringify([
+        guest.email,
+        quote.destinationId,
+        quote.hotelId,
+        quote.roomTypes,
+        quote.startDate,
+        quote.endDate,
+        quote.adults,
+        quote.children,
+        quote.totalPrice,
+        quote.currency,
+      ])
+    )
+    .digest('hex');
+
   const nightLabel = `${quote.nights} night${quote.nights > 1 ? 's' : ''}`;
 
   return {
@@ -753,6 +993,7 @@ const preparePayment = (body: unknown): PrepareOutcome => {
       guest,
       billing,
       metadata,
+      idempotencyKey,
       description: `${quote.hotelName} · ${nightLabel} · ${quote.roomTypes.join(', ')}`,
     },
   };
@@ -773,12 +1014,12 @@ export const postPaymentIntent = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const outcome = preparePayment(req.body);
+    const outcome = await preparePayment(req.body);
     if (!outcome.ok) {
       res.status(outcome.status).json(outcome.body);
       return;
     }
-    const { quote, guest, metadata, description } = outcome.prepared;
+    const { quote, guest, billing, metadata, description, idempotencyKey } = outcome.prepared;
 
     const intent = await createPaymentIntent({
       amount: quote.totalPrice,
@@ -786,6 +1027,27 @@ export const postPaymentIntent = async (req: Request, res: Response): Promise<vo
       guestEmail: guest.email,
       description,
       metadata,
+      idempotencyKey,
+      /**
+       * paymentService has always accepted `billing` and attached it to the
+       * intent, but this call site never passed it, so the parameter was dead
+       * and every intent went out with no address on it at all.
+       *
+       * It matters more while BILLING-PENDING-MIGRATION is in force: with the
+       * write to our own table suspended, the Stripe object is the only place
+       * the address is recorded, and an address sent nowhere would be one
+       * collected for nothing. Note this lands as `shipping`, not as the
+       * billing_details an AVS check reads — see paymentService.
+       */
+      billing: {
+        name: `${guest.firstName} ${guest.lastName}`.trim(),
+        line1: billing.line1,
+        line2: billing.line2 ?? null,
+        city: billing.city,
+        state: billing.state ?? null,
+        postalCode: billing.postalCode,
+        country: billing.country,
+      },
     });
 
     // The amount is echoed for display only. postConfirmBooking reprices from
@@ -795,6 +1057,20 @@ export const postPaymentIntent = async (req: Request, res: Response): Promise<vo
       paymentIntentId: intent.paymentIntentId,
       amount: quote.totalPrice,
       currency: quote.currency,
+      /**
+       * The whole priced quote, so the payment page can show what is being paid
+       * for rather than only how much.
+       *
+       * It has to come from here and not from the checkout handoff: the browser
+       * holds the guest and stay in sessionStorage, but it must never hold the
+       * price. This is the same quote the PaymentIntent was minted from, so the
+       * summary on screen and the amount on the card cannot disagree.
+       *
+       * `amount` and `currency` above are quote.totalPrice and quote.currency.
+       * Kept because they are what the pay button reads and what the intent
+       * response has always carried.
+       */
+      quote,
       // Tells the page which card UI it can mount. Stripe Elements needs a real
       // client secret from a real intent; with no credentials there is nothing
       // for it to talk to, so the demo form stands in. The server decides this,
@@ -819,7 +1095,7 @@ export const postPayment = async (req: Request, res: Response): Promise<void> =>
     // divergence here is a divergence between what gets charged and what gets
     // stored, and the two endpoints must build the same amount from the same
     // input every time.
-    const outcome = preparePayment(req.body);
+    const outcome = await preparePayment(req.body);
     if (!outcome.ok) {
       res.status(outcome.status).json(outcome.body);
       return;

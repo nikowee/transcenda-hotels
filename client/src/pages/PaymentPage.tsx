@@ -6,12 +6,22 @@ import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-
 import {
   AlertCircle,
   ArrowLeft,
+  BedDouble,
+  Calendar,
   CreditCard,
   Loader2,
   Lock,
+  MapPin,
   ShieldCheck,
+  User,
+  Users,
 } from 'lucide-react';
-import type { BillingAddress, GuestDetails, StayDetails } from '../types/booking';
+import type {
+  BillingAddress,
+  CheckoutQuote,
+  GuestDetails,
+  StayDetails,
+} from '../types/booking';
 
 const API_URL = import.meta.env.VITE_API_URL;
 const PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
@@ -44,6 +54,16 @@ interface IntentResponse {
   amount: number;
   currency: string;
   simulated: boolean;
+  /**
+   * The priced stay behind the amount, for the summary beside the card form.
+   *
+   * Comes from the intent response rather than the sessionStorage handoff on
+   * purpose. The browser carries the guest and the stay across the two pages; it
+   * must never carry the price. Reading the summary from the same response the
+   * PaymentIntent was minted from is what guarantees the figures on screen are
+   * the figures being charged.
+   */
+  quote: CheckoutQuote;
 }
 
 interface HandoffState {
@@ -165,7 +185,9 @@ export default function PaymentPage() {
         </Link>
       </nav>
 
-      <div className="relative z-10 mx-auto w-full max-w-2xl">
+      {/* Wider than the single-column original: the summary sits beside the card
+          form from lg up, and stacks under it below that. */}
+      <div className="relative z-10 mx-auto w-full max-w-5xl">
         <header className="mb-8">
           <h1 className="text-4xl font-extrabold tracking-tighter text-white md:text-5xl">
             Payment{' '}
@@ -212,20 +234,185 @@ export default function PaymentPage() {
         )}
 
         {intent && !error && (
-          <main className="rounded-2xl bg-white p-6 shadow-xl md:p-8">
-            {intent.simulated || !stripePromise ? (
-              <DemoCardForm intent={intent} onPaid={onPaid} />
-            ) : (
-              <Elements
-                stripe={stripePromise}
-                options={{ clientSecret: intent.clientSecret, appearance: { theme: 'stripe' } }}
-              >
-                <StripeCardForm intent={intent} onPaid={onPaid} />
-              </Elements>
+          <div className="grid gap-6 lg:grid-cols-[1fr_20rem] lg:items-start">
+            <main className="rounded-2xl bg-white p-6 shadow-xl md:p-8">
+              {/**
+               * Three outcomes, not two. `simulated || !stripePromise` used to
+               * collapse the last two together, and that was a trap: when the
+               * server mints a *real* PaymentIntent and this build has no
+               * publishable key, it mounted the demo form against a live charge.
+               * The demo form derives brand and last four and posts them — it
+               * cannot confirm a card with Stripe — so the intent stays at
+               * requires_payment_method, /confirm answers 402 "Payment has not
+               * completed", and the page is a dead end that looks like a working
+               * form. Say what is actually wrong instead.
+               */}
+              {intent.simulated ? (
+                <DemoCardForm intent={intent} onPaid={onPaid} />
+              ) : stripePromise ? (
+                <Elements
+                  stripe={stripePromise}
+                  options={{ clientSecret: intent.clientSecret, appearance: { theme: 'stripe' } }}
+                >
+                  <StripeCardForm intent={intent} onPaid={onPaid} />
+                </Elements>
+              ) : (
+                <MissingStripeKey />
+              )}
+            </main>
+
+            {/* Guarded, not assumed. Reading quote.currency off an absent quote
+                throws during render, React unmounts the tree, and the customer
+                gets a blank page with no error — which is precisely how a
+                server/client contract drift blanked the checkout page once
+                already. A missing summary is a worse page; a thrown one is no
+                page at all. */}
+            {intent.quote && (
+              <BookingSummary quote={intent.quote} guest={handoff?.guestDetails ?? null} />
             )}
-          </main>
+          </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * What is being paid for, beside the card form.
+ *
+ * Checkout showed this too, but a customer arrives here having crossed a page
+ * boundary with the total in their head and nothing else — asking them to
+ * commit a card against a bare figure is how a wrong-dates booking gets paid
+ * for. It is also the last screen before money moves, which makes it the last
+ * chance to notice.
+ *
+ * Every figure comes from the quote the intent was minted from. The guest name
+ * comes from the handoff because it is the one thing here that is not priced and
+ * not sent to Stripe as an amount.
+ */
+function BookingSummary({
+  quote,
+  guest,
+}: {
+  quote: CheckoutQuote;
+  guest: GuestDetails | null;
+}) {
+  const money = (amount: number) =>
+    `${quote.currency} ${amount.toLocaleString('en-SG', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+
+  const occupancy = [
+    `${quote.adults} adult${quote.adults === 1 ? '' : 's'}`,
+    quote.children > 0 ? `${quote.children} child${quote.children === 1 ? '' : 'ren'}` : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
+
+  return (
+    <aside
+      aria-label="Booking summary"
+      className="h-fit rounded-2xl bg-white/5 p-6 ring-1 ring-white/10 backdrop-blur"
+    >
+      <h2 className="text-xs font-bold tracking-wider text-slate-400 uppercase">
+        Booking summary
+      </h2>
+
+      <div className="mt-4 space-y-3 text-sm text-slate-200">
+        <p className="flex items-start gap-2">
+          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
+          <span className="font-semibold text-white">{quote.hotelName}</span>
+        </p>
+        <p className="flex items-start gap-2">
+          <BedDouble className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
+          {/* Per room, not for the whole list: a supplier that names some rooms
+              and not others should still show the names it gave, and a raw id
+              reads badly but reads — a blank line does not. */}
+          <span>{quote.roomTypes.map((id, index) => quote.roomLabels?.[index] ?? id).join(' · ')}</span>
+        </p>
+        <p className="flex items-start gap-2">
+          <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
+          <span>
+            {quote.startDate} → {quote.endDate}
+            <span className="text-slate-400">
+              {' '}
+              ({quote.nights} night{quote.nights === 1 ? '' : 's'})
+            </span>
+          </span>
+        </p>
+        <p className="flex items-start gap-2">
+          <Users className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
+          <span>{occupancy}</span>
+        </p>
+        {guest && (
+          <p className="flex items-start gap-2">
+            <User className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
+            <span>
+              {guest.salutation} {guest.firstName} {guest.lastName}
+            </span>
+          </p>
+        )}
+      </div>
+
+      <dl className="mt-6 space-y-2 border-t border-white/10 pt-4 text-sm">
+        <div className="flex justify-between text-slate-300">
+          <dt>
+            {/* nightlyTotal, not a per-room rate: a multi-room stay bills the
+                sum of its rooms each night. */}
+            {money(quote.nightlyTotal)} × {quote.nights} night{quote.nights === 1 ? '' : 's'}
+          </dt>
+          <dd>{money(quote.subtotal)}</dd>
+        </div>
+        <div className="flex justify-between text-slate-300">
+          <dt>Taxes &amp; fees</dt>
+          <dd>{money(quote.taxes)}</dd>
+        </div>
+        <div className="flex justify-between border-t border-white/10 pt-3 text-base font-extrabold text-white">
+          <dt>Total</dt>
+          <dd>{money(quote.totalPrice)}</dd>
+        </div>
+      </dl>
+    </aside>
+  );
+}
+
+/**
+ * The server is taking a real payment and this build cannot render card fields
+ * for it.
+ *
+ * Both ways out are configuration, and which one is right depends on what the
+ * reader is doing, so both are named rather than guessed at. Neither is
+ * something the page can do for itself: mounting Elements needs a publishable
+ * key at build time, and switching to the simulator is the server's call — a
+ * client that could choose it would be a client that could ask for the demo form
+ * against live Stripe.
+ */
+function MissingStripeKey() {
+  return (
+    <div className="text-center">
+      <AlertCircle className="mx-auto h-12 w-12 text-amber-500" />
+      <h2 className="mt-4 text-xl font-bold text-slate-800">Card entry is not configured</h2>
+      <p className="mt-2 text-slate-500">
+        The server created a real payment, but this build has no Stripe publishable key, so
+        Stripe's card fields cannot be shown. Nothing has been charged.
+      </p>
+      <dl className="mx-auto mt-6 max-w-md space-y-3 text-left text-sm">
+        <div className="rounded-xl bg-slate-50 p-4">
+          <dt className="font-semibold text-slate-700">To take real test-mode cards</dt>
+          <dd className="mt-1 text-slate-500">
+            Set <code className="rounded bg-slate-200 px-1">VITE_STRIPE_PUBLISHABLE_KEY</code> in{' '}
+            <code className="rounded bg-slate-200 px-1">client/.env</code> and restart Vite.
+          </dd>
+        </div>
+        <div className="rounded-xl bg-slate-50 p-4">
+          <dt className="font-semibold text-slate-700">To use the demo card form instead</dt>
+          <dd className="mt-1 text-slate-500">
+            Set <code className="rounded bg-slate-200 px-1">PAYMENTS_MODE=simulate</code> in{' '}
+            <code className="rounded bg-slate-200 px-1">server/.env</code> and restart the server.
+          </dd>
+        </div>
+      </dl>
     </div>
   );
 }
@@ -245,10 +432,22 @@ function StripeCardForm({ intent, onPaid }: FormProps) {
   const elements = useElements();
   const [isPaying, setIsPaying] = useState(false);
   const [message, setMessage] = useState('');
+  /** Stripe's iframes mount asynchronously; pressing Pay before they do does nothing. */
+  const [isReady, setIsReady] = useState(false);
 
-  const handleSubmit: React.SubmitEventHandler<HTMLFormElement> = async (event) => {
+  const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault();
-    if (!stripe || !elements) return;
+
+    /**
+     * Never a silent return. If Stripe.js has not finished initialising, a bare
+     * `return` here makes the Pay button do literally nothing — no spinner, no
+     * message, no request — which is indistinguishable from a broken page and
+     * impossible to report usefully.
+     */
+    if (!stripe || !elements) {
+      setMessage('The payment form is still loading. Give it a moment and try again.');
+      return;
+    }
 
     setIsPaying(true);
     setMessage('');
@@ -294,11 +493,45 @@ function StripeCardForm({ intent, onPaid }: FormProps) {
         </div>
       )}
 
-      <PaymentElement />
+      {/**
+       * onLoadError is not optional decoration. Without it, an Element that
+       * fails to initialise leaves Stripe's own loading skeleton on screen
+       * indefinitely — no error, no timeout, a spinner that never resolves and
+       * a Pay button that cannot do anything. Surfacing the reason is the
+       * difference between a bug report and a shrug.
+       */}
+      <PaymentElement
+        options={{
+          /**
+           * Card first, and expanded on arrival.
+           *
+           * The intent is created with automatic_payment_methods, so Stripe
+           * offers everything the account has enabled for the currency — for SGD
+           * that is PayNow and Link alongside card. Left to itself it opened on
+           * PayNow and rendered a method chooser with no fields at all: the card
+           * inputs are created lazily and did not exist in the DOM until the
+           * Card tab was clicked. Nothing was broken, but a payment page you
+           * cannot type into is indistinguishable from one that is stuck, which
+           * is precisely how this was first reported.
+           *
+           * `tabs` keeps the other methods one click away rather than removing
+           * them, so PayNow and Link are still offered.
+           */
+          layout: 'tabs',
+          paymentMethodOrder: ['card'],
+        }}
+        onReady={() => setIsReady(true)}
+        onLoadError={(event) =>
+          setMessage(
+            event.error?.message ??
+              'Stripe could not load the card form. Refresh to try again.'
+          )
+        }
+      />
 
       <button
         type="submit"
-        disabled={!stripe || isPaying}
+        disabled={!stripe || !isReady || isPaying}
         className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-8 font-bold text-white shadow-md shadow-blue-200 transition-colors hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 disabled:cursor-not-allowed disabled:bg-blue-400"
       >
         {isPaying ? (

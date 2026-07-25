@@ -32,3 +32,12 @@ process.env.STRIPE_WEBHOOK_SECRET ??= 'whsec_testtesttesttesttesttesttest00';
 
 /** Stripe's default NodeHttpClient deadlocks under nock — see paymentService. */
 process.env.STRIPE_HTTP_CLIENT ??= 'fetch';
+
+/**
+ * The real price search takes several seconds to settle, and the defaults are
+ * tuned for that. Here the answer is an interceptor that replies at once, so a
+ * poll that has to wait is a poll that is about to fail — sleeping on it only
+ * decides how slowly.
+ */
+process.env.HOTEL_API_POLL_MS ??= '1';
+process.env.HOTEL_API_MAX_POLLS ??= '3';

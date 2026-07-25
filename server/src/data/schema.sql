@@ -43,6 +43,16 @@ create table public.bookings (
   guest_email text not null,
   guest_phone text not null,
 
+  -- BILLING-PENDING-MIGRATION — NOT ON THE DEPLOYED TABLE.
+  --
+  -- Verified absent against the live project; the six columns below are the
+  -- migration in 001_billing_address.sql and nothing more. This file describes
+  -- the schema as it *will* be, so they stay written out — but commented, so
+  -- nobody reads this as a record of what is there today.
+  --
+  -- bookingModel.toRow has the matching writes commented out under the same
+  -- token. Uncomment both together, after running the migration.
+  --
   -- Billing address, as given to the card issuer. Collected primarily so Stripe
   -- can run an AVS check; stored so the record matches what was authorised.
   --
@@ -51,12 +61,13 @@ create table public.bookings (
   -- here would turn any gap in the metadata round trip into a charge that cannot
   -- be recorded at all. Enforcing it in validation costs a rejected form;
   -- enforcing it here costs an orphaned payment.
-  billing_line1       text null,
-  billing_line2       text null,
-  billing_city        text null,
-  billing_state       text null,
-  billing_postal_code text null,
-  billing_country     character(2) null,
+  --
+  -- billing_line1       text null,
+  -- billing_line2       text null,
+  -- billing_city        text null,
+  -- billing_state       text null,
+  -- billing_postal_code text null,
+  -- billing_country     character(2) null,
 
   price_paid numeric(10, 2) not null,
   payment_id text not null,

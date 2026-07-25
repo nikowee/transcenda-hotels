@@ -44,6 +44,7 @@ const QUOTE: CheckoutQuote = {
   children: 1,
   nights: 3,
   currency: 'SGD',
+  roomLabels: ['Deluxe King'],
   nightlyRates: [240],
   nightlyTotal: 240,
   subtotal: 720,
@@ -199,7 +200,42 @@ describe('CheckoutPage', () => {
     expect(await waitForQuote()).toBeInTheDocument();
     expect(screen.getByText(/3 nights/)).toBeInTheDocument();
     expect(screen.getByText('Marina Bay Sands')).toBeInTheDocument();
-    expect(screen.getByText('deluxe-king')).toBeInTheDocument();
+    expect(screen.getByText('Deluxe King')).toBeInTheDocument();
+  });
+
+  /**
+   * A supplier room id is an opaque UUID. Rendering roomTypes directly put one
+   * on screen where the room name belongs the moment a booking came from a real
+   * hotel instead of the demo catalogue.
+   */
+  it('shows the room name rather than the supplier id', async () => {
+    server.use(
+      http.get('*/api/bookings/checkout', () =>
+        HttpResponse.json({
+          ...QUOTE,
+          roomTypes: ['2eb243ba-2f54-561b-8069-0db1439138f1'],
+          roomLabels: ['Premier Courtyard Room King'],
+        })
+      )
+    );
+
+    renderCheckout();
+
+    expect(await screen.findByText('Premier Courtyard Room King')).toBeInTheDocument();
+    expect(screen.queryByText(/2eb243ba/)).not.toBeInTheDocument();
+  });
+
+  /** A quote minted before roomLabels existed must still render its rooms. */
+  it('falls back to the room id when the quote carries no labels', async () => {
+    const { roomLabels: _omitted, ...withoutLabels } = QUOTE;
+
+    server.use(
+      http.get('*/api/bookings/checkout', () => HttpResponse.json(withoutLabels))
+    );
+
+    renderCheckout();
+
+    expect(await screen.findByText('deluxe-king')).toBeInTheDocument();
   });
 
   it.each([

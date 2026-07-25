@@ -411,8 +411,13 @@ test.describe('Booking Flow', () => {
   });
 
   test('An unpriceable room type is refused by the server', async ({ page }) => {
-    // The client cannot invent inventory: buildQuote rejects an unknown room
-    // type and the page surfaces that rather than pricing it.
+    // The client cannot invent inventory: an id outside the demo catalogue is
+    // put to the supplier, and a supplier that sells no such room is what makes
+    // this a refusal rather than a price.
+    //
+    // The one spec that needs the container to reach hotelapi.loyalty.dev.
+    // Offline it fails as a 502 — "could not reach the hotel" — which is the
+    // honest answer to "is this room real?" when nobody can be asked.
     await page.goto(CHECKOUT_URL.replace('roomTypes=deluxe-king', 'roomTypes=presidential-suite'));
 
     await expect(page.getByText('That room type is not available.')).toBeVisible({

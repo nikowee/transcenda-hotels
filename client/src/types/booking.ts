@@ -73,6 +73,14 @@ export interface CardDetails {
 export interface CheckoutQuote extends StayDetails {
   nights: number;
   currency: string;
+  /**
+   * Human names for the rooms, index-aligned with roomTypes.
+   *
+   * A supplier room id is an opaque UUID, so roomTypes is unreadable on screen
+   * the moment a booking comes from a real hotel rather than the demo
+   * catalogue. Display only — never look a rate up by this.
+   */
+  roomLabels: string[];
   /** Index-aligned with roomTypes so a multi-room stay can be itemised. */
   nightlyRates: number[];
   /** Sum of nightlyRates — the per-night cost of the whole booking. */

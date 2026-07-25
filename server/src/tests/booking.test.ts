@@ -6,6 +6,7 @@ import { app } from './setup.js';
 import { resetRateLimits } from '../middleware/rateLimit.js';
 import { findByPaymentId } from '../models/bookingModel.js';
 import { MAX_GUESTS, MAX_NIGHTS, MAX_ROOMS } from '../controllers/bookingController.js';
+import { useHotelNock, mockRoomPrices } from './helpers/hotelNock.js';
 
 /**
  * UC4 — Book & Make Payment, end to end over HTTP.
@@ -106,6 +107,8 @@ const bookAndConfirm = async (body: Record<string, unknown> = {}) => {
 };
 
 describe('UC4 — Book & Make Payment', () => {
+  useHotelNock();
+
   // supertest reuses one loopback address, so every request shares a bucket.
   beforeEach(() => {
     resetRateLimits();
@@ -138,7 +141,14 @@ describe('UC4 — Book & Make Payment', () => {
       expect(response.body.nightlyTotal).to.equal(240);
     });
 
+    /**
+     * An id outside the demo catalogue might be a real supplier room, so the
+     * server has to ask before it can say no — and the supplier answering "I
+     * sell no such room" is what makes this a 400 rather than a 502.
+     */
     it('refuses to price an unknown room type', async () => {
+      mockRoomPrices({ hotelId: 'marina-bay', rooms: [] });
+
       const response = await request(app)
         .get('/api/bookings/checkout')
         .query({ ...VALID_STAY_QUERY, roomTypes: 'invented-cheap-room' });
@@ -149,6 +159,8 @@ describe('UC4 — Book & Make Payment', () => {
 
     // A plain lookup returns a function for these keys rather than undefined.
     it('refuses a room type inherited from Object.prototype', async () => {
+      mockRoomPrices({ hotelId: 'marina-bay', rooms: [], times: 3 });
+
       for (const roomType of ['constructor', 'toString', '__proto__']) {
         const response = await request(app)
           .get('/api/bookings/checkout')
@@ -303,6 +315,8 @@ describe('UC4 — Book & Make Payment', () => {
     });
 
     it('rejects an unknown room type', async () => {
+      mockRoomPrices({ hotelId: 'marina-bay', rooms: [] });
+
       const response = await request(app)
         .post('/api/bookings/payment')
         .send({

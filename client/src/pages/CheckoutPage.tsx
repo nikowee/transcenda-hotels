@@ -763,7 +763,11 @@ function OrderSummary({ quote }: { quote: CheckoutQuote | null }) {
         </p>
         <p className="flex items-center gap-2">
           <BedDouble className="h-4 w-4 text-blue-400" />
-          {quote.roomTypes.join(' · ')}
+          {/* Falls back to the id per room rather than for the whole list: a
+              quote from before roomLabels existed has none, and a supplier that
+              names some rooms and not others should still show the names it
+              gave. A raw id reads badly but reads — an empty line does not. */}
+          {quote.roomTypes.map((id, index) => quote.roomLabels?.[index] ?? id).join(' · ')}
         </p>
         <p className="flex items-center gap-2">
           <Calendar className="h-4 w-4 text-blue-400" />

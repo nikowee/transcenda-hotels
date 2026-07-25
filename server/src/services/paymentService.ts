@@ -351,8 +351,34 @@ export interface PaymentIntentInput {
   guestEmail: string;
   description: string;
   /**
-   * Sent to Stripe as billing_details so the issuer can run an AVS check. This
-   * is the reason the address is collected at all; storing it is secondary.
+   * Makes a repeated create return the intent it already made, instead of a new
+   * one.
+   *
+   * /payment mints an intent on mount, and a refresh or a second trip through
+   * checkout is a fresh mount — so without this, one booking attempt leaves a
+   * trail of abandoned intents at requires_payment_method. Observed: three
+   * intents for a single ibis Styles stay, two of them orphans.
+   *
+   * Stripe holds a key for 24 hours and replays the original response for it.
+   * The caller is responsible for varying the key when the amount does; see
+   * bookingController, which folds the priced total into it. A key that ignored
+   * the amount would trade duplicate intents for a stale one, which is far
+   * worse — the guest would be charged a price we no longer quote.
+   */
+  idempotencyKey?: string;
+  /**
+   * Attached to the intent as `shipping`, which is not the same thing as an AVS
+   * check and this comment used to claim it was.
+   *
+   * AVS runs against payment_method.billing_details, and in the Elements flow
+   * the payment method is created in the browser at confirm time — there is no
+   * server-side field on a PaymentIntent that sets it. Reaching a real AVS check
+   * means having the page pass billing details to confirmPayment, which is a
+   * change to PaymentPage, not to this call.
+   *
+   * `shipping` is still worth sending: it puts the address on the Stripe object
+   * where Radar can score it and support can read it, and while
+   * BILLING-PENDING-MIGRATION holds it is the only copy that exists anywhere.
    */
   billing?: {
     name: string;
@@ -429,7 +455,11 @@ export const createPaymentIntent = async (
     // Lets Stripe decide which methods to offer from the dashboard config,
     // rather than hardcoding 'card' and silently excluding wallets.
     automatic_payment_methods: { enabled: true },
-  });
+  },
+  // Second argument, not a body parameter — Stripe reads it off the
+  // Idempotency-Key header. Passing it inside the params object silently does
+  // nothing, which is the easy way to write this and believe it works.
+  input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
 
   if (!intent.client_secret) {
     throw new Error('Stripe returned a payment intent without a client secret');
@@ -573,9 +603,18 @@ export const constructWebhookEvent = (
 ): Stripe.Event => {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-  if (!stripe || !webhookSecret) {
+  if (!webhookSecret) {
     throw new Error('WEBHOOK_NOT_CONFIGURED');
   }
 
-  return stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+  /**
+   * The static, not the instance. Verification is an HMAC over bytes we already
+   * hold — no API key is involved and nothing leaves the process — so requiring
+   * a configured Stripe client to do it was an accident of where the method
+   * hangs, and it made the whole webhook path unreachable in simulate mode: no
+   * STRIPE_SECRET_KEY meant no client, which meant every delivery answered 503.
+   * That is the one path a demo most needs to exercise, because it is the only
+   * thing that turns a charge the customer walked away from into a booking.
+   */
+  return Stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
 };

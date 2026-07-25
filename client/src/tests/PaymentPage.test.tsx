@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { ReactNode } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { useEffect, type ReactNode } from 'react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { delay, http, HttpResponse } from 'msw';
@@ -52,9 +52,18 @@ vi.mock('@stripe/react-stripe-js', () => ({
   Elements: ({ children }: { children: ReactNode }) => (
     <div data-testid="stripe-elements">{children}</div>
   ),
-  // Stands in for the cross-origin iframes. Their whole point is that nothing
-  // in our tree can read them, so there is nothing here worth simulating.
-  PaymentElement: () => <div data-testid="stripe-payment-element" />,
+  /**
+   * Stands in for the cross-origin iframes. Their whole point is that nothing
+   * in our tree can read them, so there is nothing here worth simulating —
+   * except onReady, which the page now gates the Pay button on. The real
+   * element fires it once its iframes mount; a stub that never does would leave
+   * the button permanently disabled and make every payment test fail for a
+   * reason that has nothing to do with what it is testing.
+   */
+  PaymentElement: ({ onReady }: { onReady?: () => void }) => {
+    useEffect(() => onReady?.(), [onReady]);
+    return <div data-testid="stripe-payment-element" />;
+  },
   useStripe: () => ({ confirmPayment: stripeStub.confirmPayment }),
   useElements: () => ({ __brand: 'fake-elements' }),
 }));
@@ -95,6 +104,25 @@ const INTENT = {
   amount: 1308,
   currency: 'SGD',
   simulated: true,
+  /**
+   * The priced stay behind `amount`, which the booking summary renders.
+   *
+   * Deliberately consistent with it — 240 × 5 nights = 1200, +9% = 1308 — because
+   * the whole point of taking the summary from the intent response rather than
+   * from the sessionStorage handoff is that the figures cannot disagree.
+   */
+  quote: {
+    ...HANDOFF.stay,
+    endDate: '2026-08-06',
+    nights: 5,
+    currency: 'SGD',
+    roomLabels: ['Deluxe King'],
+    nightlyRates: [240],
+    nightlyTotal: 240,
+    subtotal: 1200,
+    taxes: 108,
+    totalPrice: 1308,
+  },
 };
 
 const AMOUNT_TEXT = 'SGD 1,308.00';
@@ -215,7 +243,10 @@ describe('PaymentPage', () => {
       renderPayment();
       await waitForDemoForm();
 
-      expect(screen.getByText(AMOUNT_TEXT)).toBeInTheDocument();
+      // Three places now — the header, the summary total and the pay button —
+      // and they are all the same server figure. getByText would fail on the
+      // ambiguity rather than on anything being wrong.
+      expect(screen.getAllByText(AMOUNT_TEXT).length).toBeGreaterThan(0);
       expect(payButton()).toHaveTextContent(AMOUNT_TEXT);
     });
 
@@ -300,6 +331,99 @@ describe('PaymentPage', () => {
 
       expect(await screen.findByText(/you cancelled the payment/i)).toBeInTheDocument();
       expect(screen.getByText(/nothing was charged/i)).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * The last screen before money moves. Checkout showed the same stay, but the
+   * customer has crossed a page boundary since and is about to commit a card
+   * against it — a wrong-dates booking that survives this page is paid for.
+   */
+  describe('booking summary', () => {
+    const summary = () => screen.getByRole('complementary', { name: /booking summary/i });
+
+    it('shows the stay the payment is for', async () => {
+      renderPayment();
+      await waitForDemoForm();
+
+      const panel = within(summary());
+      expect(panel.getByText('Marina Bay Sands')).toBeInTheDocument();
+      expect(panel.getByText('Deluxe King')).toBeInTheDocument();
+      // The night count is on the dates line and again in the price breakdown,
+      // so it has to be asserted against one of them rather than on its own.
+      expect(panel.getByText(/2026-08-01/)).toHaveTextContent('5 nights');
+      expect(panel.getByText(/2 adults, 1 child/)).toBeInTheDocument();
+      expect(panel.getByText('Dr Jane Tan')).toBeInTheDocument();
+    });
+
+    it('itemises the price so the total is not a bare figure', async () => {
+      renderPayment();
+      await waitForDemoForm();
+
+      const panel = within(summary());
+      expect(panel.getByText('SGD 1,200.00')).toBeInTheDocument();
+      expect(panel.getByText('SGD 108.00')).toBeInTheDocument();
+      expect(panel.getByText('SGD 1,308.00')).toBeInTheDocument();
+    });
+
+    /**
+     * The summary must come from the intent response, not the handoff. The
+     * browser carries the stay across the two pages but never the price, and a
+     * summary assembled from sessionStorage could show a stay the server never
+     * priced.
+     */
+    it('renders the served quote even when it disagrees with the handoff', async () => {
+      server.use(
+        intentHandler({
+          quote: { ...INTENT.quote, hotelName: 'Raffles Hotel', totalPrice: 999, taxes: 82.5, subtotal: 916.5 },
+          amount: 999,
+        })
+      );
+
+      renderPayment();
+      await waitForDemoForm();
+
+      const panel = within(summary());
+      // The handoff still says Marina Bay Sands.
+      expect(panel.getByText('Raffles Hotel')).toBeInTheDocument();
+      expect(panel.getByText('SGD 999.00')).toBeInTheDocument();
+    });
+
+    /**
+     * A quote-less response is what an older server sends. Reading
+     * quote.currency off undefined throws during render, React unmounts the
+     * tree, and the customer gets a blank page with no error — the exact shape
+     * of the drift that blanked checkout once already.
+     */
+    it('still renders the card form when the response carries no quote', async () => {
+      const { quote: _omitted, ...withoutQuote } = INTENT;
+      server.use(
+        http.post('*/api/bookings/payment-intent', () => HttpResponse.json(withoutQuote))
+      );
+
+      renderPayment();
+
+      expect(await waitForDemoForm()).toBeInTheDocument();
+      expect(screen.queryByRole('complementary', { name: /booking summary/i })).toBeNull();
+    });
+
+    it('shows a supplier room name rather than its opaque id', async () => {
+      server.use(
+        intentHandler({
+          quote: {
+            ...INTENT.quote,
+            roomTypes: ['2eb243ba-2f54-561b-8069-0db1439138f1'],
+            roomLabels: ['Premier Courtyard Room King'],
+          },
+        })
+      );
+
+      renderPayment();
+      await waitForDemoForm();
+
+      const panel = within(summary());
+      expect(panel.getByText('Premier Courtyard Room King')).toBeInTheDocument();
+      expect(panel.queryByText(/2eb243ba/)).toBeNull();
     });
   });
 
