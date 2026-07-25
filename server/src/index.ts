@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
-import {searchDestinations } from './controllers/destinationController.ts';
+import { searchDestinations } from './controllers/destinationController.ts';
 import { getHotelById, getHotelPrices, getRoomPrices, getHotelSearchResults } from './controllers/hotelController.ts';
 import { supabaseAdmin, deleteUser } from './lib/supabaseClient.ts';
 
@@ -22,11 +22,12 @@ app.get('/api/health', (req, res) => {
 
 // Destination Search Endpoint
 app.get('/api/destinations/search', searchDestinations);
+app.get('/api/hotels/search', getHotelSearchResults);
 
-// Hotel Details Endpoint
-app.get('/api/hotels/:id', getHotelById);
+// Hotel Details Endpoints
 app.get('/api/hotels/:destId/prices', getHotelPrices);
 app.get('/api/hotels/:id/price', getRoomPrices);
+app.get('/api/hotels/:id', getHotelById);
 
 // Supabase test endpoint (for debugging)
 app.get('/api/supabase-test', async (req, res) => {
@@ -60,9 +61,6 @@ app.delete('/api/users/:uid', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-
-// Hotel search endpoint
-app.get('/api/hotels/search', getHotelSearchResults);
 
 // Export for testing purposes
 export default app;
