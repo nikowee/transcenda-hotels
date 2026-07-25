@@ -96,7 +96,7 @@ const constructImageUrls = (imageDetails: HotelDetails['image_details']): string
 // Calls the Ascendas API (hotels and prices) to search for hotels based off the provided search parameters,
 // and returns a list of hotels in the MergedHotel format, sorted by searchRank.
 export const searchHotels = async (params: SearchParams): Promise<MergedHotel[]> => {
-    const BASE_URL = 'https://hotelapi.loyalty.dev/api/';
+    const BASE_URL = 'https://hotelapi.loyalty.dev/api';
 
     // Request params for Ascendas /api/hotels/prices endpoint.
     const requestParams = {

@@ -17,12 +17,16 @@ redis.on('error', (err) => {
     console.error('❌ Redis connection error:', err.message);
 });
 
-// Connect to Redis
-await redis.connect();
+// Connect to Redis — gracefully handle failure (e.g., in test environments)
+try {
+    await redis.connect();
+} catch (err: any) {
+    console.warn('⚠️ Redis connection failed (running without cache):', err.message);
+}
 
 // Shutdown
 process.on('SIGINT', async () => {
-    await redis.destroy();
+    try { await redis.destroy(); } catch {}
     console.log('🔌 Redis disconnected');
     process.exit(0);
 });
