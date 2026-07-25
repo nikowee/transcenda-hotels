@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import {searchDestinations} from './controllers/destinationController';
 import { supabaseAdmin, deleteUser } from './lib/supabaseClient';
+import { getHotelSearchResults } from './controllers/hotelController';
 
 dotenv.config();
 
@@ -54,6 +55,9 @@ app.delete('/api/users/:uid', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// Hotel search endpoint
+app.get('/api/hotels/search', getHotelSearchResults);
 
 // Export for testing purposes
 export default app;

@@ -1,62 +1,21 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
 import SearchForm from '../components/SearchForm';
 import ProfileModal from '../components/ProfileModal';
+import Navbar from '../components/Navbar';
 import { useAuth } from '../hooks/useAuth';
 
 export default function LandingPage() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   return (
-    <div className="relative min-h-screen w-full bg-slate-900 flex flex-col items-center justify-center pt-20 pb-32 px-4 sm:px-6 lg:px-8">
+    <div className="relative min-h-screen w-full bg-brand-surface flex flex-col items-center justify-center pt-20 pb-32 px-4 sm:px-6 lg:px-8">
       
       {/* Background Gradient */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/40 via-slate-900 to-black z-0"></div>
 
-      {/* Navigation Bar */}
-      <nav className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between p-6">
-        <div className="text-2xl font-extrabold text-white tracking-tight">
-          Transcenda<span className="text-blue-500">.</span>
-        </div>
-        
-        <div className="flex items-center gap-4">
-          {user ? (
-            <div className="flex items-center gap-3">
-              {/* Profile Pill - Opens the Modal */}
-              <div 
-                onClick={() => setIsProfileOpen(true)}
-                className="flex items-center gap-3 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-slate-500 backdrop-blur-sm rounded-full pl-3 pr-4 py-1.5 shadow-sm cursor-pointer transition-all group"
-              >
-                <div className="w-7 h-7 bg-blue-600 group-hover:bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-bold uppercase transition-colors">
-                  {user.email ? user.email[0] : 'U'}
-                </div>
-                
-                <span className="text-sm font-medium text-slate-200 group-hover:text-white max-w-[160px] sm:max-w-[200px] truncate transition-colors">
-                  {user.email}
-                </span>
-              </div>
-
-              {/* Logout Button */}
-              <button 
-                onClick={logout}
-                className="text-sm font-semibold bg-transparent hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white px-5 py-2 rounded-full transition-colors cursor-pointer"
-              >
-                Log Out
-              </button>
-            </div>
-          ) : (
-            <>
-              <Link to="/login" className="text-sm font-semibold bg-transparent hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white px-5 py-2 rounded-full transition-colors cursor-pointer">
-                Log In
-              </Link>
-              <Link to="/signup" className="text-sm font-semibold bg-white text-slate-900 px-4 py-2 rounded-full hover:bg-slate-100 transition-colors shadow-sm">
-                Sign Up
-              </Link>
-            </>
-          )}
-        </div>
-      </nav>
+      {/* Modular Navigation Bar */}
+      <Navbar />
 
       {/* Hero Content */}
       <div className="relative z-10 w-full max-w-4xl text-center space-y-8 mt-10">

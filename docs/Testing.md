@@ -14,18 +14,18 @@ This page documents the complete testing suite for Transcenda Hotels, covering a
 
 ```
                     ┌─────────────────────────────────────┐
-                    │       E2E Tests (5 tests)          │
+                    │       E2E Tests (8 tests)          │
                     │  Playwright — full system in Docker │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │   Integration Tests (11 tests)      │
-                    │  Frontend: MSW + Vitest (4 tests)   │
-                    │  Backend:  Mocha + Supertest (7)    │
+                    │   Integration Tests (24 tests)      │
+                    │  Frontend: MSW + Vitest (8 tests)   │
+                    │  Backend:  Mocha + Supertest + nock (16) │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │     Unit Tests (6 tests)            │
+                    │     Unit Tests (16 tests)           │
                     │  Vitest + Testing Library           │
                     │  Isolated component behavior        │
                     └─────────────────────────────────────┘
@@ -33,11 +33,11 @@ This page documents the complete testing suite for Transcenda Hotels, covering a
 
 | Layer | Tests | Tools | Location |
 |-------|-------|-------|----------|
-| **Unit** | 6 | Vitest + React Testing Library | `client/src/components/SearchForm.test.tsx` |
-| **Frontend Integration** | 4 | MSW + Vitest | `client/src/tests/SearchForm.integration.test.tsx` |
-| **Backend Integration** | 7 | Mocha + Chai + Supertest | `server/src/tests/destination.test.ts` |
-| **E2E** | 5 | Playwright | `e2e_testing/tests/` |
-| **Total** | **22** | — | — |
+| **Unit** | 16 | Vitest + React Testing Library | `client/src/components/`, `client/src/pages/` |
+| **Frontend Integration** | 8 | MSW + Vitest | `client/src/tests/SearchForm.integration.test.tsx`, `client/src/tests/ResultsPage.integration.test.tsx` |
+| **Backend Integration** | 16 | Mocha + Chai + Supertest + nock | `server/src/tests/destination.test.ts`, `server/src/tests/hotel.test.ts` |
+| **E2E** | 8 | Playwright | `e2e_testing/tests/` |
+| **Total** | **48** | — | — |
 
 ---
 
@@ -46,13 +46,13 @@ This page documents the complete testing suite for Transcenda Hotels, covering a
 ```bash
 # === Run ALL tests ===
 
-# Frontend: unit + integration (10 tests)
+# Frontend: unit + integration (24 tests)
 cd client && npm run test
 
-# Backend: API integration (7 tests)
+# Backend: API integration (16 tests)
 cd server && npm run test
 
-# E2E: full system in Docker (5 tests, auto-starts Docker)
+# E2E: full system in Docker (8 tests, auto-starts Docker)
 cd e2e_testing && npx playwright test
 ```
 
@@ -82,6 +82,37 @@ These tests validate the `SearchForm` component in isolation — no real API cal
 - Component is wrapped in `<MemoryRouter>` for `useNavigate()`
 - `@testing-library/jest-dom/vitest` provides matchers like `toBeInTheDocument()`
 - Debounce tests use `waitFor` with a 500ms timeout to account for the 300ms debounce
+
+---
+
+## 🧩 Phase 1.5: ResultsPage Unit Tests (10 tests)
+
+**Location:** `client/src/pages/ResultsPage.test.tsx`
+**Tools:** Vitest + React Testing Library + `vi.mock('axios')`
+
+These tests validate the `ResultsPage` component in isolation — no real API calls, no browser.
+
+### What's Tested
+
+| Test | What It Verifies |
+|------|-----------------|
+| Renders loading skeleton | `loading` state shows animated skeleton cards |
+| Renders error for missing params | Error message + "Go Back" button appear when URL params missing |
+| Renders error on API failure | `Failed to load hotels` message when axios rejects |
+| Renders hotel cards | Hotels, search summary, and "Select Hotel" buttons appear |
+| Renders empty state | `No hotels match your filters` when API returns empty array |
+| Renders pagination | Page buttons and prev/next labels appear for multi-page results |
+| Apply filters triggers re-fetch | Second axios call includes `starRating` param |
+| Clear filters resets state | Third axios call reverts to unfiltered requests |
+| Sort change triggers re-fetch | Changing sort dropdown updates `sortBy` param in request |
+| Hotel selection navigates | Clicking "Select Hotel" calls `useNavigate` with correct URL |
+
+### Key Details
+
+- `axios` is mocked globally — `vi.mock('axios')` prevents actual HTTP requests
+- `useNavigate` is mocked from `react-router` to verify navigation calls
+- Component is wrapped in `<MemoryRouter>` with `initialEntries` to simulate URL params
+- Loading test uses `mockImplementationOnce(() => new Promise(() => {}))` to keep loading state persistent
 
 ---
 
@@ -137,10 +168,68 @@ afterAll(()   => server.close());
 
 ---
 
-## 🧩 Phase 3: Backend Integration Tests (7 tests)
+## 🧩 Phase 2.5: ResultsPage Frontend Integration Tests (4 tests)
 
-**Location:** `server/src/tests/destination.test.ts`
-**Tools:** Mocha + Chai + Supertest
+**Location:** `client/src/tests/ResultsPage.integration.test.tsx`
+**Tools:** MSW (Mock Service Worker) + Vitest
+
+These tests verify the `ResultsPage` component with MSW intercepting API calls at the network level, spanning search, empty state, error handling, and pagination navigation.
+
+### What's Tested
+
+| Test | What It Verifies |
+|------|-----------------|
+| Fetches and displays hotels | Full flow: page loads → axios → MSW → renders 5 hotel cards |
+| Network error handled gracefully | `HttpResponse.error()` → error UI with `console.error` logged |
+| Empty results message | API returns empty array → `No hotels match your filters` |
+| Pagination navigation | Clicking page `2` fetches and renders page 2 hotels |
+
+### Key Details
+
+- Uses the same MSW server setup as the SearchForm integration tests
+- `server.use()` overrides the `/api/hotels/search` handler per test for different scenarios
+- Pagination test uses `server.use()` with dynamic URL parsing to simulate multi-page responses
+
+---
+
+## 🧩 Phase 3: Backend Integration Tests (16 tests)
+
+**Location:** `server/src/tests/destination.test.ts` and `server/src/tests/hotel.test.ts`
+**Tools:** Mocha + Chai + Supertest + nock
+
+These tests send real HTTP requests to the Express app without starting a server — Supertest binds the app to a temporary port. The `nock` library intercepts outbound HTTP calls to the Ascenda API at the network level.
+
+### Destination API (7 tests)
+
+| Test | What It Verifies |
+|------|-----------------|
+| <2 chars returns empty | Backend validation matches frontend guard |
+| Typo tolerance ("sinagpore") | Fuse.js fuzzy matching with threshold 0.3 |
+| Exact match for "Singapore" | Core search functionality |
+| Max 5 results returned | Results are capped for performance |
+| Unknown query returns empty | Garbage input doesn't crash |
+| Case insensitivity | Lowercase and uppercase return same count |
+| Health check endpoint | Smoke test: API is alive |
+
+### Hotel Search API (9 tests)
+
+| Test | What It Verifies |
+|------|-----------------|
+| Missing required params → 400 | Validates `destination_id`, `checkin`, `checkout`, `guests`, `rooms` |
+| Valid search → 200 with hotels | Full flow: nock mocks Ascenda → merged hotels returned |
+| Star rating filter | `starRating=5` returns only 5-star hotels |
+| Minimum price filter | `minPrice=300` excludes cheap hotels |
+| Maximum price filter | `maxPrice=100` returns only budget hotels |
+| Sort by price ascending | Hotels ordered by price low→high |
+| Sort by price descending | Hotels ordered by price high→low |
+| Pagination | `page=1&pageSize=2` returns correct slice with `totalPages` |
+| Guest rating filter | `minGuestRating=4` returns only hotels with rating ≥ 4 |
+
+### Key Details
+
+- `nock` intercepts calls to `https://hotelapi.loyalty.dev` and mocks `/api/hotels/prices` and `/api/hotels`
+- Mocks return realistic data: price entries with `searchRank`, and hotel details with `categories`, `amenities`, `image_details`
+- Tests verify filter logic, sort ordering, and pagination without hitting the real Ascenda API
 
 These tests send real HTTP requests to the Express app without starting a server — Supertest binds the app to a temporary port.
 
@@ -187,9 +276,9 @@ describe('Destination Search API', () => {
 
 ---
 
-## 🧩 Phase 4: E2E Tests (5 tests)
+## 🧩 Phase 4: E2E Tests (8 tests)
 
-**Location:** `e2e_testing/tests/search-flow.spec.ts` and `e2e_testing/tests/search-error-handling.spec.ts`
+**Location:** `e2e_testing/tests/search-flow.spec.ts`, `e2e_testing/tests/search-error-handling.spec.ts`, and `e2e_testing/tests/results-page.spec.ts`
 **Tools:** Playwright
 
 These tests run against the **full stack** in Docker, automating a real Chromium browser.
@@ -221,6 +310,9 @@ docker compose down            ← Stops and removes containers
 
 | Test | File | What It Verifies |
 |------|------|-----------------|
+| Full search → hotels displayed | `results-page.spec.ts` | Complete journey: type → select → set dates → verify hotel cards render |
+| Error without search params | `results-page.spec.ts` | Navigate to `/results` directly → error message + Go Back button |
+| Hotel details render | `results-page.spec.ts` | Direct nav with params → hotels, dates, filter panel, sort dropdown visible |
 | Search → results flow | `search-flow.spec.ts` | Full journey: type → select suggestion → set dates → redirect to results |
 | Typo-tolerant search | `search-flow.spec.ts` | Fuse.js fuzzy matching in a real browser |
 | Empty search validation | `search-error-handling.spec.ts` | Alert dialog fires when no destination selected |
@@ -288,22 +380,27 @@ transcenda-hotels/
 │   │   ├── mocks/
 │   │   │   ├── handlers.ts                  # MSW request handlers
 │   │   │   └── browser.ts                   # MSW browser setup
+│   │   ├── pages/
+│   │   │   └── ResultsPage.test.tsx         # ResultsPage unit tests (Vitest)
 │   │   └── tests/
 │   │       ├── setup.ts                     # MSW server lifecycle
-│   │       └── SearchForm.integration.test.tsx  # Integration tests
+│   │       ├── SearchForm.integration.test.tsx  # SearchForm integration (MSW)
+│   │       └── ResultsPage.integration.test.tsx # ResultsPage integration (MSW)
 │   └── vite.config.ts                       # Vitest configuration
 ├── server/
 │   └── src/
 │       └── tests/
 │           ├── setup.ts                     # Test lifecycle hooks
-│           └── destination.test.ts          # API tests (Mocha)
+│           ├── destination.test.ts          # Destination API tests (Mocha)
+│           └── hotel.test.ts                # Hotel search API tests (Mocha + nock)
 ├── e2e_testing/
 │   ├── global-setup.ts                      # Starts Docker containers
 │   ├── global-teardown.ts                   # Stops Docker containers
 │   ├── playwright.config.ts                 # Playwright configuration
 │   └── tests/
 │       ├── search-flow.spec.ts              # E2E search scenarios
-│       └── search-error-handling.spec.ts    # E2E error scenarios
+│       ├── search-error-handling.spec.ts    # E2E error scenarios
+│       └── results-page.spec.ts             # E2E ResultsPage scenarios
 └── .gitignore                               # Ignores coverage/ and report output
 ```
 
