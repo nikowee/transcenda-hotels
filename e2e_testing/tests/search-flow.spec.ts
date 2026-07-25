@@ -31,7 +31,6 @@ test.describe('Search Flow', () => {
     
     // ─── 8. Verify redirect to results page ──────────────────
     await expect(page).toHaveURL(/.*results/);
-    await expect(page.getByText('Results page coming soon!')).toBeVisible();
   });
 
   test('User can search with typo tolerance', async ({ page }) => {

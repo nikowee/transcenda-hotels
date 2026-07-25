@@ -21,6 +21,13 @@ export default function SearchForm() {
     const [guests, setGuests] = useState(2);
     const [rooms, setRooms] = useState(1);
 
+    // Calculate the minimum check-in date (3 days from now)
+    const getMinCheckInDate = () => {
+        const date = new Date();
+        date.setDate(date.getDate() + 3);
+        return date.toISOString().split('T')[0]; // YYYY-MM-DD format
+    };
+
     // Form validation & submission
     const handleSearch: React.SubmitEventHandler<HTMLFormElement> = (event) => {
         event.preventDefault(); // Stops the browser from refreshing the page
@@ -38,8 +45,21 @@ export default function SearchForm() {
             return;
         }
 
+        // Ensure check-in is at least 3 days from today
+        const minDate = new Date();
+        minDate.setDate(minDate.getDate() + 3);
+        minDate.setHours(0, 0, 0, 0);
+
+        const checkInDate = new Date(checkIn);
+        checkInDate.setHours(0, 0, 0, 0);
+
+        if (checkInDate < minDate) {
+            alert("Check-in date must be at least 3 days from today.");
+            return;
+        }
+
         // Redirect to results page and pass the data in the URL
-        navigate(`/results?dest=${selectedDestId}&in=${checkIn}&out=${checkOut}&guests=${guests}&rooms=${rooms}`);
+        navigate(`/results?dest=${selectedDestId}&name=${encodeURIComponent(searchTerm)}&in=${checkIn}&out=${checkOut}&guests=${guests}&rooms=${rooms}`);
     };
 
     return (
@@ -127,6 +147,7 @@ export default function SearchForm() {
                         type="date" 
                         className="bg-transparent outline-none text-sm text-slate-700 cursor-pointer"
                         value={checkIn}
+                        min={getMinCheckInDate()}
                         onChange={(e) => setCheckIn(e.target.value)}
                     />
                     <span className="text-slate-300">-</span>

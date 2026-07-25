@@ -2,8 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
-import {searchDestinations} from './controllers/destinationController.ts';
-import { supabaseAdmin } from './lib/supabaseClient.ts';
+import { searchDestinations } from './controllers/destinationController.ts';
+import { supabaseAdmin, deleteUser } from './lib/supabaseClient.ts';
+import { getHotelSearchResults } from './controllers/hotelController.ts';
 import { getHotelById, getHotelPrices, getRoomPrices } from './controllers/hotelController.ts';
 
 
@@ -44,6 +45,27 @@ app.get('/api/supabase-test', async (req, res) => {
   }
 });
 
+// Supabase delete endpoint
+app.delete('/api/users/:uid', async (req, res) => {
+  try {
+    const userId = req.params.uid; 
+    
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'User ID is missing.' });
+    }
+
+    await deleteUser(userId);    
+    res.status(200).json({ success: true, message: 'User deleted successfully' });
+    
+  } catch (error: any) {
+    console.error('Delete error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Hotel search endpoint
+app.get('/api/hotels/search', getHotelSearchResults);
+
 // Export for testing purposes
 export default app;
 
@@ -51,7 +73,7 @@ export default app;
 const __filename = fileURLToPath(import.meta.url);
 const isDirectRun = process.argv[1] === __filename;
 if (isDirectRun) {
-  app.listen(PORT, () => {
+  app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`🚀 Transcenda Hotels Backend running natively on http://localhost:${PORT}`);
   });
 }
