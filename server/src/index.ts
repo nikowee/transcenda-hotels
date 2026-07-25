@@ -2,17 +2,18 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
-import {searchDestinations} from './controllers/destinationController';
+import { searchDestinations } from './controllers/destinationController';
 import { supabaseAdmin, deleteUser } from './lib/supabaseClient';
 import { getHotelSearchResults } from './controllers/hotelController';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // Middleware
 app.use(cors());
+
 app.use(express.json());
 
 // Base Verification Endpoint
@@ -38,7 +39,7 @@ app.get('/api/supabase-test', async (req, res) => {
   }
 });
 
-// Supabase delete fetch
+// Supabase delete endpoint
 app.delete('/api/users/:uid', async (req, res) => {
   try {
     const userId = req.params.uid; 
@@ -66,7 +67,7 @@ export default app;
 const __filename = fileURLToPath(import.meta.url);
 const isDirectRun = process.argv[1] === __filename;
 if (isDirectRun) {
-  app.listen(PORT, () => {
+  app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`🚀 Transcenda Hotels Backend running natively on http://localhost:${PORT}`);
   });
 }

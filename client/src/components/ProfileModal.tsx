@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import type { User } from '@supabase/supabase-js';
-import axios from 'axios';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -44,9 +43,9 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
     setDeleteError(null);
   
     try {
-      // Test the password by attempting to sign in with it
+      // 1. Verify the password by signing in
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: user.email,
+        email: user.email!,
         password: deletePassword, 
       });
   
@@ -55,7 +54,23 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
         setIsDeleting(false);
         return; 
       }
+
+      // 2. Call your backend server route to delete the user via admin API using VITE_API_URL
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+      const response = await fetch(`${apiUrl}/api/users/${user.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to delete user account on server.');
+      }
   
+      // 3. Sign out locally and reload page
       await supabase.auth.signOut();
       window.location.reload();
   
