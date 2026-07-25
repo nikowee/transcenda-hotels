@@ -123,7 +123,7 @@ export default function ResultsPage() {
                     <h2 className="text-xl font-semibold text-brand-text-primary mb-2">Oops!</h2>
                     <p className="text-brand-text-secondary mb-4">{error}</p>
                     <button
-                        onClick={() => window.history.back()}
+                        onClick={() => navigate('/')}
                         className="px-4 py-2 bg-brand-accent-dark text-white rounded-lg hover:bg-brand-accent transition"
                     >
                         Go Back

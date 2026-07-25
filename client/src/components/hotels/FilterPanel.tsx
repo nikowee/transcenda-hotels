@@ -47,8 +47,7 @@ export default function FilterPanel({
                                     : 'bg-brand-surface-muted text-brand-text-secondary hover:bg-brand-border'
                             }`}
                         >
-                            {'★'.repeat(rating)}
-                            {rating > 1 ? '+' : ''}
+                            {rating}{'★'}{rating > 0 ? '+' : ''}
                         </button>
                     ))}
                 </div>
