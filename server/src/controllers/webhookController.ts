@@ -1,14 +1,17 @@
 import { type Request, type Response } from 'express';
-import { constructWebhookEvent } from '../services/paymentService.js';
-import { findOne, markPaid, markFailed } from '../models/bookingModel.js';
-import { sendConfirmation } from '../services/emailService.js';
+import { constructWebhookEvent, verifySession } from '../services/paymentService.js';
+import { findByPaymentId } from '../models/bookingModel.js';
+import { recordPaidBooking } from './bookingController.js';
 
 /**
- * Stripe webhook — the authoritative source of payment state.
+ * Stripe webhook — the «External API» callback into the «Express Router», and
+ * the only thing standing between a captured charge and a missing booking.
  *
- * The browser returning from Stripe is a convenience, not proof: it can be
- * closed mid-redirect, and 3DS/SCA challenges complete asynchronously. This
- * handler is what guarantees a completed payment eventually reaches the booking.
+ * The write now happens after the charge, not before it, which moves this
+ * handler from "flip a flag" to "create the row". If the customer closes the tab
+ * on Stripe's success page, or a 3DS challenge completes hours later, the
+ * browser never calls /confirm and nothing has been persisted. This handler is
+ * the recovery path for exactly that.
  *
  * Must be mounted with express.raw() BEFORE the global express.json(), because
  * signature verification needs the unparsed body.
@@ -43,51 +46,92 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
 
   try {
     switch (event.type) {
+      /**
+       * The recovery path. If the browser came back, /confirm already wrote the
+       * row and findByPaymentId short-circuits this. If it did not, this is the
+       * only thing that turns a captured charge into a booking — without it the
+       * money is taken and no record of the stay exists anywhere but Stripe.
+       */
       case 'checkout.session.completed':
       case 'checkout.session.async_payment_succeeded': {
         const session = event.data.object;
-        const reference = session.client_reference_id;
 
-        if (!reference) break;
         if (session.payment_status !== 'paid') break;
-
-        const booking = await findOne({ bookingReference: reference });
-        if (!booking) {
-          console.error(`Webhook for unknown booking ${reference}`);
-          break;
-        }
-
-        // Guard against a session whose charged total drifted from our price.
-        if (session.amount_total !== null) {
-          const expected = Math.round(booking.totalPrice * 100);
-          if (session.amount_total !== expected) {
-            console.error(
-              `Webhook amount mismatch on ${reference}: ${session.amount_total} vs ${expected}`
-            );
-            break;
-          }
-        }
 
         const paymentIntentId =
           typeof session.payment_intent === 'string'
             ? session.payment_intent
-            : (session.payment_intent?.id ?? 'unknown');
+            : (session.payment_intent?.id ?? null);
 
-        const updated = await markPaid(reference, paymentIntentId);
+        if (paymentIntentId && (await findByPaymentId(paymentIntentId))) break;
 
-        // Null means the return-from-Stripe call already handled it.
-        if (updated) {
-          await sendConfirmation(updated.guestEmail, updated);
+        // The event payload is unexpanded, so it carries no payment_method and
+        // therefore none of the NOT NULL card columns. Re-reading the session is
+        // what fetches them.
+        const payment = await verifySession(session.id);
+        const outcome = await recordPaidBooking(payment);
+
+        if (!outcome.ok) {
+          const detail = `session ${session.id} (${outcome.status}): ${outcome.error}`;
+
+          // A transient fault — storage down, Stripe unreachable — is worth
+          // another delivery, and throwing is how this handler asks for one.
+          if (outcome.status >= 500) {
+            throw new Error(`Recovery insert failed for ${detail}`);
+          }
+
+          // A rejected amount or unusable metadata will be rejected identically
+          // on every redelivery, so retrying only buries the charge in noise.
+          // Acknowledge and escalate: the customer has paid and has no booking.
+          console.error(
+            `⚠️  PAID CHARGE WITH NO BOOKING — manual intervention required: ${detail}`
+          );
+          break;
         }
+
+        console.log(`Webhook recovered booking ${outcome.booking.id} for session ${session.id}`);
         break;
       }
 
+      /**
+       * Nothing to do. There is no status column to mark failed and no row was
+       * ever written, so an abandoned or declined checkout leaves no trace by
+       * design — the absence of a booking is the record of the failure.
+       */
       case 'checkout.session.expired':
       case 'checkout.session.async_payment_failed': {
         const session = event.data.object;
-        if (session.client_reference_id) {
-          await markFailed(session.client_reference_id);
-        }
+        console.log(`Checkout ${session.id} ended without payment (${event.type}).`);
+        break;
+      }
+
+      /**
+       * RECONCILIATION GAP. The schema has no refund_id, no refunded_at and no
+       * status, so there is nowhere to put this: the booking row will go on
+       * reading as fully paid however much money went back, and Stripe stays the
+       * only system that knows. Logged loudly because this log line is currently
+       * the entire audit trail.
+       */
+      case 'charge.refunded': {
+        const charge = event.data.object;
+
+        const paymentIntentId =
+          typeof charge.payment_intent === 'string'
+            ? charge.payment_intent
+            : (charge.payment_intent?.id ?? null);
+
+        const booking = paymentIntentId ? await findByPaymentId(paymentIntentId) : null;
+
+        console.warn(
+          [
+            '⚠️  REFUND NOT RECORDED — no column exists for it.',
+            `   booking:        ${booking?.id ?? 'not found'}`,
+            `   payment intent: ${paymentIntentId ?? 'unknown'}`,
+            `   refunded:       ${charge.amount_refunded} of ${charge.amount} ${charge.currency}`,
+            `   full refund:    ${charge.refunded}`,
+            '   The booking row still reads as paid. Reconcile against Stripe.',
+          ].join('\n')
+        );
         break;
       }
 
@@ -98,7 +142,8 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
 
     res.json({ received: true });
   } catch (error) {
-    // 500 tells Stripe to retry; markPaid is idempotent so retries are safe.
+    // 500 tells Stripe to retry, which is what we want: insertOne dedupes on
+    // payment_id, so a redelivery either writes the missing row or no-ops.
     console.error('Webhook processing error:', error);
     res.status(500).json({ error: 'Webhook processing failed.' });
   }

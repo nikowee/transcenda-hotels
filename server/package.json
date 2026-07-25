@@ -7,8 +7,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "type-check": "tsc --noEmit",
-    "test": "mocha -r tsx src/tests/**/*.test.ts",
-    "test:watch": "mocha -r tsx --watch src/tests/**/*.test.ts"
+    "test": "mocha src/tests/**/*.test.ts",
+    "test:watch": "mocha --watch src/tests/**/*.test.ts"
   },
   "keywords": [],
   "author": "",
@@ -32,6 +32,7 @@
     "@types/supertest": "^7.2.1",
     "chai": "^6.2.2",
     "mocha": "^11.3.0",
+    "nock": "14.0.16",
     "supertest": "^7.2.2",
     "tsx": "^4.23.1",
     "typescript": "^6.0.3"

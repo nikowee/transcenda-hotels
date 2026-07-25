@@ -1,26 +1,38 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import axios from 'axios';
 import {
   AlertCircle,
   ArrowLeft,
   BedDouble,
+  Building2,
   Calendar,
   ExternalLink,
+  Globe,
+  Hash,
+  Home,
   Loader2,
   Mail,
   MapPin,
+  MessageSquare,
   Phone,
   ShieldCheck,
   User,
+  UserRound,
   Users,
 } from 'lucide-react';
-import type { CheckoutQuote, GuestDetails, GuestFieldErrors } from '../types/booking';
+import type {
+  BillingAddress,
+  BillingFieldErrors,
+  CheckoutQuote,
+  GuestDetails,
+  GuestFieldErrors,
+} from '../types/booking';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
 /**
- * CheckoutPage — UC4 "Book & Make Payment".
+ * «React Page» CheckoutPage — UC4 "Book & Make Payment".
  *
  * Replaces the checkout.ejs template from the class diagram: the diagram was
  * drawn against a server-rendered EJS monolith, while this codebase is a
@@ -41,14 +53,65 @@ const API_URL = import.meta.env.VITE_API_URL;
 
 type Step = 'guest' | 'review';
 
+/** Matches the salutations the bookings table is populated with. */
+const SALUTATIONS = ['Mr', 'Mrs', 'Ms', 'Mx', 'Dr', 'Prof'];
+
+/** The schema stores no currency column: the platform prices everything in SGD. */
+const CURRENCY = 'SGD';
+
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 
-const emptyGuest: GuestDetails = { guestName: '', guestEmail: '', contactNumber: '' };
+const emptyGuest: GuestDetails = {
+  salutation: SALUTATIONS[0],
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  specialRequests: '',
+};
 
-const formatMoney = (amount: number, currency: string) =>
-  `${currency} ${amount.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/**
+ * Defaults to SG because the platform prices in SGD. The field is still
+ * editable — a card issued abroad has a foreign billing address, and AVS checks
+ * against the issuer's record, not ours.
+ */
+/**
+ * Short list rather than all 249 codes: these cover the platform's actual
+ * traffic, and a searchable full list is a component this form does not need
+ * yet. The server validates any two-letter code, so widening it is data-only.
+ */
+const COUNTRIES = [
+  { code: 'SG', name: 'Singapore' },
+  { code: 'MY', name: 'Malaysia' },
+  { code: 'ID', name: 'Indonesia' },
+  { code: 'TH', name: 'Thailand' },
+  { code: 'AU', name: 'Australia' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'US', name: 'United States' },
+  { code: 'JP', name: 'Japan' },
+];
+
+const emptyBilling: BillingAddress = {
+  line1: '',
+  line2: '',
+  city: '',
+  state: '',
+  postalCode: '',
+  country: 'SG',
+};
+
+const formatMoney = (amount: number) =>
+  `${CURRENCY} ${amount.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Occupancy is two columns now, so it needs prose: "2 adults, 1 child". */
+const formatOccupancy = (adults: number, children: number) => {
+  const parts = [`${adults} ${adults === 1 ? 'adult' : 'adults'}`];
+  if (children > 0) parts.push(`${children} ${children === 1 ? 'child' : 'children'}`);
+  return parts.join(', ');
+};
 
 export default function CheckoutPage() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
   const [step, setStep] = useState<Step>('guest');
@@ -57,6 +120,8 @@ export default function CheckoutPage() {
 
   const [guest, setGuest] = useState<GuestDetails>(emptyGuest);
   const [fieldErrors, setFieldErrors] = useState<GuestFieldErrors>({});
+  const [billing, setBilling] = useState<BillingAddress>(emptyBilling);
+  const [billingErrors, setBillingErrors] = useState<BillingFieldErrors>({});
 
   const [payError, setPayError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -71,12 +136,18 @@ export default function CheckoutPage() {
     const defaultOut = new Date(today.getTime() + 4 * 86_400_000);
 
     return {
-      hotelId: searchParams.get('hotelId') ?? searchParams.get('dest') ?? 'demo-hotel',
-      roomId: searchParams.get('roomId') ?? 'deluxe-king',
-      checkIn: searchParams.get('checkIn') ?? searchParams.get('in') ?? iso(defaultIn),
-      checkOut: searchParams.get('checkOut') ?? searchParams.get('out') ?? iso(defaultOut),
-      guests: searchParams.get('guests') ?? '2',
-      rooms: searchParams.get('rooms') ?? '1',
+      destinationId: searchParams.get('destinationId') ?? searchParams.get('dest') ?? 'demo-dest',
+      hotelId: searchParams.get('hotelId') ?? 'demo-hotel',
+      hotelName: searchParams.get('hotelName') ?? 'Demo Hotel',
+      // Comma-joined rather than repeated keys: `room_types` is stored that way,
+      // so the string survives the whole round trip without re-encoding.
+      roomTypes: searchParams.get('roomTypes') ?? searchParams.get('roomId') ?? 'deluxe-king',
+      startDate: searchParams.get('startDate') ?? searchParams.get('in') ?? iso(defaultIn),
+      endDate: searchParams.get('endDate') ?? searchParams.get('out') ?? iso(defaultOut),
+      // SearchForm still emits a single `guests` count; until it splits the two,
+      // treat everyone it sends as an adult rather than silently defaulting.
+      adults: searchParams.get('adults') ?? searchParams.get('guests') ?? '2',
+      children: searchParams.get('children') ?? '0',
     };
   }, [searchParams]);
 
@@ -113,15 +184,22 @@ export default function CheckoutPage() {
     event.preventDefault();
     setIsSubmitting(true);
     setFieldErrors({});
+    setBillingErrors({});
 
     try {
-      await axios.post(`${API_URL}/api/bookings/guest-details`, guest);
+      // Billing rides along so the server can reject an address here rather
+      // than two pages later, after the customer has committed to paying.
+      await axios.post(`${API_URL}/api/bookings/guest-details`, {
+        ...guest,
+        billingAddress: billing,
+      });
       setStep('review');
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 422) {
         setFieldErrors(error.response.data.errors ?? {});
+        setBillingErrors(error.response.data.billingErrors ?? {});
       } else {
-        setFieldErrors({ guestName: 'Something went wrong. Please try again.' });
+        setFieldErrors({ firstName: 'Something went wrong. Please try again.' });
       }
     } finally {
       setIsSubmitting(false);
@@ -138,27 +216,36 @@ export default function CheckoutPage() {
     setIsSubmitting(true);
     setPayError('');
 
-    try {
-      const response = await axios.post(`${API_URL}/api/bookings/payment`, {
-        guestDetails: guest,
-        stay: {
-          hotelId: quote.hotelId,
-          roomId: quote.roomId,
-          checkIn: quote.checkIn,
-          checkOut: quote.checkOut,
-          guests: quote.guests,
-          rooms: quote.rooms,
-        },
-      });
+    const stay = {
+      destinationId: quote.destinationId,
+      hotelId: quote.hotelId,
+      hotelName: quote.hotelName,
+      roomTypes: quote.roomTypes,
+      startDate: quote.startDate,
+      endDate: quote.endDate,
+      adults: quote.adults,
+      children: quote.children,
+    };
 
-      // Leaves our origin entirely — card entry happens on Stripe.
-      window.location.assign(response.data.redirectUrl);
+    try {
+      /**
+       * Handed over in sessionStorage rather than router state so refreshing
+       * /payment does not strand the customer with no booking to pay for. The
+       * payment page re-prices it against the server anyway — nothing here is
+       * trusted as an amount.
+       */
+      sessionStorage.setItem(
+        'transcenda:checkout',
+        JSON.stringify({ guestDetails: guest, billingAddress: billing, stay })
+      );
+
+      navigate('/payment');
     } catch (error) {
-      const message = axios.isAxiosError(error)
-        ? (error.response?.data?.error ?? 'We could not start your payment.')
-        : 'We could not reach the payment service.';
-      setPayError(message);
+      // sessionStorage throws in private-mode Safari and with storage disabled,
+      // which would otherwise strand the customer on a dead button.
+      setPayError('We could not continue to payment. Please enable site storage and retry.');
       setIsSubmitting(false);
+      console.error('Checkout handoff failed:', error);
     }
   };
 
@@ -209,6 +296,9 @@ export default function CheckoutPage() {
             {step === 'guest' ? (
               <GuestDetailsForm
                 guest={guest}
+                billing={billing}
+                billingErrors={billingErrors}
+                onBillingChange={setBilling}
                 errors={fieldErrors}
                 isSubmitting={isSubmitting}
                 onChange={setGuest}
@@ -219,7 +309,7 @@ export default function CheckoutPage() {
                 guest={guest}
                 error={payError}
                 isSubmitting={isSubmitting}
-                total={quote ? formatMoney(quote.totalPrice, quote.currency) : ''}
+                total={quote ? formatMoney(quote.totalPrice) : ''}
                 canPay={Boolean(quote)}
                 onBack={() => setStep('guest')}
                 onPay={handlePay}
@@ -302,15 +392,36 @@ const inputClass = 'w-full bg-transparent outline-none placeholder:text-slate-40
 
 interface GuestFormProps {
   guest: GuestDetails;
+  billing: BillingAddress;
+  billingErrors: BillingFieldErrors;
+  onBillingChange: (billing: BillingAddress) => void;
   errors: GuestFieldErrors;
   isSubmitting: boolean;
   onChange: (guest: GuestDetails) => void;
   onSubmit: React.SubmitEventHandler<HTMLFormElement>;
 }
 
-function GuestDetailsForm({ guest, errors, isSubmitting, onChange, onSubmit }: GuestFormProps) {
-  const set = (key: keyof GuestDetails) => (event: React.ChangeEvent<HTMLInputElement>) =>
-    onChange({ ...guest, [key]: event.target.value });
+function GuestDetailsForm({
+  guest,
+  billing,
+  billingErrors,
+  onBillingChange,
+  errors,
+  isSubmitting,
+  onChange,
+  onSubmit,
+}: GuestFormProps) {
+  const set =
+    (key: keyof GuestDetails) =>
+    (
+      event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+    ) =>
+      onChange({ ...guest, [key]: event.target.value });
+
+  const setBilling =
+    (key: keyof BillingAddress) =>
+    (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      onBillingChange({ ...billing, [key]: event.target.value });
 
   return (
     <form onSubmit={onSubmit} noValidate className="space-y-5">
@@ -321,39 +432,198 @@ function GuestDetailsForm({ guest, errors, isSubmitting, onChange, onSubmit }: G
         </p>
       </div>
 
-      <Field label="Full name" icon={<User className="h-5 w-5 text-blue-600" />} error={errors.guestName}>
+      <div className="grid gap-5 sm:grid-cols-[140px_1fr]">
+        <Field
+          label="Salutation"
+          icon={<UserRound className="h-5 w-5 text-blue-600" />}
+          error={errors.salutation}
+        >
+          <select
+            aria-label="Salutation"
+            className={inputClass}
+            value={guest.salutation}
+            onChange={set('salutation')}
+          >
+            {SALUTATIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field
+          label="First name"
+          icon={<User className="h-5 w-5 text-blue-600" />}
+          error={errors.firstName}
+        >
+          <input
+            type="text"
+            className={inputClass}
+            placeholder="As it appears on your passport"
+            value={guest.firstName}
+            onChange={set('firstName')}
+          />
+        </Field>
+      </div>
+
+      <Field
+        label="Last name"
+        icon={<User className="h-5 w-5 text-blue-600" />}
+        error={errors.lastName}
+      >
         <input
           type="text"
           className={inputClass}
-          placeholder="As it appears on your passport"
-          value={guest.guestName}
-          onChange={set('guestName')}
+          placeholder="Family name"
+          value={guest.lastName}
+          onChange={set('lastName')}
         />
       </Field>
 
-      <Field label="Email" icon={<Mail className="h-5 w-5 text-blue-600" />} error={errors.guestEmail}>
+      <Field label="Email" icon={<Mail className="h-5 w-5 text-blue-600" />} error={errors.email}>
         <input
           type="email"
           className={inputClass}
           placeholder="you@example.com"
-          value={guest.guestEmail}
-          onChange={set('guestEmail')}
+          value={guest.email}
+          onChange={set('email')}
         />
       </Field>
 
-      <Field
-        label="Contact number"
-        icon={<Phone className="h-5 w-5 text-blue-600" />}
-        error={errors.contactNumber}
-      >
+      <Field label="Phone" icon={<Phone className="h-5 w-5 text-blue-600" />} error={errors.phone}>
         <input
           type="tel"
           className={inputClass}
           placeholder="+65 9123 4567"
-          value={guest.contactNumber}
-          onChange={set('contactNumber')}
+          value={guest.phone}
+          onChange={set('phone')}
         />
       </Field>
+
+      <Field
+        label="Special requests (optional)"
+        icon={<MessageSquare className="h-5 w-5 shrink-0 self-start text-blue-600" />}
+        error={errors.specialRequests}
+      >
+        <textarea
+          rows={3}
+          className={`${inputClass} resize-none`}
+          placeholder="High floor, late check-in, allergies…"
+          value={guest.specialRequests ?? ''}
+          onChange={set('specialRequests')}
+        />
+      </Field>
+
+
+      {/* Billing address — collected here rather than on the payment page so a
+          typo surfaces before the customer commits to paying. Its real job is
+          the AVS check Stripe runs against it. */}
+      <div className="border-t border-slate-100 pt-5">
+        <h3 className="text-sm font-bold text-slate-800">Billing address</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          As it appears on your card statement. Used to verify your payment.
+        </p>
+      </div>
+
+      <Field
+        label="Address line 1"
+        icon={<Home className="h-5 w-5 text-blue-600" />}
+        error={billingErrors.line1}
+      >
+        <input
+          type="text"
+          className={inputClass}
+          placeholder="10 Bayfront Avenue"
+          autoComplete="billing address-line1"
+          value={billing.line1}
+          onChange={setBilling('line1')}
+        />
+      </Field>
+
+      <Field
+        label="Address line 2 (optional)"
+        icon={<Home className="h-5 w-5 text-blue-600" />}
+        error={billingErrors.line2}
+      >
+        <input
+          type="text"
+          className={inputClass}
+          placeholder="Unit, floor, building"
+          autoComplete="billing address-line2"
+          value={billing.line2 ?? ''}
+          onChange={setBilling('line2')}
+        />
+      </Field>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field
+          label="City"
+          icon={<Building2 className="h-5 w-5 text-blue-600" />}
+          error={billingErrors.city}
+        >
+          <input
+            type="text"
+            className={inputClass}
+            placeholder="Singapore"
+            autoComplete="billing address-level2"
+            value={billing.city}
+            onChange={setBilling('city')}
+          />
+        </Field>
+
+        <Field
+          label="State or region (optional)"
+          icon={<Building2 className="h-5 w-5 text-blue-600" />}
+          error={billingErrors.state}
+        >
+          <input
+            type="text"
+            className={inputClass}
+            placeholder="Leave blank if none"
+            autoComplete="billing address-level1"
+            value={billing.state ?? ''}
+            onChange={setBilling('state')}
+          />
+        </Field>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field
+          label="Postal code"
+          icon={<Hash className="h-5 w-5 text-blue-600" />}
+          error={billingErrors.postalCode}
+        >
+          <input
+            type="text"
+            className={inputClass}
+            placeholder="018956"
+            autoComplete="billing postal-code"
+            value={billing.postalCode}
+            onChange={setBilling('postalCode')}
+          />
+        </Field>
+
+        <Field
+          label="Country"
+          icon={<Globe className="h-5 w-5 text-blue-600" />}
+          error={billingErrors.country}
+        >
+          <select
+            aria-label="Billing country"
+            className={inputClass}
+            autoComplete="billing country"
+            value={billing.country}
+            onChange={setBilling('country')}
+          >
+            {COUNTRIES.map((option) => (
+              <option key={option.code} value={option.code}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
 
       <button
         type="submit"
@@ -378,6 +648,8 @@ interface ReviewProps {
 }
 
 function ReviewAndPay({ guest, error, isSubmitting, total, canPay, onBack, onPay }: ReviewProps) {
+  const specialRequests = guest.specialRequests?.trim();
+
   return (
     <div className="space-y-5">
       <div>
@@ -404,18 +676,27 @@ function ReviewAndPay({ guest, error, isSubmitting, total, canPay, onBack, onPay
         <div className="flex items-center gap-3 py-3">
           <User className="h-4 w-4 shrink-0 text-blue-600" />
           <dt className="sr-only">Name</dt>
-          <dd className="text-sm text-slate-700">{guest.guestName}</dd>
+          <dd className="text-sm text-slate-700">
+            {guest.salutation} {guest.firstName} {guest.lastName}
+          </dd>
         </div>
         <div className="flex items-center gap-3 py-3">
           <Mail className="h-4 w-4 shrink-0 text-blue-600" />
           <dt className="sr-only">Email</dt>
-          <dd className="text-sm text-slate-700">{guest.guestEmail}</dd>
+          <dd className="text-sm text-slate-700">{guest.email}</dd>
         </div>
         <div className="flex items-center gap-3 py-3">
           <Phone className="h-4 w-4 shrink-0 text-blue-600" />
-          <dt className="sr-only">Contact number</dt>
-          <dd className="text-sm text-slate-700">{guest.contactNumber}</dd>
+          <dt className="sr-only">Phone</dt>
+          <dd className="text-sm text-slate-700">{guest.phone}</dd>
         </div>
+        {specialRequests && (
+          <div className="flex items-start gap-3 py-3">
+            <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+            <dt className="sr-only">Special requests</dt>
+            <dd className="text-sm text-slate-700">{specialRequests}</dd>
+          </div>
+        )}
       </dl>
 
       <div className="flex items-start gap-2.5 rounded-xl bg-blue-50 p-4 text-sm text-blue-900">
@@ -478,37 +759,40 @@ function OrderSummary({ quote }: { quote: CheckoutQuote | null }) {
       <div className="mt-4 space-y-3 text-sm text-slate-200">
         <p className="flex items-center gap-2">
           <MapPin className="h-4 w-4 text-blue-400" />
-          {quote.hotelId}
+          {quote.hotelName}
         </p>
         <p className="flex items-center gap-2">
           <BedDouble className="h-4 w-4 text-blue-400" />
-          {quote.roomId} · {quote.rooms} room{quote.rooms > 1 ? 's' : ''}
+          {quote.roomTypes.join(' · ')}
         </p>
         <p className="flex items-center gap-2">
           <Calendar className="h-4 w-4 text-blue-400" />
-          {quote.checkIn} → {quote.checkOut}
+          {quote.startDate} → {quote.endDate}
         </p>
         <p className="flex items-center gap-2">
           <Users className="h-4 w-4 text-blue-400" />
-          {quote.guests} guest{quote.guests > 1 ? 's' : ''}
+          {formatOccupancy(quote.adults, quote.children)}
         </p>
       </div>
 
       <dl className="mt-6 space-y-2 border-t border-white/10 pt-4 text-sm">
         <div className="flex justify-between text-slate-300">
           <dt>
-            {formatMoney(quote.nightlyRate, quote.currency)} × {quote.nights} night
+            {/* nightlyTotal, not a per-room rate: a multi-room stay bills the sum
+                of its rooms each night. Per-room figures are in quote.nightlyRates,
+                index-aligned with roomTypes, if the summary ever itemises them. */}
+            {formatMoney(quote.nightlyTotal)} × {quote.nights} night
             {quote.nights > 1 ? 's' : ''}
           </dt>
-          <dd>{formatMoney(quote.subtotal, quote.currency)}</dd>
+          <dd>{formatMoney(quote.subtotal)}</dd>
         </div>
         <div className="flex justify-between text-slate-300">
           <dt>Taxes &amp; fees</dt>
-          <dd>{formatMoney(quote.taxes, quote.currency)}</dd>
+          <dd>{formatMoney(quote.taxes)}</dd>
         </div>
         <div className="flex justify-between border-t border-white/10 pt-3 text-base font-extrabold text-white">
           <dt>Total</dt>
-          <dd>{formatMoney(quote.totalPrice, quote.currency)}</dd>
+          <dd>{formatMoney(quote.totalPrice)}</dd>
         </div>
       </dl>
     </aside>

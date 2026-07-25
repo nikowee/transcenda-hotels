@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router';
 import LandingPage from './pages/LandingPage';
 import CheckoutPage from './pages/CheckoutPage';
+import PaymentPage from './pages/PaymentPage';
 import ConfirmationPage from './pages/ConfirmationPage';
 
 /**
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/results" element={<ResultsPlaceholder />} />
         <Route path="/checkout" element={<CheckoutPage />} />
+        <Route path="/payment" element={<PaymentPage />} />
         <Route path="/confirmation" element={<ConfirmationPage />} />
       </Routes>
     </BrowserRouter>

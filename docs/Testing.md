@@ -14,20 +14,25 @@ This page documents the complete testing suite for Transcenda Hotels, covering a
 
 ```
                     ┌─────────────────────────────────────┐
-                    │        E2E Tests (5 tests)          │
+                    │       E2E Tests (16 tests)          │
                     │  Playwright — full system in Docker │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │    Integration Tests (56 tests)     │
-                    │  Frontend: MSW + Vitest (18)        │
-                    │  Backend:  Mocha + Supertest (36)   │
+                    │     Contract Tests (61 tests)       │
+                    │  nock — real Stripe SDK, faked wire │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │       Unit Tests (33 tests)         │
+                    │    Integration Tests (199 tests)    │
+                    │  Frontend: MSW + Vitest (71)        │
+                    │  Backend:  Mocha + Supertest (128)  │
+                    └─────────────────────────────────────┘
+                                        ▲
+                    ┌─────────────────────────────────────┐
+                    │      Unit Tests (136 tests)         │
                     │  Vitest + Testing Library (6)       │
-                    │  Mocha + Chai (27)                  │
+                    │  Mocha + Chai (130)                 │
                     └─────────────────────────────────────┘
 ```
 
@@ -40,34 +45,48 @@ report, which excludes `src/tests/`.
 |-------|-------|-------|----------|
 | `SearchForm.test.tsx` | 6 | Vitest + RTL, `vi.mock('axios')` | `client/src/tests/` |
 | `SearchForm.integration.test.tsx` | 4 | MSW + Vitest | `client/src/tests/` |
-| `CheckoutPage.test.tsx` | 6 | MSW + Vitest | `client/src/tests/` |
-| `ConfirmationPage.test.tsx` | 8 | MSW + Vitest | `client/src/tests/` |
+| `CheckoutPage.test.tsx` | 16 | MSW + Vitest | `client/src/tests/` |
+| `PaymentPage.test.tsx` | 34 | MSW + Vitest, mocked Stripe Elements | `client/src/tests/` |
+| `ConfirmationPage.test.tsx` | 17 | MSW + Vitest | `client/src/tests/` |
 | `destination.test.ts` | 7 | Mocha + Chai + Supertest | `server/src/tests/` |
-| `booking.test.ts` | 29 | Mocha + Chai + Supertest | `server/src/tests/` |
+| `booking.test.ts` | 46 | Mocha + Chai + Supertest | `server/src/tests/` |
+| `buildQuote.test.ts` | 59 | Mocha + Chai | `server/src/tests/` |
+| `bookingModel.test.ts` | 24 | Mocha + Chai | `server/src/tests/` |
+| `paymentIntent.test.ts` | 58 | Mocha + Chai + Supertest | `server/src/tests/` |
+| `recordPaidBooking.test.ts` | 21 | Mocha + Chai | `server/src/tests/` |
 | `paymentService.test.ts` | 14 | Mocha + Chai | `server/src/tests/` |
 | `rateLimit.test.ts` | 8 | Mocha + Chai | `server/src/tests/` |
-| `bookingModel.test.ts` | 5 | Mocha + Chai | `server/src/tests/` |
-| E2E specs | 5 | Playwright | `e2e_testing/tests/` |
-| **Total** | **92** | — | — |
+| `stripePayments.test.ts` | 25 | Mocha + Chai + **nock** | `server/src/tests/` |
+| `stripePaymentIntents.test.ts` | 25 | Mocha + Chai + **nock** | `server/src/tests/` |
+| `stripeRefunds.test.ts` | 11 | Mocha + Chai + **nock** | `server/src/tests/` |
+| `stripeWebhook.test.ts` | 21 | Mocha + Chai + Supertest | `server/src/tests/` |
+| `booking-flow.spec.ts` | 11 | Playwright | `e2e_testing/tests/` |
+| `search-*.spec.ts` | 5 | Playwright | `e2e_testing/tests/` |
+| **Total** | **412** | — | — |
 
 ---
 
 ## 🚀 Quick Start
 
 ```bash
-# Frontend: 24 tests
+# Frontend: 77 tests
 cd client && npm run test
 
-# Backend: 63 tests
+# Backend: 319 tests
 cd server && npm run test
 
-# E2E: 5 tests, auto-starts Docker
+# E2E: 16 tests, auto-starts Docker
 cd e2e_testing && npm ci && npx playwright install chromium && npx playwright test
 ```
 
-The backend suite needs no Stripe or Supabase credentials — `server/src/tests/env.ts`
-defaults `PAYMENTS_MODE=simulate` and `BOOKINGS_STORAGE=memory` before the app is
-imported.
+The E2E run is self-contained: `global-setup.ts` builds and starts both containers,
+waits for the API and for Vite to serve its module graph, then loads every route
+once so no spec pays for a cold transform. A full cold start finishes in ~10s.
+
+The backend suite needs no Stripe or Supabase credentials and makes no outbound
+network calls. `server/src/tests/env.ts` sets the defaults before the app is
+imported: `PAYMENTS_MODE=simulate`, `BOOKINGS_STORAGE=memory`, and fake Stripe
+keys that exist only so a client can be constructed.
 
 ### Running one suite or one test
 
@@ -79,6 +98,57 @@ cd client && npx vitest run src/tests/CheckoutPage.test.tsx
 cd client && npx vitest run -t "never renders a card"
 cd client && npx vitest --ui          # browser UI
 ```
+
+---
+
+## 💳 Stripe contract tests (nock)
+
+`PAYMENTS_MODE=simulate` proves our own branching, but it short-circuits before a
+request is ever built — so it cannot catch a wrong parameter name, a wrong
+currency unit, or a response field we misread. That gap is not hypothetical: a
+PaymentIntent created with `confirm: false` charged nothing while every booking
+was recorded as `PAID`, and no test noticed, because the live code path had never
+been executed by anything.
+
+[nock](https://github.com/nock/nock) closes it. It intercepts at the socket, so
+the real Stripe SDK serialises real parameters and parses real payloads — only
+the wire is faked. Tests therefore assert **the request Stripe receives**, not
+just the value we hand back:
+
+```ts
+nock(STRIPE_API)
+  .post('/v1/checkout/sessions', (body) => { received = decodeForm(body); return true; })
+  .reply(200, checkoutSession());
+
+await withLiveStripe(() => createCheckoutSession(input));
+
+expect(received['line_items[0][price_data][unit_amount]']).to.equal('78480');
+```
+
+Helpers live in `server/src/tests/helpers/stripeNock.ts`:
+
+| Helper | Purpose |
+|--------|---------|
+| `useStripeNock()` | Blocks outbound sockets for the suite, leaves loopback open for supertest, cleans interceptors between tests |
+| `withLiveStripe(fn)` | Clears `PAYMENTS_MODE` for one call so the real client is used, then restores it |
+| `checkoutSession()` / `refund()` / `stripeError()` | Response fixtures shaped like the Stripe API |
+| `expectAllMocksUsed()` | Fails when an interceptor was never hit — catches a request that was never made |
+
+### Two traps worth knowing
+
+**Stripe's default HTTP client deadlocks under nock.** `NodeHttpClient` defers
+`req.write()` until the socket emits `secureConnect`, which nock's mock socket
+never emits, so the request is written but never sent and the test *hangs*
+instead of failing. Tests set `STRIPE_HTTP_CLIENT=fetch` to use the fetch client
+instead.
+
+**`fetch` must be bound per call, not captured.** Stripe's `FetchHttpClient`
+defaults to `fetchFn = globalThis.fetch` in its constructor. A client built
+before nock patches the global keeps the pristine `fetch` and reaches the **real
+Stripe API** — the suite silently tests production over the network. Import order
+alone decided which happened. `paymentService` now passes a lazy wrapper, and
+`blocks a Stripe request that has no interceptor` in `stripePayments.test.ts`
+fails loudly if that ever regresses.
 
 ---
 
@@ -98,206 +168,77 @@ these maps to a specific vulnerability — see
 | `never accepts an unverified payload` | Spoofed Stripe webhook |
 | `throttles repeated payment attempts` | Card-testing oracle |
 | `never renders a card input` (client) | PCI SAQ D scope creep |
+| `sends the amount in minor units` | Charging 1/100th of the price |
+| `does not scale a zero-decimal currency` | Charging JPY/KRW 100× |
+| `withholds detail from a Stripe authentication failure` | Key prefix rendered into the payment form |
+| `rejects a body altered after signing` | Forged webhook mutating a booking |
+| `refuses to refund a booking that was never paid` | Refunding money never captured |
+| `sends an idempotency key so a retry cannot refund twice` | Double refund |
+| `blocks a Stripe request that has no interceptor` | Test suite silently calling the real API |
+| `ignores any price fields present on the input` | Price contributed by the caller |
+| `does not treat inherited Object properties as room types` | `roomId=constructor` pricing to NaN |
+| `never returns a non-finite or non-positive total` | A booking written with a NaN price |
+| `will not resurrect a FAILED booking` | A late success reviving an expired session |
+| `No card field is ever rendered` (E2E) | PCI SAQ D scope creep, in a real browser |
 | `CORS in development` (4 origin variants) | Allowlist pinned to one spelling |
 
 ---
 
-## 🧩 Phase 1: Unit Tests (6 tests)
+## 🧩 How each layer works
 
-**Location:** `client/src/tests/SearchForm.test.tsx`
-**Tools:** Vitest + React Testing Library + `vi.mock('axios')`
+The suite table above is the inventory. This is what each layer can and cannot
+catch, which is the part worth knowing before adding a test.
 
-These tests validate the `SearchForm` component in isolation — no real API calls, no browser.
+### Unit — Mocha + Chai, Vitest + RTL
 
-### What's Tested
+Pure functions and single components, no HTTP. `buildQuote` lives here because it
+is the entire price-integrity guarantee, and exercising it only through HTTP left
+most of its branches unreached — each case cost a request, so only the obvious
+ones got written.
 
-| Test | What It Verifies |
-|------|-----------------|
-| Renders all form fields | Labels, inputs, and search button exist |
-| Updates input on typing | `searchTerm` state updates correctly |
-| Shows alert for <2 chars | Boundary: validation fires for short input |
-| Check-out before check-in | Negative: date validation logic |
-| Suggestions appear after debounce | Async: API mock returns suggestions after 300ms |
-| Suggestions clear on input clear | Edge case: dropdown visibility toggles |
+### Integration — Supertest, MSW
 
-### Key Details
+Real Express routing and real React rendering, with the far side faked.
 
-- `axios` is mocked globally in this file only — `vi.mock('axios')` prevents actual HTTP requests
-- Component is wrapped in `<MemoryRouter>` for `useNavigate()`
-- `@testing-library/jest-dom/vitest` provides matchers like `toBeInTheDocument()`
-- Debounce tests use `waitFor` with a 500ms timeout to account for the 300ms debounce
-
----
-
-## 🧩 Phase 2: Frontend Integration Tests (4 tests)
-
-**Location:** `client/src/tests/SearchForm.integration.test.tsx`
-**Tools:** MSW (Mock Service Worker) + Vitest
-
-These tests verify the full frontend → API flow, with MSW intercepting network requests at the protocol level.
-
-### MSW Architecture
+MSW intercepts at the protocol level rather than stubbing `axios`, so the client
+code under test is the same code that ships:
 
 ```
-Test Component (SearchForm)
-    │
-    ▼
-axios.get('http://localhost:5000/api/destinations/...')
-    │
-    ▼
-MSW Server (intercepts at network level)
-    │
-    ▼
-Mock handlers (src/mocks/handlers.ts)
-    │
-    ▼
-Returns filtered destination data
+Component  →  axios  →  MSW  →  handlers (src/mocks/handlers.ts)
 ```
 
-### What's Tested
+Handlers use wildcard origins (`*/api/...`) so the suite does not depend on
+`VITE_API_URL` being set.
 
-| Test | What It Verifies |
-|------|-----------------|
-| Fetches and displays suggestions | Full flow: type → debounce → API → render |
-| Empty query returns nothing | Component guard for <2 chars (no API call) |
-| Network error handled gracefully | `HttpResponse.error()` → console.error logged |
-| Debounce prevents excess requests | Only 1 API call after rapid typing, not 9 |
+### Contract — nock
 
-### Key Details
+The real Stripe SDK against a faked wire. See the section above: this is the only
+layer that can catch a wrong parameter name or a misread response field, because
+it is the only one where a request is actually serialised.
 
-- **MSW server** is configured in `client/src/tests/setup.ts` — starts before all tests, resets handlers after each, closes after all
-- **Handlers** are defined in `client/src/mocks/handlers.ts` with mock destinations (Singapore, Tokyo, London, Paris)
-- Handlers use the **same endpoint** (`http://localhost:5000/api/destinations/search`) as the real backend
-- `server.use()` allows per-test handler overrides (e.g., to simulate network errors)
+### E2E — Playwright
 
-### Setup Lifecycle
-
-```typescript
-// client/src/tests/setup.ts
-beforeAll(()  => server.listen({ onUnhandledRequest: 'error' }));
-afterEach(()  => { server.resetHandlers(); cleanup(); });
-afterAll(()   => server.close());
-```
-
----
-
-## 🧩 Phase 3: Backend Integration Tests (7 tests)
-
-**Location:** `server/src/tests/destination.test.ts`
-**Tools:** Mocha + Chai + Supertest
-
-These tests send real HTTP requests to the Express app without starting a server — Supertest binds the app to a temporary port.
-
-### What's Tested
-
-| Test | What It Verifies | Rubric Alignment |
-|------|-----------------|-----------------|
-| <2 chars returns empty | Edge case: backend validation matches frontend | ✅ Robustness |
-| Typo tolerance ("sinagpore") | Fuse.js fuzzy matching with threshold 0.3 | ✅ Integration |
-| Exact match for "Singapore" | Core search functionality | ✅ Integration |
-| Max 5 results returned | Performance: results are limited | ✅ Robustness |
-| Unknown query returns empty | Edge case: garbage input doesn't crash | ✅ Robustness |
-| Case insensitivity | Lowercase and uppercase return same count | ✅ Integration |
-| Health check endpoint | Smoke test: API is alive | ✅ Integration |
-
-### Key Details
-
-- The **Express app** is exported from `server/src/index.ts` and imported in tests
-- Server start is guarded by an ESM-compatible check — only starts when run directly, not when imported
-- Supertest sends requests without binding to a port, avoiding port conflicts
-- The **Fuse.js index** is loaded from `server/src/data/destinations.json` at import time
-
-### Test Structure
-
-```typescript
-// server/src/tests/destination.test.ts
-import { describe, it } from 'mocha';
-import { expect } from 'chai';
-import request from 'supertest';
-import { app } from './setup';
-
-describe('Destination Search API', () => {
-  it('should return empty array for query with less than 2 characters', async () => {
-    const response = await request(app)
-      .get('/api/destinations/search')
-      .query({ q: 's' });
-
-    expect(response.status).to.equal(200);
-    expect(response.body).to.be.an('array').that.is.empty;
-  });
-  // ...
-});
-```
-
----
-
-## 🧩 Phase 4: E2E Tests (5 tests)
-
-**Location:** `e2e_testing/tests/search-flow.spec.ts` and `e2e_testing/tests/search-error-handling.spec.ts`
-**Tools:** Playwright
-
-These tests run against the **full stack** in Docker, automating a real Chromium browser.
-
-### Automated Setup
-
-Playwright's `globalSetup` and `globalTeardown` handle infrastructure automatically:
+The full stack in Docker, driven by a real Chromium. Setup is automatic:
 
 ```
 global-setup.ts
     │
-    ▼
-docker compose up -d --build   ← Builds and starts containers
-    │
-    ▼
-Wait for :3000 and :5000        ← Polls until both are ready
-    │
-    ▼
-Run all E2E tests              ← Playwright test execution
-    │
-    ▼
-global-teardown.ts
-    │
-    ▼
-docker compose down            ← Stops and removes containers
+    ├─ docker compose up -d --build
+    ├─ wait for /api/health                 ← backend ready
+    ├─ wait for /src/main.tsx               ← Vite can serve modules, not just the HTML shell
+    └─ warm every route in ROUTES           ← so no spec pays for a cold transform
+                │
+         run specs, then global-teardown.ts brings the stack down
 ```
 
-### What's Tested
+Both waits are load-bearing. A 200 on `/` only proves Vite is serving the shell;
+it returns that while dependency optimisation is still running, so the first spec
+to arrive got a blank page and timed out while every later spec passed. **Adding a
+new route to a spec means adding it to `ROUTES` in `global-setup.ts`.**
 
-| Test | File | What It Verifies |
-|------|------|-----------------|
-| Search → results flow | `search-flow.spec.ts` | Full journey: type → select suggestion → set dates → redirect to results |
-| Typo-tolerant search | `search-flow.spec.ts` | Fuse.js fuzzy matching in a real browser |
-| Empty search validation | `search-error-handling.spec.ts` | Alert dialog fires when no destination selected |
-| Invalid dates validation | `search-error-handling.spec.ts` | Alert dialog fires for check-out before check-in |
-| Login/Signup alerts | `search-error-handling.spec.ts` | Navigation buttons show placeholder alerts |
-
-### Configuration Highlights
-
-```typescript
-// e2e_testing/playwright.config.ts
-timeout: 30000,           // Max 30s per test
-baseURL: 'http://localhost:3000',  // Frontend URL
-trace: 'on-first-retry',  // Network logs on failure
-screenshot: 'only-on-failure',
-video: 'retain-on-failure',
-```
-
-### Running with Visible Browser
-
-```bash
-cd e2e_testing
-npx playwright test --headed    # Watch tests in real time
-npx playwright test --debug     # Step through with inspector
-```
-
-### Viewing Reports
-
-```bash
-cd e2e_testing
-npx playwright show-report      # Opens HTML report with screenshots/videos
-```
-
----
+This layer earns its cost by catching seams nothing else sees. It found the
+handoff bug where `CheckoutPage` wrote a billing address into sessionStorage that
+`PaymentPage` never forwarded — both sides' unit tests passed.
 
 ## 🐳 Docker & Dockerignore
 
@@ -323,32 +264,50 @@ src/tests/
 
 ## 📁 Test File Structure
 
+Every suite lives under a `tests/` directory — none are co-located with source.
+That is also what keeps them out of the coverage report, which excludes
+`src/tests/`.
+
 ```
 transcenda-hotels/
 ├── client/
 │   ├── src/
-│   │   ├── components/
-│   │   │   └── SearchForm.test.tsx          # Unit tests (Vitest)
-│   │   ├── mocks/
-│   │   │   ├── handlers.ts                  # MSW request handlers
-│   │   │   └── browser.ts                   # MSW browser setup
-│   │   └── tests/
-│   │       ├── setup.ts                     # MSW server lifecycle
-│   │       └── SearchForm.integration.test.tsx  # Integration tests
-│   └── vite.config.ts                       # Vitest configuration
+│   │   ├── mocks/handlers.ts            # MSW request handlers
+│   │   ├── tests/
+│   │   │   ├── setup.ts                 # MSW server lifecycle
+│   │   │   ├── SearchForm.test.tsx
+│   │   │   ├── SearchForm.integration.test.tsx
+│   │   │   ├── CheckoutPage.test.tsx
+│   │   │   ├── PaymentPage.test.tsx
+│   │   │   └── ConfirmationPage.test.tsx
+│   └── vite.config.ts                   # Vitest configuration
 ├── server/
-│   └── src/
-│       └── tests/
-│           ├── setup.ts                     # Test lifecycle hooks
-│           └── destination.test.ts          # API tests (Mocha)
-├── e2e_testing/
-│   ├── global-setup.ts                      # Starts Docker containers
-│   ├── global-teardown.ts                   # Stops Docker containers
-│   ├── playwright.config.ts                 # Playwright configuration
-│   └── tests/
-│       ├── search-flow.spec.ts              # E2E search scenarios
-│       └── search-error-handling.spec.ts    # E2E error scenarios
-└── .gitignore                               # Ignores coverage/ and report output
+│   ├── .mocharc.json                    # Loads tsx + the network guard, for every invocation
+│   └── src/tests/
+│       ├── globalSetup.ts               # Blocks outbound sockets except loopback
+│       ├── env.ts                       # Test env defaults, imported before ../index
+│       ├── setup.ts                     # Exports the app for supertest
+│       ├── helpers/stripeNock.ts        # nock lifecycle + Stripe fixtures
+│       ├── buildQuote.test.ts           # ─┐
+│       ├── bookingModel.test.ts         #  │ unit
+│       ├── paymentService.test.ts       #  │
+│       ├── rateLimit.test.ts            #  │
+│       ├── recordPaidBooking.test.ts    # ─┘
+│       ├── destination.test.ts          # ─┐
+│       ├── booking.test.ts              #  │ integration
+│       ├── paymentIntent.test.ts        #  │
+│       ├── stripeWebhook.test.ts        # ─┘
+│       ├── stripePayments.test.ts       # ─┐ contract (nock)
+│       ├── stripePaymentIntents.test.ts #  │
+│       └── stripeRefunds.test.ts        # ─┘
+└── e2e_testing/
+    ├── global-setup.ts                  # Docker up, readiness waits, route warm-up
+    ├── global-teardown.ts               # Docker down
+    ├── playwright.config.ts
+    └── tests/
+        ├── booking-flow.spec.ts
+        ├── search-flow.spec.ts
+        └── search-error-handling.spec.ts
 ```
 
 ---

@@ -7,8 +7,10 @@ import {
   getCheckout,
   postGuestDetails,
   postPayment,
+  postPaymentIntent,
   postConfirmBooking,
-  getBookingByReference,
+  getBookingById,
+  getBookingsByUser,
 } from './controllers/bookingController.js';
 import { handleStripeWebhook } from './controllers/webhookController.js';
 import { rateLimit } from './middleware/rateLimit.js';
@@ -97,8 +99,16 @@ const lookupLimiter = rateLimit({ windowMs: 60_000, max: 30 });
 app.get('/api/bookings/checkout', getCheckout);
 app.post('/api/bookings/guest-details', lookupLimiter, postGuestDetails);
 app.post('/api/bookings/payment', paymentLimiter, postPayment);
+// Elements flow: returns a client secret instead of a redirect, so the card is
+// entered on our own /payment page rather than on a Stripe-hosted one.
+app.post('/api/bookings/payment-intent', paymentLimiter, postPaymentIntent);
 app.post('/api/bookings/confirm', paymentLimiter, postConfirmBooking);
-app.get('/api/bookings/:reference', lookupLimiter, getBookingByReference);
+
+// Literal segments before the wildcard. Registered the other way round,
+// `/:id` matches "checkout" and "user" and routes them to the lookup handler —
+// the same trap that makes /api/hotels/:id swallow /api/hotels/search.
+app.get('/api/bookings/user/:userId', lookupLimiter, getBookingsByUser);
+app.get('/api/bookings/:id', lookupLimiter, getBookingById);
 
 /**
  * Connectivity probe. Deliberately targets `bookings` — the table this service

@@ -1,62 +1,39 @@
-import { randomBytes } from 'crypto';
+import { randomUUID } from 'crypto';
+import type {
+  BookingInput,
+  BookingRecord,
+  BookingRow,
+} from './bookingTypes.js';
+
+export type {
+  BookingInput,
+  BookingRecord,
+  BookingRow,
+  CardDetails,
+  GuestDetails,
+  StayDetails,
+} from './bookingTypes.js';
 
 /**
- * BookingModel — the «Database Model» box from the UC4 class diagram.
+ * BookingModel — the «Database Model» box from the UC4 class diagram, written
+ * against the deployed schema in ../data/schema.sql.
  *
- * The diagram's Mongo-flavoured `insertOne` / `findOne` names are kept as the
- * public API; the bodies speak SQL through supabase-js. DDL in ../data/bookings.sql
+ * The table has payment_id and price_paid NOT NULL and no status column, so a
+ * booking cannot be represented before it is paid for. insertOne is therefore
+ * only ever called after Stripe has confirmed the charge, and there is no
+ * PENDING state to transition out of.
  *
- * Bookings are written PENDING before the customer is sent to pay, then flipped
- * to PAID by the webhook, so a charge can never land on a booking that does not
- * exist.
+ * The cost of that is stated plainly: if this insert fails, the customer has
+ * been charged and no row exists. findByPaymentId plus the webhook retry are
+ * the recovery path — see webhookController. Adding a unique constraint on
+ * payment_id (see schema.sql) is what would make that recovery airtight.
  */
-
-export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED';
-
-export interface BookingData {
-  guestName: string;
-  guestEmail: string;
-  contactNumber: string;
-  roomId: string;
-  hotelId: string;
-  checkIn: string;
-  checkOut: string;
-  totalPrice: number;
-  currency: string;
-  paymentStatus: PaymentStatus;
-  bookingReference: string;
-}
-
-export interface BookingRecord extends BookingData {
-  id: string;
-  createdAt: string;
-  stripeSessionId: string | null;
-  paymentIntentId: string | null;
-}
-
-type BookingRow = {
-  id: string;
-  guest_name: string;
-  guest_email: string;
-  contact_number: string;
-  room_id: string;
-  hotel_id: string;
-  check_in: string;
-  check_out: string;
-  total_price: number;
-  currency: string;
-  payment_status: PaymentStatus;
-  booking_reference: string;
-  stripe_session_id: string | null;
-  payment_intent_id: string | null;
-  created_at: string;
-};
 
 const TABLE = 'bookings';
 
 /**
- * Supabase is optional at boot so the flow stays demoable without credentials.
- * Not suitable for more than one process, and cleared on every restart.
+ * In-process fallback so the flow stays demoable without credentials. Single
+ * process only, and cleared on restart.
  */
 const memoryStore = new Map<string, BookingRecord>();
 
@@ -65,76 +42,121 @@ export const isSupabaseConfigured = (): boolean => {
   return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY);
 };
 
-/**
- * Imported lazily: ../lib/supabaseClient throws at module scope when the env
- * vars are missing, and a require-time crash would take the whole server down.
- */
+/** Lazy: ../lib/supabaseClient throws at module scope when env vars are absent. */
 const getClient = async () => {
   const { supabaseAdmin } = await import('../lib/supabaseClient.js');
   return supabaseAdmin;
 };
 
-const toRow = (data: BookingData) => ({
-  guest_name: data.guestName,
-  guest_email: data.guestEmail,
-  contact_number: data.contactNumber,
-  room_id: data.roomId,
-  hotel_id: data.hotelId,
-  check_in: data.checkIn,
-  check_out: data.checkOut,
-  total_price: data.totalPrice,
-  currency: data.currency,
-  payment_status: data.paymentStatus,
-  booking_reference: data.bookingReference,
+const toRow = (input: BookingInput) => ({
+  user_id: input.userId,
+  destination_id: input.stay.destinationId,
+  hotel_id: input.stay.hotelId,
+  hotel_name: input.stay.hotelName,
+  // Stored as text; joined here so the split lives in exactly one place.
+  room_types: input.stay.roomTypes.join(','),
+  start_date: input.stay.startDate,
+  end_date: input.stay.endDate,
+  nights_count: input.nights,
+  adults_count: input.stay.adults,
+  children_count: input.stay.children,
+  special_requests: input.guest.specialRequests ?? null,
+  guest_salutation: input.guest.salutation,
+  guest_first_name: input.guest.firstName,
+  guest_last_name: input.guest.lastName,
+  guest_email: input.guest.email,
+  guest_phone: input.guest.phone,
+  billing_line1: input.billing?.line1 ?? null,
+  billing_line2: input.billing?.line2 ?? null,
+  billing_city: input.billing?.city ?? null,
+  billing_state: input.billing?.state ?? null,
+  billing_postal_code: input.billing?.postalCode ?? null,
+  // character(2) — normalised on write so the stored code is always comparable.
+  billing_country: input.billing?.country ? input.billing.country.toUpperCase().slice(0, 2) : null,
+  price_paid: input.pricePaid,
+  payment_id: input.paymentId,
+  payee_id: input.payeeId,
+  card_brand: input.card.brand,
+  // character(4) — Postgres blank-pads anything shorter, so normalise on write.
+  card_last4: input.card.last4.slice(-4).padStart(4, '0'),
+  card_exp_month: input.card.expMonth,
+  card_exp_year: input.card.expYear,
 });
 
 const fromRow = (row: BookingRow): BookingRecord => ({
   id: row.id,
-  guestName: row.guest_name,
-  guestEmail: row.guest_email,
-  contactNumber: row.contact_number,
-  roomId: row.room_id,
+  userId: row.user_id,
+  destinationId: row.destination_id,
   hotelId: row.hotel_id,
-  checkIn: row.check_in,
-  checkOut: row.check_out,
-  totalPrice: Number(row.total_price),
-  currency: row.currency,
-  paymentStatus: row.payment_status,
-  bookingReference: row.booking_reference,
-  stripeSessionId: row.stripe_session_id,
-  paymentIntentId: row.payment_intent_id,
+  hotelName: row.hotel_name,
+  roomTypes: row.room_types ? row.room_types.split(',').filter(Boolean) : [],
+  startDate: row.start_date,
+  endDate: row.end_date,
+  nights: row.nights_count,
+  adults: row.adults_count,
+  children: row.children_count,
+  specialRequests: row.special_requests,
+  guest: {
+    salutation: row.guest_salutation,
+    firstName: row.guest_first_name,
+    lastName: row.guest_last_name,
+    email: row.guest_email,
+    phone: row.guest_phone,
+    specialRequests: row.special_requests,
+  },
+  // Absent for any booking written before the billing columns existed, and for
+  // a webhook recovery whose metadata predates them.
+  billing: row.billing_line1
+    ? {
+        line1: row.billing_line1,
+        line2: row.billing_line2,
+        city: row.billing_city ?? '',
+        state: row.billing_state,
+        postalCode: row.billing_postal_code ?? '',
+        country: (row.billing_country ?? '').trim(),
+      }
+    : null,
+  pricePaid: Number(row.price_paid),
+  paymentId: row.payment_id,
+  payeeId: row.payee_id,
+  card: {
+    brand: row.card_brand,
+    // character(4) comes back blank-padded when the stored value was shorter.
+    last4: row.card_last4.trim(),
+    expMonth: row.card_exp_month,
+    expYear: row.card_exp_year,
+  },
   createdAt: row.created_at,
 });
 
-/** Customer-facing handle (TRX-9F2K7A), matching what Manage Booking expects. */
-export const generateBookingReference = (): string => {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1
-  const bytes = randomBytes(10);
-  let suffix = '';
-  for (const byte of bytes) {
-    suffix += alphabet[byte % alphabet.length];
-  }
-  return `TRX-${suffix}`;
-};
+/**
+ * Writes a paid booking.
+ *
+ * Idempotent by payment_id: a retried confirmation or a redelivered webhook
+ * returns the existing row rather than inserting a duplicate. The check is a
+ * read-then-write, so it narrows the window rather than closing it — the unique
+ * constraint in schema.sql is what would close it.
+ */
+export const insertOne = async (input: BookingInput): Promise<BookingRecord> => {
+  const existing = await findByPaymentId(input.paymentId);
+  if (existing) return existing;
 
-/** Sequence step 7: insertOne(bookingData) — always PENDING at this point. */
-export const insertOne = async (data: BookingData): Promise<BookingRecord> => {
   if (!isSupabaseConfigured()) {
     const record: BookingRecord = {
-      ...data,
-      id: randomBytes(16).toString('hex'),
-      createdAt: new Date().toISOString(),
-      stripeSessionId: null,
-      paymentIntentId: null,
+      ...fromRow({
+        ...(toRow(input) as unknown as BookingRow),
+        id: randomUUID(),
+        created_at: new Date().toISOString(),
+      }),
     };
-    memoryStore.set(record.bookingReference, record);
+    memoryStore.set(record.id, record);
     return record;
   }
 
   const supabase = await getClient();
   const { data: row, error } = await supabase
     .from(TABLE)
-    .insert(toRow(data))
+    .insert(toRow(input))
     .select()
     .single();
 
@@ -142,89 +164,63 @@ export const insertOne = async (data: BookingData): Promise<BookingRecord> => {
   return fromRow(row as BookingRow);
 };
 
-export const findOne = async (
-  query: { bookingReference: string }
-): Promise<BookingRecord | null> => {
+/** The confirmation page looks a booking up by its UUID. */
+export const findById = async (id: string): Promise<BookingRecord | null> => {
   if (!isSupabaseConfigured()) {
-    return memoryStore.get(query.bookingReference) ?? null;
+    return memoryStore.get(id) ?? null;
   }
 
   const supabase = await getClient();
   const { data: row, error } = await supabase
     .from(TABLE)
     .select('*')
-    .eq('booking_reference', query.bookingReference)
+    .eq('id', id)
     .maybeSingle();
 
   if (error) throw new Error(`Booking lookup failed: ${error.message}`);
   return row ? fromRow(row as BookingRow) : null;
 };
 
-/** Records the Stripe session against the pending booking, before redirecting. */
-export const attachSession = async (
-  bookingReference: string,
-  stripeSessionId: string
-): Promise<void> => {
-  if (!isSupabaseConfigured()) {
-    const record = memoryStore.get(bookingReference);
-    if (record) memoryStore.set(bookingReference, { ...record, stripeSessionId });
-    return;
-  }
-
-  const supabase = await getClient();
-  const { error } = await supabase
-    .from(TABLE)
-    .update({ stripe_session_id: stripeSessionId })
-    .eq('booking_reference', bookingReference);
-
-  if (error) throw new Error(`Session attach failed: ${error.message}`);
-};
-
-/**
- * Idempotent PENDING → PAID transition. Returns the record only on the first
- * successful flip, so callers can send the confirmation email exactly once even
- * if Stripe redelivers the webhook.
- */
-export const markPaid = async (
-  bookingReference: string,
-  paymentIntentId: string
+/** Reconciliation handle: answers "have we already recorded this charge?" */
+export const findByPaymentId = async (
+  paymentId: string
 ): Promise<BookingRecord | null> => {
   if (!isSupabaseConfigured()) {
-    const record = memoryStore.get(bookingReference);
-    if (!record || record.paymentStatus === 'PAID') return null;
-    const updated: BookingRecord = { ...record, paymentStatus: 'PAID', paymentIntentId };
-    memoryStore.set(bookingReference, updated);
-    return updated;
+    for (const record of memoryStore.values()) {
+      if (record.paymentId === paymentId) return record;
+    }
+    return null;
   }
 
   const supabase = await getClient();
   const { data: row, error } = await supabase
     .from(TABLE)
-    .update({ payment_status: 'PAID', payment_intent_id: paymentIntentId })
-    .eq('booking_reference', bookingReference)
-    .eq('payment_status', 'PENDING') // guard makes redelivery a no-op
-    .select()
+    .select('*')
+    .eq('payment_id', paymentId)
     .maybeSingle();
 
-  if (error) throw new Error(`Payment status update failed: ${error.message}`);
+  if (error) throw new Error(`Booking lookup failed: ${error.message}`);
   return row ? fromRow(row as BookingRow) : null;
 };
 
-export const markFailed = async (bookingReference: string): Promise<void> => {
+/** Powers "my bookings" once a user is signed in. */
+export const findByUserId = async (userId: string): Promise<BookingRecord[]> => {
   if (!isSupabaseConfigured()) {
-    const record = memoryStore.get(bookingReference);
-    if (record && record.paymentStatus === 'PENDING') {
-      memoryStore.set(bookingReference, { ...record, paymentStatus: 'FAILED' });
-    }
-    return;
+    return [...memoryStore.values()].filter((record) => record.userId === userId);
   }
 
   const supabase = await getClient();
-  const { error } = await supabase
+  const { data: rows, error } = await supabase
     .from(TABLE)
-    .update({ payment_status: 'FAILED' })
-    .eq('booking_reference', bookingReference)
-    .eq('payment_status', 'PENDING');
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
 
-  if (error) throw new Error(`Payment status update failed: ${error.message}`);
+  if (error) throw new Error(`Booking lookup failed: ${error.message}`);
+  return (rows as BookingRow[]).map(fromRow);
+};
+
+/** Test seam: the in-process store outlives a single suite otherwise. */
+export const __clearMemoryStore = (): void => {
+  memoryStore.clear();
 };
