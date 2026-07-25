@@ -9,9 +9,13 @@ services:
     volumes:
       - ./server:/app          # Bind Mount: Dynamically pipes local server file changes for hot-reloading
       - /app/node_modules      # Anonymous Volume: Shuts out local OS path drifts from corrupting libraries
-    command: npm run dev       # Automatically triggers our backend 'tsx watch' automation script
+    command: npx tsx watch src/index.ts       # Automatically triggers our backend 'tsx watch' automation script
+    depends_on:
+      - redis
     env_file:
-    - ./server/.env
+      - ./server/.env
+    environment:
+      - REDIS_URL=redis://redis:6379
 
   # React UI Interface Frame
   frontend:
@@ -26,3 +30,21 @@ services:
     command: npm run dev       # Triggers Vite SWC compiler development runtime loops
     depends_on:
       - backend                # Structural Ordering Enforcer: Won't let the UI execute until the API boots
+    env_file:
+      - ./client/.env
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data  # Persist cache data across restarts
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis_data:

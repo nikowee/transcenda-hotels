@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import {searchDestinations} from './controllers/destinationController';
 import { supabaseAdmin } from './lib/supabaseClient';
+import { getHotelSearchResults } from './controllers/hotelController';
 
 dotenv.config();
 
@@ -36,6 +37,9 @@ app.get('/api/supabase-test', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// Hotel search endpoint
+app.get('/api/hotels/search', getHotelSearchResults);
 
 // Export for testing purposes
 export default app;
