@@ -1,6 +1,9 @@
 import { BrowserRouter, Routes, Route } from 'react-router';
 import LandingPage from './pages/LandingPage';
 import HotelDetailPage from './pages/HotelDetailsPage';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
+import ResultsPage from './pages/ResultsPage';
 
 export default function App() {
   return (
@@ -20,6 +23,13 @@ export default function App() {
             </div>
           </div>} />
         <Route path="/hotel/:id" element={<HotelDetailPage />} />
+        
+        {/* Auth Routes */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        
+        {/* Results Route */}
+        <Route path="/results" element={<ResultsPage />} />
       </Routes>
     </BrowserRouter>
   );

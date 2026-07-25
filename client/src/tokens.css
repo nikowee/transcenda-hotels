@@ -1,0 +1,26 @@
+/* ── Transcenda Design Tokens ── */
+/* Single source of truth for the entire team. */
+/* Import this in index.css and use utility classes everywhere. */
+
+@theme {
+  /* ── Dark Background Surface Tones ── */
+  --color-brand-surface: #0f172a;         /* slate-900 – page backdrop */
+  --color-brand-surface-soft: #1e293b;    /* slate-800 – card bg */
+  --color-brand-surface-muted: #334155;   /* slate-700 – hover / subtle bg */
+  --color-brand-border: #475569;          /* slate-600 – borders */
+
+  /* ── Text Tones ── */
+  --color-brand-text-primary: #ffffff;
+  --color-brand-text-secondary: #cbd5e1;  /* slate-300 */
+  --color-brand-text-muted: #94a3b8;      /* slate-400 */
+
+  /* ── Accent / Brand ── */
+  --color-brand-accent: #3b82f6;          /* blue-500 */
+  --color-brand-accent-light: #60a5fa;    /* blue-400 */
+  --color-brand-accent-dark: #2563eb;     /* blue-600 */
+  --color-brand-accent-glow: #93c5fd;     /* blue-300 */
+
+  /* ── Utility ── */
+  --color-brand-glass: rgba(255, 255, 255, 0.05);
+  --color-brand-glass-border: rgba(255, 255, 255, 0.1);
+}
