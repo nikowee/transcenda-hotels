@@ -39,41 +39,31 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
   };
 
   const handleDeleteAccount = async (e: React.SyntheticEvent) => {
-    e.preventDefault();
-    setDeleteError(null);
+    e.preventDefault(); 
     setIsDeleting(true);
-
-    if (!user.email) {
-      setIsDeleting(false);
-      throw new Error('Expected user.email to be defined');
-    }
-
-    const { error: verifyError } = await supabase.auth.reauthenticate();
-
-    if (verifyError) {
-      setDeleteError('Incorrect password or reauthentication failed.');
-      setIsDeleting(false);
-      return;
-    }
-
+    setDeleteError(null);
+  
     try {
-      const apiUrl = import.meta.env.VITE_API_URL;
-      const response = await axios.delete(`${apiUrl}/api/users/${user.id}`);
-
-      if (!response.data.success) {
-        throw new Error(response.data.error || 'Failed to delete account from server.');
+      // Test the password by attempting to sign in with it
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: deletePassword, 
+      });
+  
+      if (signInError) {
+        setDeleteError('Incorrect password. Please try again.');
+        setIsDeleting(false);
+        return; 
       }
-
+  
       await supabase.auth.signOut();
-      window.location.reload(); 
+      window.location.reload();
+  
     } catch (err: unknown) {
-      let errorMessage = 'Error connecting to the backend server.';
-      
+      let errorMessage = 'Error deleting account.';
       if (err instanceof Error) {
-        const serverMessage = (err as any).response?.data?.error;
-        errorMessage = serverMessage || err.message;
+        errorMessage = err.message;
       }
-
       setDeleteError(errorMessage);
       setIsDeleting(false);
     }

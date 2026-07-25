@@ -1,33 +1,69 @@
-import { useNavigate } from 'react-router';
+import { useState } from 'react';
+import { Link } from 'react-router';
+import { useAuth } from '../hooks/useAuth';
+import ProfileModal from './ProfileModal';
 
 export default function Navbar() {
-  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   return (
-    <nav className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-6 lg:px-10">
-      {/* Logo – links back to landing */}
-      <button
-        onClick={() => navigate('/')}
-        className="text-2xl font-extrabold text-white tracking-tight cursor-pointer"
-      >
-        Transcenda<span className="text-brand-accent">.</span>
-      </button>
+    <>
+      <nav className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between p-6">
+        <div className="text-2xl font-extrabold text-white tracking-tight">
+          Transcenda<span className="text-blue-500">.</span>
+        </div>
+        
+        <div className="flex items-center gap-4">
+          {user ? (
+            <div className="flex items-center gap-3">
+              {/* Profile Pill - Opens the Modal */}
+              <div 
+                onClick={() => setIsProfileOpen(true)}
+                className="flex items-center gap-3 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-slate-500 backdrop-blur-sm rounded-full pl-3 pr-4 py-1.5 shadow-sm cursor-pointer transition-all group"
+              >
+                <div className="w-7 h-7 bg-blue-600 group-hover:bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-bold uppercase transition-colors">
+                  {user.email ? user.email[0] : 'U'}
+                </div>
+                
+                <span className="text-sm font-medium text-slate-200 group-hover:text-white max-w-[160px] sm:max-w-[200px] truncate transition-colors">
+                  {user.email}
+                </span>
+              </div>
 
-      {/* Auth buttons */}
-      <div className="flex gap-4">
-        <button
-          onClick={() => alert("Login Modal will open here!")}
-          className="text-sm font-semibold text-brand-text-secondary hover:text-white transition-colors"
-        >
-          Log In
-        </button>
-        <button
-          onClick={() => alert("Signup Modal will open here!")}
-          className="text-sm font-semibold bg-white text-slate-900 px-4 py-2 rounded-lg hover:bg-slate-100 transition-colors shadow-sm"
-        >
-          Sign Up
-        </button>
-      </div>
-    </nav>
+              {/* Logout Button */}
+              <button 
+                onClick={logout}
+                className="text-sm font-semibold bg-transparent hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white px-5 py-2 rounded-full transition-colors cursor-pointer"
+              >
+                Log Out
+              </button>
+            </div>
+          ) : (
+            <>
+              <Link 
+                to="/login" 
+                className="text-sm font-semibold bg-transparent hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white px-5 py-2 rounded-full transition-colors cursor-pointer"
+              >
+                Log In
+              </Link>
+              <Link 
+                to="/signup" 
+                className="text-sm font-semibold bg-white text-slate-900 px-4 py-2 rounded-full hover:bg-slate-100 transition-colors shadow-sm"
+              >
+                Sign Up
+              </Link>
+            </>
+          )}
+        </div>
+      </nav>
+
+      {/* Profile Modal Component */}
+      <ProfileModal 
+        isOpen={isProfileOpen} 
+        onClose={() => setIsProfileOpen(false)} 
+        user={user} 
+      />
+    </>
   );
 }
