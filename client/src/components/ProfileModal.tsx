@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import type { User } from '@supabase/supabase-js';
+import axios from 'axios';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -37,45 +38,47 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
     setIsUpdating(false);
   };
 
-  const handleDeleteAccount = async (e: React.FormEvent) => {
+  const handleDeleteAccount = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setDeleteError(null);
     setIsDeleting(true);
 
-    // 1. Verify password locally
-    const { error: verifyError } = await supabase.auth.signInWithPassword({
-      email: user.email,
-      password: deletePassword,
-    });
+    if (!user.email) {
+      setIsDeleting(false);
+      throw new Error('Expected user.email to be defined');
+    }
+
+    const { error: verifyError } = await supabase.auth.reauthenticate();
 
     if (verifyError) {
-      setDeleteError('Incorrect password. Please try again.');
+      setDeleteError('Incorrect password or reauthentication failed.');
       setIsDeleting(false);
       return;
     }
 
-    // 2. Call running Express server endpoint 
     try {
-      const response = await fetch(`http://localhost:5000/api/users/${user.id}`, {
-        method: 'DELETE',
-      });
+      const apiUrl = import.meta.env.VITE_API_URL;
+      const response = await axios.delete(`${apiUrl}/api/users/${user.id}`);
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to delete account from server.');
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Failed to delete account from server.');
       }
 
-      // 3. Clear session and refresh
       await supabase.auth.signOut();
       window.location.reload(); 
-    } catch (err: any) {
-      setDeleteError(err.message || 'Network error while attempting to delete.');
+    } catch (err: unknown) {
+      let errorMessage = 'Error connecting to the backend server.';
+      
+      if (err instanceof Error) {
+        const serverMessage = (err as any).response?.data?.error;
+        errorMessage = serverMessage || err.message;
+      }
+
+      setDeleteError(errorMessage);
       setIsDeleting(false);
     }
   };
 
-  // Placeholder booking history
   const dummyBookings = [
     { id: '1', hotel: 'Skyline Luxury Suites', dates: 'Aug 12 - Aug 15, 2026', status: 'Confirmed', price: '$850' },
     { id: '2', hotel: 'Grand Ocean Resort & Spa', dates: 'Sep 01 - Sep 04, 2026', status: 'Completed', price: '$1,200' },

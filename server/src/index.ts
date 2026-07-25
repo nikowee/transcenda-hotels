@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import {searchDestinations} from './controllers/destinationController';
-import { supabaseAdmin } from './lib/supabaseClient';
+import { supabaseAdmin, deleteUser } from './lib/supabaseClient';
 
 dotenv.config();
 
@@ -37,18 +37,20 @@ app.get('/api/supabase-test', async (req, res) => {
   }
 });
 
-//Supabase delete user from users' table
+// Supabase delete fetch
 app.delete('/api/users/:uid', async (req, res) => {
   try {
-    const userId = req.params.uid;
+    const userId = req.params.uid; 
     
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'User ID is missing.' });
+    }
+
+    await deleteUser(userId);    
+    res.status(200).json({ success: true, message: 'User deleted successfully' });
     
-    if (error) throw error;
-    
-    res.json({ success: true, message: `User ${userId} successfully deleted.` });
   } catch (error: any) {
-    console.error('Error deleting user:', error);
+    console.error('Delete error:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });

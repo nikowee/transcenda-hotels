@@ -25,7 +25,7 @@ export default function Login() {
     }
   }, [searchParams]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setSuccessMessage(null);
     setErrorMessage(null); 

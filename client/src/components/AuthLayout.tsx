@@ -7,9 +7,7 @@ export default function AuthLayout({ children, title, subtitle }: { children: Re
       {/* Wallpaper Layer */}
       <div 
         className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat"
-        style={{ 
-          backgroundImage: "url('https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?q=80&w=2070&auto=format&fit=crop')",
-        }}
+        style={{ backgroundImage: `url('/auth-bg.jpeg')` }}
       >
         {/* Dark Overlay to keep text readable */}
         <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"></div>

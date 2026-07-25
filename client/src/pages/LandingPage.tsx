@@ -1,29 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router';
 import SearchForm from '../components/SearchForm';
 import ProfileModal from '../components/ProfileModal';
-import { supabase } from '../lib/supabaseClient';
-import type { User } from '@supabase/supabase-js';
+import { useAuth } from '../hooks/useAuth';
 
 export default function LandingPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [isProfileOpen, setIsProfileOpen] = useState(false); // 2. Add state for the modal
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-  };
+  const { user, logout } = useAuth();
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   return (
     <div className="relative min-h-screen w-full bg-slate-900 flex flex-col items-center justify-center pt-20 pb-32 px-4 sm:px-6 lg:px-8">
@@ -40,7 +23,7 @@ export default function LandingPage() {
         <div className="flex items-center gap-4">
           {user ? (
             <div className="flex items-center gap-3">
-              {/* 3. Make the Profile Pill Clickable to Open the Modal! */}
+              {/* Profile Pill - Opens the Modal */}
               <div 
                 onClick={() => setIsProfileOpen(true)}
                 className="flex items-center gap-3 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-slate-500 backdrop-blur-sm rounded-full pl-3 pr-4 py-1.5 shadow-sm cursor-pointer transition-all group"
@@ -54,9 +37,9 @@ export default function LandingPage() {
                 </span>
               </div>
 
-              {/* Keep Logout Button separate so they can still log out quickly */}
+              {/* Logout Button */}
               <button 
-                onClick={handleLogout}
+                onClick={logout}
                 className="text-sm font-semibold bg-transparent hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white px-5 py-2 rounded-full transition-colors cursor-pointer"
               >
                 Log Out
@@ -91,7 +74,7 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* 4. Render the Modal Component at the bottom! */}
+      {/* Modal Component */}
       <ProfileModal 
         isOpen={isProfileOpen} 
         onClose={() => setIsProfileOpen(false)} 
