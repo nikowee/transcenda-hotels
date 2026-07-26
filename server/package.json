@@ -8,9 +8,7 @@
     "build": "tsc",
     "type-check": "tsc --noEmit",
     "test": "mocha --exit -r tsx src/tests/**/*.test.ts",
-    "test:watch": "mocha --exit -r tsx --watch src/tests/**/*.test.ts",
-    "stripe:secret": "tsx src/scripts/stripeWebhook.ts secret",
-    "stripe:send": "tsx src/scripts/stripeWebhook.ts send"
+    "test:watch": "mocha --exit -r tsx --watch src/tests/**/*.test.ts"
   },
   "keywords": [],
   "author": "",

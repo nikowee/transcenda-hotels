@@ -1,4 +1,0 @@
-{
-  "require": ["tsx", "./src/tests/globalSetup.ts"],
-  "extension": ["ts"]
-}

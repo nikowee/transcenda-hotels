@@ -1,44 +1,25 @@
 import { BrowserRouter, Routes, Route } from 'react-router';
 import LandingPage from './pages/LandingPage';
+import HotelDetailPage from './pages/HotelDetailsPage';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ResultsPage from './pages/ResultsPage';
-import HotelDetailPage from './pages/HotelDetailsPage';
-import BookingEntry from './pages/BookingEntry';
-import CheckoutPage from './pages/CheckoutPage';
-import PaymentPage from './pages/PaymentPage';
-import ConfirmationPage from './pages/ConfirmationPage';
 
-/**
- * The whole journey, in the order a guest walks it:
- *
- *   /  →  /results  →  /hotel/:id  →  /booking  →  /checkout  →  /payment
- *                                                             →  /confirmation
- *
- * /booking is the seam between Feature 3 and UC4 and is not a page anyone sees.
- * RoomList navigates there with its own spelling of a stay (hotel, dest, in,
- * out, guests, key) and BookingEntry redirects to /checkout with the one query
- * the booking flow understands.
- */
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<LandingPage />} />
 
-        {/* Auth */}
+        {/* Auth Routes */}
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
-
-        {/* Search and hotel details */}
+        
+        {/* Results Route */}
         <Route path="/results" element={<ResultsPage />} />
-        <Route path="/hotel/:id" element={<HotelDetailPage />} />
 
-        {/* UC4 — Book & Make Payment */}
-        <Route path="/booking" element={<BookingEntry />} />
-        <Route path="/checkout" element={<CheckoutPage />} />
-        <Route path="/payment" element={<PaymentPage />} />
-        <Route path="/confirmation" element={<ConfirmationPage />} />
+        {/* Hotel Details Route */}
+        <Route path="/hotel/:id" element={<HotelDetailPage />} />
       </Routes>
     </BrowserRouter>
   );

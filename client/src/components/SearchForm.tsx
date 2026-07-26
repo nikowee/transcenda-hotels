@@ -8,6 +8,7 @@ const API_URL = import.meta.env.VITE_API_URL;
 export default function SearchForm() {
     const navigate = useNavigate();
 
+    // State Memory: Tracking what the user types and selects
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedDestId, setSelectedDestId] = useState('');
     const [showSuggestions, setShowSuggestions] = useState(false);
