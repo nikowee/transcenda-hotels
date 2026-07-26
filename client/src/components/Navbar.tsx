@@ -1,19 +1,47 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
+import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import ProfileModal from './ProfileModal';
+import CompactSearchBar from './CompactSearchBar';
 
-export default function Navbar() {
+interface NavbarProps {
+  showBackButton?: boolean;
+  showSearchBar?: boolean;
+}
+
+export default function Navbar({ showBackButton, showSearchBar }: NavbarProps) {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   return (
     <>
       <nav className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between p-6">
-        <div className="text-2xl font-extrabold text-white tracking-tight">
-          Transcenda<span className="text-blue-500">.</span>
+        {/* Left: Back button + Logo (stacked) */}
+        <div className="flex flex-col items-start">
+          <Link to="/" className="text-2xl font-extrabold tracking-tight text-white">
+            Transcenda<span className="text-blue-500">.</span>
+          </Link>
+          {showBackButton && (
+            <button
+              onClick={() => navigate(-1)}
+              className="flex items-center gap-1 text-sm font-semibold text-white/80 hover:text-white transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
+          )}
         </div>
-        
+
+        {/* Center: Compact Search Bar */}
+        {showSearchBar && (
+          <div className="hidden sm:block">
+            <CompactSearchBar />
+          </div>
+        )}
+
+        {/* Right: Auth buttons */}
         <div className="flex items-center gap-4">
           {user ? (
             <div className="flex items-center gap-3">

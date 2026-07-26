@@ -294,7 +294,7 @@ describe('ResultsPage Component', () => {
     // useNavigate should have been called with the hotel detail URL
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith(
-        '/hotel/hotel-1?in=2026-08-15&out=2026-08-20&guests=2&rooms=1'
+        '/hotel/hotel-1?dest=dest-1&name=Singapore&in=2026-08-15&out=2026-08-20&guests=2&rooms=1'
       );
     });
   });

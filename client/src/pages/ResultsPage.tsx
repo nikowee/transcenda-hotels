@@ -35,7 +35,7 @@ export default function ResultsPage() {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
 
-    const destinationId = searchParams.get('dest');
+    const destinationId = searchParams.get('dest') as string;
     const destinationName = searchParams.get('name') || destinationId;
     const checkin = searchParams.get('in');
     const checkout = searchParams.get('out');
@@ -110,14 +110,14 @@ export default function ResultsPage() {
     };
 
     const handleSelectHotel = (hotelId: string) => {
-        navigate(`/hotel/${hotelId}?in=${checkin}&out=${checkout}&guests=${guests}&rooms=${rooms}`);
+        navigate(`/hotel/${hotelId}?dest=${destinationId}&name=${encodeURIComponent(destinationName)}&in=${checkin}&out=${checkout}&guests=${guests}&rooms=${rooms}`);
     };
 
     // ── Error state ──
     if (error) {
         return (
             <div className="min-h-screen bg-brand-surface flex items-center justify-center p-4">
-                <Navbar />
+                <Navbar showBackButton showSearchBar />
                 <div className="bg-brand-surface-soft rounded-xl shadow-lg p-8 max-w-md w-full text-center mt-20">
                     <div className="text-4xl mb-4">😅</div>
                     <h2 className="text-xl font-semibold text-brand-text-primary mb-2">Oops!</h2>
@@ -137,7 +137,7 @@ export default function ResultsPage() {
     if (loading) {
         return (
             <div className="min-h-screen bg-brand-surface">
-                <Navbar />
+                <Navbar showBackButton showSearchBar />
                 <div className="px-6 lg:px-10 pt-28">
                     <div className="bg-brand-surface-soft rounded-xl p-6 mb-6 animate-pulse">
                         <div className="h-6 bg-brand-surface-muted rounded w-1/3 mb-2" />
@@ -170,8 +170,8 @@ export default function ResultsPage() {
             <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/40 via-brand-surface to-black pointer-events-none z-0" />
 
             <div className="relative z-10">
-                {/* Shared Navbar */}
-                <Navbar />
+                {/* Shared Navbar with back button + search bar */}
+                <Navbar showBackButton showSearchBar />
 
                 {/* Page content – full width with generous side padding */}
                 <div className="px-6 lg:px-10 pt-28 pb-16">

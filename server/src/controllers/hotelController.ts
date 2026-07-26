@@ -1,5 +1,5 @@
 import { type Request, type Response } from 'express';
-import { searchHotels, type MergedHotel } from '../services/ascendaServices.ts';
+import { searchHotels, fetchRoomPrices, fetchHotelById, type MergedHotel } from '../services/ascendaServices.ts';
 import { redis, CACHE_TTL } from '../lib/redisClient.ts';
 
 // Build a unique cache key according to the search parameters.
@@ -12,6 +12,43 @@ const buildCacheKey = (params: {
   return `search:${params.destination_id}:${params.checkin}:${params.checkout}:${params.guests}`;
 };
 
+export async function getHotelById(req: Request, res: Response) {
+    const id = req.params.id as string;
+
+    try {
+        const hotel = await fetchHotelById(id);
+        res.json(hotel);
+    } catch (err) {
+        console.error('Hotel detail API error:', err);
+        res.status(502).json({ error: 'Failed to fetch hotel details' });
+    }
+}
+
+export async function getRoomPrices(req: Request, res: Response) {
+    const id = req.params.id as string;
+    const { destination_id, checkin, checkout, guests, country_code, currency, lang } = req.query;
+
+    if (!destination_id || !checkin || !checkout || !guests) {
+        return res.status(400).json({ error: 'destination_id, checkin, checkout, and guests are required' });
+    }
+
+    try {
+        const data = await fetchRoomPrices(id, {
+            destination_id: destination_id as string,
+            checkin: checkin as string,
+            checkout: checkout as string,
+            guests: guests as string,
+            country_code: country_code as string,
+            currency: currency as string,
+            lang: lang as string,
+        });
+
+        res.json(data);
+    } catch (err) {
+        console.error('Room prices API error:', err);
+        res.status(502).json({ error: 'Failed to fetch room prices' });
+    }
+}
 
 export const getHotelSearchResults = async (req: Request, res: Response) => {
   try {
