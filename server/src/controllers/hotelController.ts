@@ -1,12 +1,13 @@
 import { type Request, type Response } from 'express';
+import axios from 'axios';
+import { searchHotels, type MergedHotel } from '../services/ascendaServices.ts';
+import { redis, CACHE_TTL } from '../lib/redisClient.ts';
 
 const ROOM_PRICE_POLL_INTERVAL_MS = 1500;
 const ROOM_PRICE_MAX_ATTEMPTS = 15;
 const MAX_ATTEMPTS = 15; // ~22.5s worst case
 
-import axios from 'axios';
-
-const API_BASE_URL = process.env.HOTEL_ROOM_API_URL;
+const HOTEL_API_URL = process.env.ASC_BASE_API_URL;
 
 interface PricesResponse {
     completed: boolean;
@@ -24,7 +25,7 @@ export async function getHotelPrices(req: Request, res: Response) {
 
     try {
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            const response = await axios.get<PricesResponse>(API_BASE_URL!, {
+            const response = await axios.get<PricesResponse>(HOTEL_API_URL!, {
                 params: { destination_id: destId, checkin, checkout, guests },
             });
 
@@ -49,7 +50,7 @@ export async function getHotelById(req: Request, res: Response) {
     const { id } = req.params;
 
     try {
-        const response = await axios.get(`${API_BASE_URL}/${id}`);
+        const response = await axios.get(`${HOTEL_API_URL}/${id}`);
         res.json(response.data);
     } catch (err) {
         console.error('Hotel detail API error:', err);
@@ -99,8 +100,7 @@ export async function getRoomPrices(req: Request, res: Response) {
         res.status(502).json({ error: 'Failed to fetch room prices' });
     }
 }
-import { searchHotels, type MergedHotel } from '../services/ascendaServices.ts';
-import { redis, CACHE_TTL } from '../lib/redisClient.ts';
+
 
 // Build a unique cache key according to the search parameters.
 const buildCacheKey = (params: {
