@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router';
 import axios from 'axios';
@@ -82,7 +82,7 @@ describe('HotelDetailPage', () => {
 
         expect(await screen.findByText('Pan Pacific Singapore')).toBeInTheDocument();
         expect(screen.getByText('7 Raffles Boulevard')).toBeInTheDocument();
-        expect(screen.getByText(/5/)).toBeInTheDocument();
+        expect(screen.getByText(/5-star hotel/)).toBeInTheDocument();
         expect(screen.getByText('A lovely hotel near Marina Bay.')).toBeInTheDocument();
     });
 

@@ -1,7 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import RoomList from '../components/RoomList';
 import type { RoomOption } from '../types/room';
+
+/**
+ * RoomList calls useNavigate, useParams and useSearchParams — it is the
+ * component that starts a booking — so it cannot render outside a Router.
+ * Rendered bare, every case here failed on the invariant before reaching its
+ * assertion. The route and query mirror what HotelDetailsPage actually mounts
+ * it under, so the /booking hand-off it builds is the real one.
+ */
+const renderRoomList = (rooms: RoomOption[]) =>
+    render(
+        <MemoryRouter initialEntries={['/hotel/diH7?dest=WD0M&in=2026-10-01&out=2026-10-04&guests=2']}>
+            <Routes>
+                <Route path="/hotel/:id" element={<RoomList rooms={rooms} />} />
+                <Route path="/booking" element={<div>booking entry</div>} />
+            </Routes>
+        </MemoryRouter>
+    );
 
 function makeRoom(overrides: Partial<RoomOption> = {}): RoomOption {
     return {
@@ -24,7 +42,7 @@ function makeRoom(overrides: Partial<RoomOption> = {}): RoomOption {
 
 describe('RoomList', () => {
     it('shows a "no rooms available" message when the list is empty', () => {
-        render(<RoomList rooms={[]} />);
+        renderRoomList([]);
 
         expect(screen.getByText(/no rooms available/i)).toBeInTheDocument();
     });
@@ -35,7 +53,7 @@ describe('RoomList', () => {
             makeRoom({ key: 'room-2', roomDescription: 'Twin Room' }),
         ];
 
-        render(<RoomList rooms={rooms} />);
+        renderRoomList(rooms);
 
         expect(screen.getByText('Deluxe King Room')).toBeInTheDocument();
         expect(screen.getByText('Twin Room')).toBeInTheDocument();
@@ -48,17 +66,17 @@ describe('RoomList', () => {
             converted_price: 480,
         });
 
-        render(<RoomList rooms={[room]} />);
+        renderRoomList([room]);
 
         expect(screen.getByText('Ocean View Suite')).toBeInTheDocument();
         expect(screen.getByText(/5 rooms left/i)).toBeInTheDocument();
-        expect(screen.getByText('480')).toBeInTheDocument();
+        expect(screen.getByText(/S\$480/)).toBeInTheDocument();
     });
 
     it('formats converted_price with locale grouping and no decimals', () => {
         const room = makeRoom({ converted_price: 12345.678 });
 
-        render(<RoomList rooms={[room]} />);
+        renderRoomList([room]);
 
         // toLocaleString(undefined, { maximumFractionDigits: 0 }) → "12,346" in en-US-like locales
         expect(screen.getByText(/12,346|12346/)).toBeInTheDocument();
@@ -68,7 +86,7 @@ describe('RoomList', () => {
         const freeRoom = makeRoom({ key: 'free', roomDescription: 'Free Cancel Room', free_cancellation: true });
         const paidRoom = makeRoom({ key: 'paid', roomDescription: 'No Cancel Room', free_cancellation: false });
 
-        render(<RoomList rooms={[freeRoom, paidRoom]} />);
+        renderRoomList([freeRoom, paidRoom]);
 
         const badges = screen.getAllByText(/free cancellation/i);
         expect(badges.length).toBe(1);
@@ -84,7 +102,7 @@ describe('RoomList', () => {
             ],
         });
 
-        render(<RoomList rooms={[room]} />);
+        renderRoomList([room]);
 
         const img = screen.getByAltText('Hero Image Room') as HTMLImageElement;
         expect(img.src).toBe('https://cdn.example.com/hero.jpg');
@@ -99,7 +117,7 @@ describe('RoomList', () => {
             ],
         });
 
-        render(<RoomList rooms={[room]} />);
+        renderRoomList([room]);
 
         const img = screen.getByAltText('No Hero Room') as HTMLImageElement;
         expect(img.src).toBe('https://cdn.example.com/first.jpg');
@@ -108,7 +126,7 @@ describe('RoomList', () => {
     it('does not render an image when the images array is empty', () => {
         const room = makeRoom({ roomDescription: 'No Image Room', images: [] });
 
-        render(<RoomList rooms={[room]} />);
+        renderRoomList([room]);
 
         expect(screen.queryByAltText('No Image Room')).not.toBeInTheDocument();
     });
@@ -119,7 +137,7 @@ describe('RoomList', () => {
             makeRoom({ key: 'room-2', roomDescription: 'Room B' }),
         ];
 
-        render(<RoomList rooms={rooms} />);
+        renderRoomList(rooms);
 
         expect(screen.getAllByRole('button', { name: /select/i }).length).toBe(2);
     });
@@ -130,7 +148,7 @@ describe('RoomList', () => {
             makeRoom({ key: 'room-2', roomDescription: 'Standard Room' }),
         ];
 
-        render(<RoomList rooms={rooms} />);
+        renderRoomList(rooms);
 
         expect(screen.getAllByText('Standard Room').length).toBe(2);
     });
