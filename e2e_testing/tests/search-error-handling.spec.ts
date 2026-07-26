@@ -41,22 +41,19 @@ test.describe('Error Handling', () => {
     await page.getByRole('button', { name: /search/i }).click();
   });
 
-  test('Login and Signup buttons show alerts', async ({ page }) => {
+  test('Login and Signup buttons redirect to respective pages', async ({ page }) => {
     // ─── 1. Navigate to home ───────────────────────────────
     await page.goto('/');
     
-    // ─── 2. Handle login dialog ──────────────────────────────
-    page.once('dialog', async dialog => {
-      expect(dialog.message()).toContain('Login Modal will open here!');
-      await dialog.accept();
-    });
-    await page.getByRole('button', { name: /log in/i }).click();
+    // ─── 2. Click Log In and verify redirect to /login ───────
+    await page.getByRole('link', { name: /log in/i }).click();
+    await expect(page).toHaveURL(/\/login/);
     
-    // ─── 3. Handle signup dialog ─────────────────────────────
-    page.once('dialog', async dialog => {
-      expect(dialog.message()).toContain('Signup Modal will open here!');
-      await dialog.accept();
-    });
-    await page.getByRole('button', { name: /sign up/i }).click();
+    // ─── 3. Navigate back to home ──────────────────────────
+    await page.goto('/');
+    
+    // ─── 4. Click Sign Up and verify redirect to /signup ─────
+    await page.getByRole('link', { name: /sign up/i }).click();
+    await expect(page).toHaveURL(/\/signup/);
   });
 });
