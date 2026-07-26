@@ -19,6 +19,7 @@ import {
 } from './controllers/bookingController.js';
 import { handleStripeWebhook } from './controllers/webhookController.js';
 import { rateLimit } from './middleware/rateLimit.js';
+import { resolveUser, requireUser } from './middleware/auth.js';
 import { supabaseAdmin, deleteUser } from './lib/supabaseClient.js';
 import { isSupabaseConfigured } from './models/bookingModel.js';
 
@@ -121,16 +122,24 @@ const quoteLimiter = rateLimit({ windowMs: 60_000, max: 60 });
 app.get('/api/bookings/checkout', quoteLimiter, getCheckout);
 
 app.post('/api/bookings/guest-details', lookupLimiter, postGuestDetails);
-app.post('/api/bookings/payment', paymentLimiter, postPayment);
+/**
+ * resolveUser, not requireUser: booking without an account is a supported flow,
+ * so a request with no Authorization header is a guest checkout rather than an
+ * error. What it does is make a *presented* token authoritative — the resulting
+ * user_id comes from the verified subject and never from the request body.
+ */
+app.post('/api/bookings/payment', paymentLimiter, resolveUser, postPayment);
 // Elements flow: returns a client secret instead of a redirect, so the card is
 // entered on our own /payment page rather than on a Stripe-hosted one.
-app.post('/api/bookings/payment-intent', paymentLimiter, postPaymentIntent);
+app.post('/api/bookings/payment-intent', paymentLimiter, resolveUser, postPaymentIntent);
 app.post('/api/bookings/confirm', paymentLimiter, postConfirmBooking);
 
 // Literal segments before the wildcard. Registered the other way round,
 // `/:id` matches "checkout" and "user" and routes them to the lookup handler —
 // the same trap that makes /api/hotels/:id swallow /api/hotels/search.
-app.get('/api/bookings/user/:userId', lookupLimiter, getBookingsByUser);
+// requireUser, not resolveUser: there is no anonymous reading of a booking
+// history. getBookingsByUser then checks the verified subject against :userId.
+app.get('/api/bookings/user/:userId', lookupLimiter, requireUser, getBookingsByUser);
 app.get('/api/bookings/:id', lookupLimiter, getBookingById);
 
 /**

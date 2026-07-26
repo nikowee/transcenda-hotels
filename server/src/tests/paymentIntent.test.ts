@@ -11,6 +11,7 @@ import { resetRateLimits } from '../middleware/rateLimit.js';
 import { findByPaymentId } from '../models/bookingModel.js';
 import { MAX_ROOMS } from '../controllers/bookingController.js';
 import { useHotelNock, mockRoomPrices } from './helpers/hotelNock.js';
+import { signIn, useAuthNock, type FakeSession } from './helpers/authNock.js';
 import {
   STRIPE_API,
   useStripeNock,
@@ -104,11 +105,13 @@ const quietly = async <T>(fn: () => Promise<T>): Promise<T> => {
  * minute per address and supertest reuses one loopback address, so without this
  * a test that makes eleven calls fails on the eleventh for the wrong reason.
  */
-const postIntent = async (body: Record<string, unknown> = {}) => {
+const postIntent = async (body: Record<string, unknown> = {}, session?: FakeSession) => {
   resetRateLimits();
-  return request(app)
+  const pending = request(app)
     .post('/api/bookings/payment-intent')
     .send({ guestDetails: VALID_GUEST, stay: VALID_STAY, billingAddress: VALID_BILLING, ...body });
+
+  return session ? pending.set(session.header) : pending;
 };
 
 const postConfirm = async (body: Record<string, unknown>) => {
@@ -125,16 +128,23 @@ const postConfirmExpectingRefusal = async (body: Record<string, unknown>) =>
   withSilencedErrorLog(() => postConfirm(body));
 
 /** Mints an intent and returns its id, asserting the endpoint actually worked. */
-const startIntent = async (body: Record<string, unknown> = {}): Promise<string> => {
-  const response = await postIntent(body);
+const startIntent = async (
+  body: Record<string, unknown> = {},
+  session?: FakeSession
+): Promise<string> => {
+  const response = await postIntent(body, session);
   expect(response.status, JSON.stringify(response.body)).to.equal(200);
   expect(response.body.paymentIntentId).to.be.a('string');
   return response.body.paymentIntentId as string;
 };
 
 /** The whole Elements flow, returning the booking that was written. */
-const bookViaIntent = async (body: Record<string, unknown> = {}, confirmExtras = {}) => {
-  const paymentIntentId = await startIntent(body);
+const bookViaIntent = async (
+  body: Record<string, unknown> = {},
+  confirmExtras = {},
+  session?: FakeSession
+) => {
+  const paymentIntentId = await startIntent(body, session);
   const response = await postConfirm({ paymentIntentId, ...confirmExtras });
 
   expect(response.status, JSON.stringify(response.body)).to.equal(200);
@@ -158,6 +168,7 @@ const bookViaSession = async (body: Record<string, unknown> = {}) => {
 
 describe('UC4 — Elements / PaymentIntent payment flow', () => {
   useHotelNock();
+  useAuthNock();
 
   beforeEach(() => {
     resetRateLimits();
@@ -260,7 +271,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
     it('rejects a userId that is not a UUID, while it is still free to do so', async () => {
       // user_id is a foreign key to profiles: a malformed one fails at insert
       // time, which is long after the card has been charged.
-      const response = await postIntent({ userId: 'not-a-uuid' });
+      const response = await postIntent({ userId: 'not-a-uuid' }, signIn());
 
       expect(response.status).to.equal(400);
       expect(response.body.error).to.match(/uuid/i);
@@ -396,17 +407,20 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
       // The Elements flow never leaves our page, but the booking still cannot be
       // written before payment — so the metadata on the intent is still the only
       // record of what was asked for.
-      const userId = randomUUID();
-      const booking = await bookViaIntent({
-        guestDetails: { ...VALID_GUEST, specialRequests: 'Late check-in, around 11pm.' },
-        stay: { ...VALID_STAY, roomTypes: ['deluxe-king', 'standard-queen'], children: 2 },
-        userId,
-      });
+      const session = signIn();
+      const booking = await bookViaIntent(
+        {
+          guestDetails: { ...VALID_GUEST, specialRequests: 'Late check-in, around 11pm.' },
+          stay: { ...VALID_STAY, roomTypes: ['deluxe-king', 'standard-queen'], children: 2 },
+        },
+        {},
+        session
+      );
 
       expect(booking.roomTypes).to.deep.equal(['deluxe-king', 'standard-queen']);
       expect(booking.children).to.equal(2);
       expect(booking.specialRequests).to.equal('Late check-in, around 11pm.');
-      expect(booking.userId).to.equal(userId);
+      expect(booking.userId).to.equal(session.userId);
     });
 
     it('requires one of the two payment identifiers', async () => {

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'crypto';
 import { type Request, type Response } from 'express';
+import type { AuthenticatedUser } from '../middleware/auth.js';
 import { insertOne, findById, findByPaymentId, findByUserId } from '../models/bookingModel.js';
 import { sendConfirmation } from '../services/emailService.js';
 import type {
@@ -861,7 +862,10 @@ type PrepareOutcome =
  * what gets charged versus what gets stored — the two endpoints must build the
  * same amount from the same input every time.
  */
-const preparePayment = async (body: unknown): Promise<PrepareOutcome> => {
+const preparePayment = async (
+  body: unknown,
+  auth: AuthenticatedUser | undefined
+): Promise<PrepareOutcome> => {
   const { guestDetails, stay, userId } = (body ?? {}) as Record<string, unknown>;
 
   const { billingAddress } = (body ?? {}) as Record<string, unknown>;
@@ -890,11 +894,48 @@ const preparePayment = async (body: unknown): Promise<PrepareOutcome> => {
   }
   const { quote } = result;
 
+  /**
+   * Whose booking this is.
+   *
+   * The answer comes from `auth` — a Supabase token this server verified — and
+   * never from the body, because a user id in a payload is a claim rather than
+   * a credential. The body is still *read*, but only to catch a client sending
+   * one identity while authenticated as another, which is a bug worth naming
+   * rather than silently resolving in either direction.
+   */
+  const claimedUserId =
+    userId === undefined || userId === null ? null : String(userId);
+
   // user_id is a foreign key to profiles, so a malformed one fails at insert
   // time — long after the card has been charged. Reject it while it is free.
-  if (userId !== undefined && userId !== null && !UUID_PATTERN.test(String(userId))) {
+  if (claimedUserId !== null && !UUID_PATTERN.test(claimedUserId)) {
     return { ok: false, status: 400, body: { error: 'userId must be a UUID.' } };
   }
+
+  /**
+   * A claim with nothing backing it. Recording the booking as a guest checkout
+   * instead would be quieter but wrong: it would let anyone attach a booking to
+   * a stranger's history, and it would hide from a genuinely-signed-in guest
+   * that their token never arrived — they would pay, and then not find the
+   * booking on their history page.
+   */
+  if (!auth && claimedUserId !== null) {
+    return {
+      ok: false,
+      status: 401,
+      body: { error: 'Sign in to attach this booking to an account.' },
+    };
+  }
+
+  if (auth && claimedUserId !== null && claimedUserId !== auth.userId) {
+    return {
+      ok: false,
+      status: 403,
+      body: { error: 'That booking cannot be attached to another account.' },
+    };
+  }
+
+  const resolvedUserId = auth?.userId ?? null;
 
   const guest = normaliseGuest(guestDetails as Partial<GuestDetails>);
   const billing = normaliseBilling(billingAddress as Partial<BillingAddress>);
@@ -911,7 +952,7 @@ const preparePayment = async (body: unknown): Promise<PrepareOutcome> => {
       adults: quote.adults,
       children: quote.children,
     },
-    userId: userId ? String(userId) : null,
+    userId: resolvedUserId,
     quotedTotal: quote.totalPrice,
   });
 
@@ -990,7 +1031,7 @@ export const postPaymentIntent = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const outcome = await preparePayment(req.body);
+    const outcome = await preparePayment(req.body, req.auth);
     if (!outcome.ok) {
       res.status(outcome.status).json(outcome.body);
       return;
@@ -1071,7 +1112,7 @@ export const postPayment = async (req: Request, res: Response): Promise<void> =>
     // divergence here is a divergence between what gets charged and what gets
     // stored, and the two endpoints must build the same amount from the same
     // input every time.
-    const outcome = await preparePayment(req.body);
+    const outcome = await preparePayment(req.body, req.auth);
     if (!outcome.ok) {
       res.status(outcome.status).json(outcome.body);
       return;
@@ -1195,13 +1236,18 @@ export const getBookingById = async (req: Request, res: Response): Promise<void>
 };
 
 /**
- * ⚠️  TODO — MUST NOT SHIP AS-IS: this endpoint is unauthenticated.
+ * A guest's own booking history.
  *
- * :userId is taken straight from the path, so anyone who can guess or harvest a
- * profile UUID can read that person's full booking history — names, emails,
- * phone numbers, stay dates and card last-four. This needs an authenticated
- * session whose subject equals :userId (and a 403 when it does not) before it is
- * exposed to anything but localhost.
+ * :userId names the account being asked about; it does not prove entitlement to
+ * it. The response carries names, emails, phone numbers, stay dates and card
+ * last-four, so what authorises the read is the verified session — requireUser
+ * in index.ts guarantees req.auth exists by the time this runs, and the check
+ * below is that its subject is the account in the path.
+ *
+ * Keeping :userId in the URL rather than reading it solely from the token is
+ * deliberate: it makes the resource being requested visible in logs and caches,
+ * and turns a client that mixes up accounts into a 403 instead of a silent
+ * substitution of whichever account happens to be signed in.
  */
 export const getBookingsByUser = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -1209,6 +1255,17 @@ export const getBookingsByUser = async (req: Request, res: Response): Promise<vo
 
     if (typeof userId !== 'string' || !UUID_PATTERN.test(userId)) {
       res.status(400).json({ error: 'A valid userId is required.' });
+      return;
+    }
+
+    /**
+     * 403 rather than 404: the caller is authenticated, just not entitled. A
+     * 404 would be the confidentiality-preserving answer if account existence
+     * were a secret, but a booking history is only reachable by someone who
+     * already knows the UUID, so the clearer error wins.
+     */
+    if (req.auth?.userId !== userId) {
+      res.status(403).json({ error: 'You can only view your own bookings.' });
       return;
     }
 

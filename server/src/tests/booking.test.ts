@@ -7,6 +7,7 @@ import { resetRateLimits } from '../middleware/rateLimit.js';
 import { findByPaymentId } from '../models/bookingModel.js';
 import { MAX_GUESTS, MAX_NIGHTS, MAX_ROOMS } from '../controllers/bookingController.js';
 import { useHotelNock, mockRoomPrices } from './helpers/hotelNock.js';
+import { signIn, useAuthNock, type FakeSession } from './helpers/authNock.js';
 
 /**
  * UC4 — Book & Make Payment, end to end over HTTP.
@@ -85,19 +86,33 @@ const sessionIdFrom = (redirectUrl: string): string => {
   return sessionId as string;
 };
 
-/** Sequence steps 4-5: prices the stay and opens a checkout session. */
-const startCheckout = async (body: Record<string, unknown> = {}): Promise<string> => {
-  const response = await request(app)
+/**
+ * Sequence steps 4-5: prices the stay and opens a checkout session.
+ *
+ * `session` is what makes the booking a signed-in one. It has to be a real
+ * bearer token rather than a `userId` in the body — the server takes the
+ * account from the verified token and rejects a body that claims one.
+ */
+const startCheckout = async (
+  body: Record<string, unknown> = {},
+  session?: FakeSession
+): Promise<string> => {
+  const pending = request(app)
     .post('/api/bookings/payment')
     .send({ guestDetails: VALID_GUEST, stay: VALID_STAY, billingAddress: VALID_BILLING, ...body });
+
+  const response = await (session ? pending.set(session.header) : pending);
 
   expect(response.status, JSON.stringify(response.body)).to.equal(200);
   return sessionIdFrom(response.body.redirectUrl);
 };
 
 /** Sequence steps 6-10: the whole flow, returning the booking that was written. */
-const bookAndConfirm = async (body: Record<string, unknown> = {}) => {
-  const sessionId = await startCheckout(body);
+const bookAndConfirm = async (
+  body: Record<string, unknown> = {},
+  session?: FakeSession
+) => {
+  const sessionId = await startCheckout(body, session);
   const response = await quietly(() =>
     request(app).post('/api/bookings/confirm').send({ sessionId })
   );
@@ -108,6 +123,7 @@ const bookAndConfirm = async (body: Record<string, unknown> = {}) => {
 
 describe('UC4 — Book & Make Payment', () => {
   useHotelNock();
+  useAuthNock();
 
   // supertest reuses one loopback address, so every request shares a bucket.
   beforeEach(() => {
@@ -449,11 +465,55 @@ describe('UC4 — Book & Make Payment', () => {
     });
 
     it('records the userId when the booking was made by a signed-in guest', async () => {
-      const userId = randomUUID();
+      const session = signIn();
 
-      const booking = await bookAndConfirm({ userId });
+      const booking = await bookAndConfirm({}, session);
 
-      expect(booking.userId).to.equal(userId);
+      expect(booking.userId).to.equal(session.userId);
+    });
+
+    it('records no userId when the booking was made without signing in', async () => {
+      // Guest checkout is a supported flow, not a degraded one: no token means
+      // no account, and the booking is still written.
+      const booking = await bookAndConfirm();
+
+      expect(booking.userId).to.equal(null);
+    });
+
+    it('takes the account from the token even when the body claims another', async () => {
+      // The body is a claim; the token is the credential. This is the case that
+      // would otherwise let a signed-in guest post a booking into a stranger's
+      // history, so it must fail loudly rather than resolve either way.
+      const session = signIn();
+      const response = await request(app)
+        .post('/api/bookings/payment')
+        .set(session.header)
+        .send({
+          guestDetails: VALID_GUEST,
+          stay: VALID_STAY,
+          billingAddress: VALID_BILLING,
+          userId: randomUUID(),
+        });
+
+      expect(response.status).to.equal(403);
+      expect(response.body.error).to.match(/another account/i);
+    });
+
+    it('refuses to attribute a booking to an account with no token to prove it', async () => {
+      // Silently writing this as a guest checkout would be worse than failing:
+      // a guest who believes they are signed in would pay, and then not find
+      // the booking on the history page they expect it on.
+      const response = await request(app)
+        .post('/api/bookings/payment')
+        .send({
+          guestDetails: VALID_GUEST,
+          stay: VALID_STAY,
+          billingAddress: VALID_BILLING,
+          userId: randomUUID(),
+        });
+
+      expect(response.status).to.equal(401);
+      expect(response.body.error).to.match(/sign in/i);
     });
 
     it('requires a session id', async () => {
@@ -573,27 +633,61 @@ describe('UC4 — Book & Make Payment', () => {
     });
   });
 
+  /**
+   * The response carries names, emails, phone numbers, stay dates and card
+   * last-four, so most of what is asserted here is who is allowed to see it.
+   * This endpoint was unauthenticated at one point and these are the regression
+   * net for that.
+   */
   describe('GET /api/bookings/user/:userId', () => {
     it('rejects a malformed userId', async () => {
-      const response = await request(app).get('/api/bookings/user/not-a-uuid');
+      const session = signIn();
+      const response = await request(app)
+        .get('/api/bookings/user/not-a-uuid')
+        .set(session.header);
 
       expect(response.status).to.equal(400);
       expect(response.body.error).to.match(/userId/i);
     });
 
-    it('returns an empty list for a user with no bookings', async () => {
+    it('refuses an anonymous request', async () => {
       const response = await request(app).get(`/api/bookings/user/${randomUUID()}`);
+
+      expect(response.status).to.equal(401);
+    });
+
+    it('refuses to show one user the bookings of another', async () => {
+      // The whole point of the endpoint's authorisation: a UUID in the path is
+      // an identifier, so knowing someone's must not be enough to read their
+      // history.
+      const session = signIn();
+      const response = await request(app)
+        .get(`/api/bookings/user/${randomUUID()}`)
+        .set(session.header);
+
+      expect(response.status).to.equal(403);
+      expect(response.body.error).to.match(/your own/i);
+    });
+
+    it('returns an empty list for a user with no bookings', async () => {
+      const session = signIn();
+      const response = await request(app)
+        .get(`/api/bookings/user/${session.userId}`)
+        .set(session.header);
 
       expect(response.status).to.equal(200);
       expect(response.body).to.deep.equal({ bookings: [] });
     });
 
     it('returns only that user\'s bookings', async () => {
-      const userId = randomUUID();
-      const mine = await bookAndConfirm({ userId });
-      const theirs = await bookAndConfirm({ userId: randomUUID() });
+      const me = signIn();
+      const someoneElse = signIn();
+      const mine = await bookAndConfirm({}, me);
+      const theirs = await bookAndConfirm({}, someoneElse);
 
-      const response = await request(app).get(`/api/bookings/user/${userId}`);
+      const response = await request(app)
+        .get(`/api/bookings/user/${me.userId}`)
+        .set(me.header);
 
       expect(response.status).to.equal(200);
       const ids = response.body.bookings.map((booking: { id: string }) => booking.id);
@@ -628,7 +722,10 @@ describe('UC4 — Book & Make Payment', () => {
     });
 
     it('reaches the user handler at /api/bookings/user/:userId', async () => {
-      const response = await request(app).get(`/api/bookings/user/${randomUUID()}`);
+      const session = signIn();
+      const response = await request(app)
+        .get(`/api/bookings/user/${session.userId}`)
+        .set(session.header);
 
       expect(response.status).to.equal(200);
       expect(response.body).to.have.property('bookings');

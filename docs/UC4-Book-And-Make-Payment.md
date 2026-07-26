@@ -537,9 +537,18 @@ would be the most misleading thing in this document.
   on the new shape; the controllers are not. This document describes the design the
   schema and models define, which is the target — read the controllers as work in
   progress, not as a contradiction of the diagrams above.
-- **Booking lookup is unauthenticated.** A UUID is unguessable, which is genuinely
-  better than an enumerable reference, but unguessability is not authentication.
-  UC5 needs a session check against `user_id`.
+- **Single-booking lookup is unauthenticated.** `GET /api/bookings/:id` still
+  relies on a UUID being unguessable, which is genuinely better than an enumerable
+  reference but is not authentication. It is left open deliberately: the
+  confirmation page reads it immediately after a *guest* checkout, where there is
+  no session to check against. Closing it means either a short-lived
+  confirmation token minted at payment time, or accepting that guests cannot see
+  their own confirmation.
+
+  `GET /api/bookings/user/:userId` — which returns the whole history rather than
+  one record — is no longer in this category. It requires a verified Supabase
+  session and 403s when the token's subject is not `:userId`; see
+  [`middleware/auth.ts`](../server/src/middleware/auth.ts).
 - **No row-level security.** Writes go through the service role from the Express
   gateway, so enabling RLS with no public policy costs nothing and closes direct
   client access to other people's bookings. Statements are in `schema.sql`.

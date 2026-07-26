@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import axios from 'axios';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
+import { authHeader } from '../lib/authHeader';
 import {
   AlertCircle,
   ArrowLeft,
@@ -129,12 +130,26 @@ export default function PaymentPage() {
     let active = true;
 
     if (!intentRequest.current) {
-      intentRequest.current = axios
-        .post<IntentResponse>(`${API_URL}/api/bookings/payment-intent`, {
-          guestDetails: handoff.guestDetails,
-          billingAddress: handoff.billingAddress,
-          stay: handoff.stay,
-        })
+      /**
+       * The access token is what attaches this booking to an account. It is not
+       * accompanied by a userId in the body: the server reads the account from
+       * the token it verifies and rejects a body that claims a different one,
+       * so sending both could only ever disagree.
+       *
+       * Signed out, authHeader() is empty and this is a guest checkout.
+       */
+      intentRequest.current = authHeader()
+        .then((headers) =>
+          axios.post<IntentResponse>(
+            `${API_URL}/api/bookings/payment-intent`,
+            {
+              guestDetails: handoff.guestDetails,
+              billingAddress: handoff.billingAddress,
+              stay: handoff.stay,
+            },
+            { headers }
+          )
+        )
         .then((response) => response.data)
         .catch((requestError) => {
           // Cleared so a remount can retry rather than replaying a rejection.

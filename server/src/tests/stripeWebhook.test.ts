@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 import { app } from './setup.js';
 import { findByPaymentId } from '../models/bookingModel.js';
 import { resetRateLimits } from '../middleware/rateLimit.js';
+import { signIn, useAuthNock, type FakeSession } from './helpers/authNock.js';
 
 /**
  * Webhook delivery end to end, with genuinely signed payloads.
@@ -143,10 +144,12 @@ const quietly = async <T>(fn: () => Promise<T>): Promise<T> => {
  * intent — the in-memory store lives for the whole run, and a shared id lets
  * one test resolve another test's booking.
  */
-const openCheckout = async (body: Record<string, unknown> = {}) => {
-  const response = await request(app)
+const openCheckout = async (body: Record<string, unknown> = {}, session?: FakeSession) => {
+  const pending = request(app)
     .post('/api/bookings/payment')
     .send({ guestDetails: VALID_GUEST, stay: VALID_STAY, billingAddress: VALID_BILLING, ...body });
+
+  const response = await (session ? pending.set(session.header) : pending);
 
   expect(response.status, JSON.stringify(response.body)).to.equal(200);
 
@@ -157,6 +160,7 @@ const openCheckout = async (body: Record<string, unknown> = {}) => {
 };
 
 describe('Stripe webhook delivery', () => {
+  useAuthNock();
   beforeEach(() => {
     resetRateLimits();
   });
@@ -286,17 +290,19 @@ describe('Stripe webhook delivery', () => {
     });
 
     it('writes the row the recovered booking needs, card columns included', async () => {
-      const userId = randomUUID();
-      const { sessionId, paymentIntentId } = await openCheckout({
-        userId,
-        guestDetails: { ...VALID_GUEST, specialRequests: 'Quiet room.' },
-        stay: { ...VALID_STAY, roomTypes: ['deluxe-king', 'standard-queen'], children: 1 },
-      });
+      const session = signIn();
+      const { sessionId, paymentIntentId } = await openCheckout(
+        {
+          guestDetails: { ...VALID_GUEST, specialRequests: 'Quiet room.' },
+          stay: { ...VALID_STAY, roomTypes: ['deluxe-king', 'standard-queen'], children: 1 },
+        },
+        session
+      );
 
       await quietly(() => post(sessionEvent({ sessionId, paymentIntentId })));
 
       const booking = await findByPaymentId(paymentIntentId);
-      expect(booking?.userId).to.equal(userId);
+      expect(booking?.userId).to.equal(session.userId);
       expect(booking?.roomTypes).to.deep.equal(['deluxe-king', 'standard-queen']);
       expect(booking?.children).to.equal(1);
       expect(booking?.specialRequests).to.equal('Quiet room.');
