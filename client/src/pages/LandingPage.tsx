@@ -31,7 +31,6 @@ export default function LandingPage() {
         <div className="pt-8">
           <SearchForm />
         </div>
-
       </div>
 
       {/* Modal Component */}

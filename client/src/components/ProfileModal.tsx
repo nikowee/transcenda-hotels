@@ -1,32 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
-import axios from 'axios';
+import { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { authHeader } from '../lib/authHeader';
-import type { BookingRecord } from '../types/booking';
 import type { User } from '@supabase/supabase-js';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-
-/** "12 Aug 2026 – 15 Aug 2026", from the two ISO dates the record carries. */
-const formatStay = (startDate: string, endDate: string): string => {
-  const format = (value: string) =>
-    new Date(value).toLocaleDateString(undefined, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-  return `${format(startDate)} – ${format(endDate)}`;
-};
-
-/**
- * Past or upcoming, decided from the checkout date.
- *
- * Derived rather than stored: `bookings` has no status column — a row exists
- * only once the charge has cleared, so every booking here is by definition
- * paid, and the only thing left to distinguish is whether the stay has happened.
- */
-const stayStatus = (endDate: string): 'Upcoming' | 'Completed' =>
-  new Date(endDate) >= new Date() ? 'Upcoming' : 'Completed';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -44,44 +18,6 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
   const [deletePassword, setDeletePassword] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const [bookings, setBookings] = useState<BookingRecord[] | null>(null);
-  const [bookingsError, setBookingsError] = useState<string | null>(null);
-
-  const userId = user?.id;
-
-  const loadBookings = useCallback(async () => {
-    if (!userId) return;
-
-    setBookingsError(null);
-    setBookings(null);
-
-    try {
-      // The path names the account and the token proves entitlement to it. The
-      // server 403s if they disagree, so this cannot read anyone else's history
-      // even if userId were wrong.
-      const response = await axios.get<{ bookings: BookingRecord[] }>(
-        `${API_URL}/api/bookings/user/${userId}`,
-        { headers: await authHeader() }
-      );
-      setBookings(response.data.bookings);
-    } catch (error) {
-      setBookingsError(
-        axios.isAxiosError(error)
-          ? (error.response?.data?.error ?? 'We could not load your bookings.')
-          : 'We could not reach the booking service.'
-      );
-    }
-  }, [userId]);
-
-  /**
-   * Fetches on first open of the tab and again whenever it is reopened, rather
-   * than once on mount: the modal outlives a booking made in the same session,
-   * so a cached list would be missing the trip the guest just paid for.
-   */
-  useEffect(() => {
-    if (isOpen && activeTab === 'bookings') void loadBookings();
-  }, [isOpen, activeTab, loadBookings]);
 
   if (!isOpen || !user) return null;
 
@@ -147,6 +83,11 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
       setIsDeleting(false);
     }
   };
+
+  const dummyBookings = [
+    { id: '1', hotel: 'Skyline Luxury Suites', dates: 'Aug 12 - Aug 15, 2026', status: 'Confirmed', price: '$850' },
+    { id: '2', hotel: 'Grand Ocean Resort & Spa', dates: 'Sep 01 - Sep 04, 2026', status: 'Completed', price: '$1,200' },
+  ];
 
   return (
     <>
@@ -250,56 +191,26 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
             {activeTab === 'bookings' && (
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold text-slate-400">Your Recent Trips</h3>
-
-                {bookingsError && (
-                  <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm p-3 rounded-lg text-center space-y-3">
-                    <p>{bookingsError}</p>
-                    <button
-                      onClick={() => void loadBookings()}
-                      className="text-xs font-semibold underline hover:no-underline cursor-pointer"
-                    >
-                      Try again
-                    </button>
-                  </div>
-                )}
-
-                {!bookingsError && bookings === null && (
-                  <p className="text-slate-400 text-sm text-center py-8">Loading your bookings…</p>
-                )}
-
-                {!bookingsError && bookings?.length === 0 && (
+                {dummyBookings.length === 0 ? (
                   <p className="text-slate-400 text-sm text-center py-8">No bookings found yet. Time to plan an escape!</p>
-                )}
-
-                {!bookingsError && bookings && bookings.length > 0 && (
+                ) : (
                   <div className="space-y-3">
-                    {bookings.map((booking) => {
-                      const status = stayStatus(booking.endDate);
-                      return (
-                        <div key={booking.id} className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 flex justify-between items-center gap-4 hover:border-slate-700 transition-colors">
-                          <div className="min-w-0">
-                            <h4 className="text-white font-medium text-sm truncate">{booking.hotelName}</h4>
-                            <p className="text-slate-400 text-xs mt-0.5">
-                              {formatStay(booking.startDate, booking.endDate)}
-                            </p>
-                            <p className="text-slate-500 text-xs mt-0.5">
-                              {booking.nights} {booking.nights === 1 ? 'night' : 'nights'} ·{' '}
-                              {booking.roomTypes.length} {booking.roomTypes.length === 1 ? 'room' : 'rooms'}
-                            </p>
-                            <span className={`inline-block mt-2 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
-                              status === 'Upcoming' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-green-500/10 text-green-400 border border-green-500/20'
-                            }`}>
-                              {status}
-                            </span>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="text-white font-bold text-sm">
-                              S${booking.pricePaid.toFixed(2)}
-                            </span>
-                          </div>
+                    {dummyBookings.map((booking) => (
+                      <div key={booking.id} className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 flex justify-between items-center hover:border-slate-700 transition-colors">
+                        <div>
+                          <h4 className="text-white font-medium text-sm">{booking.hotel}</h4>
+                          <p className="text-slate-400 text-xs mt-0.5">{booking.dates}</p>
+                          <span className={`inline-block mt-2 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
+                            booking.status === 'Confirmed' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-green-500/10 text-green-400 border border-green-500/20'
+                          }`}>
+                            {booking.status}
+                          </span>
                         </div>
-                      );
-                    })}
+                        <div className="text-right">
+                          <span className="text-white font-bold text-sm">{booking.price}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

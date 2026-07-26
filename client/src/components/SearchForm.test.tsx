@@ -3,8 +3,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import axios from 'axios';
-import SearchForm from '../components/SearchForm';
+import SearchForm from './SearchForm';
 
+// Mock axios to prevent real API calls during tests
 vi.mock('axios');
 
 const mockSuggestions = [
@@ -17,6 +18,7 @@ describe('SearchForm Component', () => {
     vi.clearAllMocks();
   });
 
+  // Test 1: Renders all structural elements
   it('renders the search form with all fields', () => {
     render(
       <MemoryRouter>
@@ -32,6 +34,7 @@ describe('SearchForm Component', () => {
     expect(screen.getByRole('button', { name: /search/i })).toBeInTheDocument();
   });
 
+  // Test 2: Updates search input on user typing
   it('updates search input when user types', async () => {
     const user = userEvent.setup();
     render(
@@ -46,6 +49,7 @@ describe('SearchForm Component', () => {
     expect(input).toHaveValue('Singapore');
   });
 
+  // Test 3: Shows alert for <2 characters (Boundary Test)
   it('shows alert when typing less than 2 characters', async () => {
     const user = userEvent.setup();
     const alertMock = vi.fn();
@@ -68,6 +72,7 @@ describe('SearchForm Component', () => {
     );
   });
 
+  // Test 4: Shows alert for check-out before check-in (Negative Test)
   it('shows alert when check-out is before check-in', async () => {
     const user = userEvent.setup();
     const alertMock = vi.fn();
@@ -108,6 +113,7 @@ describe('SearchForm Component', () => {
     );
   });
 
+  // Test 5: Shows suggestions after debounce (Async)
   it('shows suggestions after typing (with debounce)', async () => {
     const user = userEvent.setup();
     vi.mocked(axios.get).mockResolvedValue({ data: mockSuggestions });
@@ -127,6 +133,7 @@ describe('SearchForm Component', () => {
     }, { timeout: 500 });
   });
 
+  // Test 6: Clears suggestions when input cleared (Edge Case)
   it('clears suggestions when input is cleared', async () => {
     const user = userEvent.setup();
     vi.mocked(axios.get).mockResolvedValue({ data: mockSuggestions });
