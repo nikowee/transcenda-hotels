@@ -110,7 +110,7 @@ export default function ResultsPage() {
     };
 
     const handleSelectHotel = (hotelId: string) => {
-        navigate(`/hotel/${hotelId}?in=${checkin}&out=${checkout}&guests=${guests}&rooms=${rooms}`);
+        navigate(`/hotel/${hotelId}?dest=${destinationId}&in=${checkin}&out=${checkout}&guests=${guests}&rooms=${rooms}`);
     };
 
     // ── Error state ──
