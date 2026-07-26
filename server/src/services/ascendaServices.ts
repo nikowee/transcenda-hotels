@@ -158,20 +158,30 @@ const constructImageUrls = (imageDetails: HotelDetails['image_details']): string
 const BASE_URL = process.env.ASC_BASE_API_URL || 'https://hotelapi.loyalty.dev/api';
 
 /**
+ * Params for a room-price lookup.
+ *
+ * The optional fields carry `| undefined` explicitly because the project builds
+ * with exactOptionalPropertyTypes: callers read these straight off req.query,
+ * where an absent param *is* undefined, and the defaults below are applied here
+ * rather than by the caller.
+ */
+export interface RoomPricesParams {
+    destination_id: string;
+    checkin: string;
+    checkout: string;
+    guests: string;
+    country_code?: string | undefined;
+    currency?: string | undefined;
+    lang?: string | undefined;
+}
+
+/**
  * Fetches room prices for a specific hotel, polling until the API returns completed.
  * Used by GET /api/hotels/:id/price
  */
 export async function fetchRoomPrices(
     hotelId: string,
-    params: {
-        destination_id: string;
-        checkin: string;
-        checkout: string;
-        guests: string;
-        country_code?: string;
-        currency?: string;
-        lang?: string;
-    }
+    params: RoomPricesParams
 ): Promise<RoomPricesResponse> {
     return pollUntilComplete<RoomPricesResponse>(
         () =>

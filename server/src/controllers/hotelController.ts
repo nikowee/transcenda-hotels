@@ -1,6 +1,6 @@
 import { type Request, type Response } from 'express';
-import { searchHotels, fetchRoomPrices, fetchHotelById, type MergedHotel } from '../services/ascendaServices.ts';
-import { redis, CACHE_TTL, isCacheReady } from '../lib/redisClient.ts';
+import { searchHotels, fetchRoomPrices, fetchHotelById, type MergedHotel, type RoomPricesResponse, type RoomPricesParams } from '../services/ascendaServices.ts';
+import { withCache, CACHE_TTL } from '../lib/cache.ts';
 
 // Build a unique cache key according to the search parameters.
 const buildCacheKey = (params: {
@@ -10,6 +10,30 @@ const buildCacheKey = (params: {
   guests: string;
 }): string => {
   return `search:${params.destination_id}:${params.checkin}:${params.checkout}:${params.guests}`;
+};
+
+/**
+ * Room-price key.
+ *
+ * The optional params are defaulted to the same values fetchRoomPrices applies,
+ * so `?currency=SGD` and an absent currency — identical upstream requests —
+ * resolve to one entry instead of two.
+ */
+const buildRoomPricesCacheKey = (
+  hotelId: string,
+  params: RoomPricesParams,
+): string => {
+  const parts = [
+    hotelId,
+    params.destination_id,
+    params.checkin,
+    params.checkout,
+    params.guests,
+    params.currency ?? 'SGD',
+    params.country_code ?? 'SG',
+    params.lang ?? 'en_US',
+  ];
+  return `rooms:${parts.join(':')}`;
 };
 
 export async function getHotelById(req: Request, res: Response) {
@@ -32,16 +56,26 @@ export async function getRoomPrices(req: Request, res: Response) {
         return res.status(400).json({ error: 'destination_id, checkin, checkout, and guests are required' });
     }
 
+    const params: RoomPricesParams = {
+        destination_id: destination_id as string,
+        checkin: checkin as string,
+        checkout: checkout as string,
+        guests: guests as string,
+        country_code: country_code as string | undefined,
+        currency: currency as string | undefined,
+        lang: lang as string | undefined,
+    };
+
     try {
-        const data = await fetchRoomPrices(id, {
-            destination_id: destination_id as string,
-            checkin: checkin as string,
-            checkout: checkout as string,
-            guests: guests as string,
-            country_code: country_code as string,
-            currency: currency as string,
-            lang: lang as string,
-        });
+        // The slowest upstream call in the app: fetchRoomPrices polls Ascenda at
+        // 1.5s intervals for up to 15 attempts before it settles. Only a
+        // completed response reaches here — pollUntilComplete throws otherwise —
+        // so a cached entry is never a partial result.
+        const data = await withCache<RoomPricesResponse>(
+            buildRoomPricesCacheKey(id, params),
+            CACHE_TTL,
+            () => fetchRoomPrices(id, params),
+        );
 
         res.json(data);
     } catch (err) {
@@ -101,39 +135,18 @@ export const getHotelSearchResults = async (req: Request, res: Response) => {
       guests: guestsParam as string,
     });
 
-    // Check Redis cache for the cache key
-    console.log(`🔍 Checking cache for: ${cacheKey}`);
-    const cachedData = isCacheReady() ? await redis.get(cacheKey) : null;
-
-    let hotels: MergedHotel[];
-
-    if (cachedData){
-      // Cache hit
-      console.log(`✅ Cache HIT for: ${cacheKey}`);
-      hotels = JSON.parse(cachedData);
-    } else {
-      // Cache miss
-      console.log(`❌ Cache MISS for: ${cacheKey}. Fetching from Ascenda...`);
-
-      // Fetch from Ascenda API
-      hotels = await searchHotels({
+    // The unfiltered upstream result is what gets cached — filters and sort are
+    // applied per request below, so changing a filter costs no Ascenda call.
+    const hotels = await withCache<MergedHotel[]>(cacheKey, CACHE_TTL, async () => {
+      const fetched = await searchHotels({
         destination_id: destination_id as string,
         checkin: checkin as string,
         checkout: checkout as string,
         guests: guestsParam,
-       });
-      console.log(`Received ${hotels.length} hotels from service`);
-
-      // Cache in Redis with TTL
-      // Cache is an optimisation, never a dependency — a search must still
-      // answer when Redis is down.
-      if (isCacheReady()) {
-        console.log(`💾 Storing ${hotels.length} hotels in cache (TTL: ${CACHE_TTL}s)`);
-        await redis.set(cacheKey, JSON.stringify(hotels), {
-          expiration: {type: 'EX', value: CACHE_TTL}
-        });
-      }
-    };
+      });
+      console.log(`Received ${fetched.length} hotels from service`);
+      return fetched;
+    });
 
     // Apply filters
     let filteredHotels = [...hotels];
