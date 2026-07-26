@@ -11,13 +11,6 @@ import {
   __clearMemoryStore,
 } from '../models/bookingModel.js';
 import type { BookingInput } from '../models/bookingTypes.js';
-import {
-  findProfileById,
-  findProfileByEmail,
-  profileExists,
-  __clearProfileStore,
-  __seedProfile,
-} from '../models/profileModel.js';
 
 /**
  * The storage layer, tested directly.
@@ -254,71 +247,6 @@ describe('bookingModel', () => {
 
       expect(await findById(written.id)).to.equal(null);
       expect(await findByPaymentId(written.paymentId)).to.equal(null);
-    });
-  });
-});
-
-/**
- * profileModel — the account half of a booking.
- *
- * bookings.user_id is a foreign key onto this table, so these lookups are what
- * let the controller reject a bad user id while it is still free, rather than
- * discovering it as an opaque constraint violation after the card is charged.
- */
-describe('profileModel', () => {
-  const profile = {
-    id: randomUUID(),
-    fullName: 'Jane Tan',
-    email: 'Jane.Tan@example.com',
-    createdAt: new Date('2026-01-01T00:00:00Z').toISOString(),
-  };
-
-  beforeEach(() => {
-    __clearProfileStore();
-    __seedProfile(profile);
-  });
-
-  describe('findProfileById', () => {
-    it('returns the profile behind a user id', async () => {
-      const found = await findProfileById(profile.id);
-
-      expect(found?.fullName).to.equal('Jane Tan');
-      expect(found?.email).to.equal('Jane.Tan@example.com');
-    });
-
-    it('returns null for an unknown id', async () => {
-      expect(await findProfileById(randomUUID())).to.equal(null);
-    });
-  });
-
-  describe('findProfileByEmail', () => {
-    it('resolves a profile from the guest email on a booking', async () => {
-      const found = await findProfileByEmail('Jane.Tan@example.com');
-
-      expect(found?.id).to.equal(profile.id);
-    });
-
-    it('matches case-insensitively, since email is unique but not case-normalised', async () => {
-      // Guests type their address however they like; a case-sensitive lookup
-      // would report a returning customer as a brand new one.
-      expect((await findProfileByEmail('jane.tan@example.com'))?.id).to.equal(profile.id);
-      expect((await findProfileByEmail('JANE.TAN@EXAMPLE.COM'))?.id).to.equal(profile.id);
-    });
-
-    it('returns null for an address with no account', async () => {
-      expect(await findProfileByEmail('nobody@example.com')).to.equal(null);
-    });
-  });
-
-  describe('profileExists', () => {
-    it('confirms a user_id before a booking cites it', async () => {
-      expect(await profileExists(profile.id)).to.equal(true);
-    });
-
-    it('reports false rather than throwing for an unknown id', async () => {
-      // Postgres would reject the insert anyway, but only with an opaque
-      // constraint violation — and only after the charge has been captured.
-      expect(await profileExists(randomUUID())).to.equal(false);
     });
   });
 });

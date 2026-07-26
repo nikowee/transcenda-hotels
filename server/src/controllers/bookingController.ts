@@ -23,10 +23,10 @@ import {
 } from '../services/paymentService.js';
 import {
   demoRateTable,
+  fetchHotelName,
   resolveRateTable,
   type RateTable,
 } from '../services/hotelRoomService.js';
-import { pickDemoStay } from '../services/demoStayService.js';
 
 /**
  * Booking controller — the «Express Router» box from the UC4 class diagram.
@@ -434,6 +434,17 @@ export const quoteStay = async (
     return buildQuote(input);
   }
 
+  /**
+   * RoomList starts a booking with a hotel id and a room key and nothing else —
+   * the name is on the page it navigated away from. Resolve it from the supplier
+   * rather than adding a query parameter two screens have to agree on.
+   *
+   * Only when the caller did not supply one: search results legitimately know
+   * the name already, and asking again would add a round trip per quote.
+   */
+  const suppliedName = asTrimmed(raw.hotelName);
+  const hotelName = suppliedName || ((await fetchHotelName(hotelId)) ?? '');
+
   const lookup = await resolveRateTable(
     {
       hotelId,
@@ -449,7 +460,9 @@ export const quoteStay = async (
 
   if (!lookup.ok) return { error: lookup.error, status: lookup.status };
 
-  return buildQuote(input, lookup.table);
+  // hotelName folded back in, so buildQuote validates the resolved name rather
+  // than the absent one the caller sent.
+  return buildQuote({ ...raw, hotelName }, lookup.table);
 };
 
 /**
@@ -725,43 +738,6 @@ export const recordPaidBooking = async (
       error: 'Your payment went through but we could not save the booking. Support has been alerted.',
       correlationId,
     };
-  }
-};
-
-/**
- * GET /demo-stay → a real hotel, real room and real dates, picked at random.
- *
- * Returns the stay plus the query string that drops it into /checkout, so the
- * caller does not have to know how to spell a checkout URL. Nothing is priced
- * here that the checkout will not price again from the same supplier call —
- * indicativeTotal is a label, not an amount.
- */
-export const getDemoStay = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const stay = await pickDemoStay();
-
-    if (!stay) {
-      res.status(503).json({
-        error: 'Could not find an available stay to demo just now. Try again in a moment.',
-      });
-      return;
-    }
-
-    const query = new URLSearchParams({
-      destinationId: stay.destinationId,
-      hotelId: stay.hotelId,
-      hotelName: stay.hotelName,
-      roomTypes: stay.roomTypes.join(','),
-      startDate: stay.startDate,
-      endDate: stay.endDate,
-      adults: String(stay.adults),
-      children: String(stay.children),
-    });
-
-    res.json({ stay, checkoutQuery: query.toString() });
-  } catch (error) {
-    console.error('Demo stay selection failed:', error);
-    res.status(502).json({ error: 'Could not reach the hotel service.' });
   }
 };
 

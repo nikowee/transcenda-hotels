@@ -11,7 +11,6 @@ import {
   postConfirmBooking,
   getBookingById,
   getBookingsByUser,
-  getDemoStay,
 } from './controllers/bookingController.js';
 import { handleStripeWebhook } from './controllers/webhookController.js';
 import { rateLimit } from './middleware/rateLimit.js';
@@ -111,10 +110,6 @@ const quoteLimiter = rateLimit({ windowMs: 60_000, max: 60 });
 
 app.get('/api/bookings/checkout', quoteLimiter, getCheckout);
 
-// Literal, so it must sit above /:id like the others. Throttled hardest of the
-// three: every call is a guaranteed outbound price search that no cache can
-// absorb, because picking a fresh stay is the entire point.
-app.get('/api/bookings/demo-stay', rateLimit({ windowMs: 60_000, max: 12 }), getDemoStay);
 app.post('/api/bookings/guest-details', lookupLimiter, postGuestDetails);
 app.post('/api/bookings/payment', paymentLimiter, postPayment);
 // Elements flow: returns a client secret instead of a redirect, so the card is

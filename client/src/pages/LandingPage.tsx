@@ -1,5 +1,4 @@
 import SearchForm from '../components/SearchForm';
-import DemoStayButton from '../components/DemoStayButton';
 
 export default function LandingPage() {
   return (
@@ -45,12 +44,6 @@ export default function LandingPage() {
           <SearchForm />
         </div>
 
-        {/* Skips search and results and lands straight in checkout with a live
-            supplier-priced stay. Here rather than behind a flag because the
-            booking flow is the part of this project worth showing first. */}
-        <div className="pt-2">
-          <DemoStayButton />
-        </div>
       </div>
 
     </div>

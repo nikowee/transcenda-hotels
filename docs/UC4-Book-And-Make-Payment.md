@@ -26,7 +26,7 @@ been retargeted, and — since the schema landed — the message ordering.
 | `insertOne(data)` | **Kept** — but now called *after* the charge | See below; the table cannot represent an unpaid booking |
 | `findOne(query)` | Split into `findById` / `findByPaymentId` / `findByUserId` | A generic query object over a typed Postgres row buys nothing; each caller wants one of exactly three lookups |
 | `PaymentService «External API»` | `«Stripe Checkout»` | The original signature required holding the card |
-| — | `ProfileModel «Supabase Table»` | New. `bookings.user_id` now points at a real account |
+| — | *(none)* | `bookings.user_id` references `profiles`, but no code reads that table — see below |
 
 ### Why payment no longer follows the diagram literally
 
@@ -234,7 +234,7 @@ classDiagram
     class BookingModel {
         &laquo;Supabase Table&raquo;
         +UUID id
-        +UUID user_id
+        +UUID user_id « FK → profiles.id, ON DELETE CASCADE »
         +String destination_id
         +String hotel_id
         +String hotel_name
@@ -259,17 +259,6 @@ classDiagram
         +isSupabaseConfigured() boolean
     }
 
-    class ProfileModel {
-        &laquo;Supabase Table&raquo;
-        +UUID id
-        +String full_name
-        +String email
-        +Date created_at
-        +findProfileById(id) ProfileRecord
-        +findProfileByEmail(email) ProfileRecord
-        +profileExists(id) boolean
-    }
-
     class PaymentService {
         &laquo;Stripe Checkout&raquo;
         +createCheckoutSession(input)
@@ -288,12 +277,10 @@ classDiagram
     ConfirmationPage --> BookingController : confirm session, then fetch by id
     BookingController --> PaymentService : creates hosted session, verifies it
     BookingController --> BookingModel : inserts the paid booking
-    BookingController --> ProfileModel : resolves user_id before insert
     WebhookController --> PaymentService : verifies signature
     WebhookController --> BookingModel : inserts if findByPaymentId is null
     WebhookController --> EmailService : sends confirmation
     BookingController --> EmailService : sends confirmation
-    BookingModel --> ProfileModel : user_id FK, ON DELETE CASCADE
 ```
 
 Three things to read off this diagram.
@@ -306,8 +293,18 @@ showing through: a row is created complete or not at all.
 the previous revision that edge was a state change. It is now the recovery path
 described above, and it fires only when `findByPaymentId` comes back null.
 
-**`BookingModel --> ProfileModel` is `ON DELETE CASCADE`**, which is discussed under
-[Data model](#data-model) and is not obviously the behaviour anyone wants.
+**There is no `ProfileModel`.** An earlier revision drew `BookingController -->
+ProfileModel : resolves user_id before insert`, and that call was never written:
+the module existed, was fully unit-tested, and was imported by nothing. It has
+been deleted. `user_id` is checked for UUID shape and written straight through,
+so a malformed one still surfaces as a constraint violation *after* the card is
+charged rather than before — the gap the arrow implied was closed.
+
+**`bookings.user_id` is still `ON DELETE CASCADE` onto `profiles`.** The table and
+the constraint are real — see `schema.sql` — which is why the annotation sits on
+the field rather than on a class. Deleting an account deletes its bookings, which
+is discussed under [Data model](#data-model) and is not obviously what anyone
+wants.
 
 Method names are camelCase to match the existing `destinationController`:
 

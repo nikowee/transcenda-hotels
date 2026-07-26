@@ -313,6 +313,55 @@ export const listSupplierRooms = async (request: RoomRateRequest): Promise<RateL
 };
 
 /**
+ * Hotel names, resolved from the supplier and held for the process lifetime.
+ *
+ * A name does not change between requests the way a rate does, so unlike the
+ * rate cache this one has no TTL — re-fetching it would only add a round trip to
+ * every quote for a value that is already correct.
+ */
+const hotelNameCache = new Map<string, string>();
+
+/**
+ * The display name for a hotel, or null if the supplier will not say.
+ *
+ * Needed because RoomList — the component that actually starts a booking — has
+ * no hotel name to forward: it navigates with the hotel *id* and the room key,
+ * and the name lives on the hotel page it came from. Rather than teach the two
+ * screens a new query parameter, the server asks the supplier the same question
+ * the hotel page asked.
+ *
+ * Null rather than an error: a missing display name must never be the reason a
+ * bookable stay cannot be priced.
+ */
+export const fetchHotelName = async (hotelId: string): Promise<string | null> => {
+  const cached = hotelNameCache.get(hotelId);
+  if (cached !== undefined) return cached;
+
+  try {
+    const response = await axios.get<{ name?: string }>(
+      `${HOTEL_API_BASE}/hotels/${encodeURIComponent(hotelId)}`,
+      { timeout: REQUEST_TIMEOUT_MS, validateStatus: (status) => status < 500 }
+    );
+
+    if (response.status >= 400) return null;
+
+    const name = typeof response.data?.name === 'string' ? response.data.name.trim() : '';
+    if (!name) return null;
+
+    hotelNameCache.set(hotelId, name);
+    return name;
+  } catch (error) {
+    console.warn(`Could not resolve a name for hotel ${hotelId}:`, error);
+    return null;
+  }
+};
+
+/** Test seam, alongside __clearRateCache. */
+export const __clearHotelNameCache = (): void => {
+  hotelNameCache.clear();
+};
+
+/**
  * The table bookingController prices a stay against.
  *
  * The supplier is only called when a requested room is not one of the demo

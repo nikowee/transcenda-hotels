@@ -31,6 +31,14 @@ const CHECKOUT_URL =
   '/checkout?destinationId=dest-1&hotelId=marina-bay&hotelName=Marina%20Bay%20Sands' +
   '&roomTypes=deluxe-king&startDate=2026-08-01&endDate=2026-08-04&adults=2&children=1';
 
+/**
+ * Exactly what RoomList builds when a guest picks a room — see its handleSelect.
+ * BookingEntry translates this into the checkout contract.
+ */
+const ROOM_LIST_HANDOFF =
+  '/booking?hotel=marina-bay&dest=dest-1&in=2026-08-15&out=2026-08-20' +
+  '&guests=2&key=deluxe-king';
+
 /** A well-formed UUID that no booking will ever have. */
 const ABSENT_BOOKING_ID = '00000000-0000-4000-8000-000000000000';
 
@@ -126,26 +134,14 @@ test.describe('Booking Flow', () => {
   test('User can search, book and reach a confirmed reservation', async ({ page }) => {
     const apiPosts = recordApiPosts(page);
 
-    // ─── 1. Search for a destination ────────────────────────
-    await page.goto('/');
-    const searchInput = page.getByPlaceholder('Search destinations...');
-    await searchInput.fill('Singapore');
-    await expect(page.getByText('Singapore, Singapore', { exact: true })).toBeVisible({
-      timeout: 5000,
-    });
-    await page.getByText('Singapore, Singapore', { exact: true }).click();
+    // ─── 1. Enter through the seam RoomList uses ────────────
+    // The /results placeholder is gone — the real page arrives with Feature 2 —
+    // so this now starts where hotel details hands off, which is the join that
+    // can actually break at merge time. RoomList's exact parameter spelling.
+    await page.goto(ROOM_LIST_HANDOFF);
+    await expect(page).toHaveURL(/.*checkout/, { timeout: 15000 });
 
-    const dateInputs = page.locator('input[type="date"]');
-    await dateInputs.first().fill('2026-08-15');
-    await dateInputs.last().fill('2026-08-20');
-    await page.getByRole('button', { name: /search/i }).click();
-
-    // ─── 2. Results page forwards the stay into checkout ────
-    await expect(page).toHaveURL(/.*results/);
-    await page.getByRole('link', { name: /book now/i }).click();
-    await expect(page).toHaveURL(/.*checkout/);
-
-    // The single `guests` count SearchForm still emits is carried as adults.
+    // The single `guests` count SearchForm emits is carried through as adults.
     await expect(page.getByText('2 adults')).toBeVisible({ timeout: 15000 });
 
     // ─── 3. Guest details (sequence step 3) ─────────────────
