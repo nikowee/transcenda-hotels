@@ -2,7 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
-import {searchDestinations} from './controllers/destinationController.js';
+import { searchDestinations } from './controllers/destinationController.js';
+import {
+  getHotelById,
+  getRoomPrices,
+  getHotelSearchResults,
+} from './controllers/hotelController.js';
 import {
   getCheckout,
   postGuestDetails,
@@ -14,7 +19,7 @@ import {
 } from './controllers/bookingController.js';
 import { handleStripeWebhook } from './controllers/webhookController.js';
 import { rateLimit } from './middleware/rateLimit.js';
-import { supabaseAdmin } from './lib/supabaseClient.js';
+import { supabaseAdmin, deleteUser } from './lib/supabaseClient.js';
 import { isSupabaseConfigured } from './models/bookingModel.js';
 
 dotenv.config();
@@ -89,6 +94,11 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/api/destinations/search', searchDestinations);
+app.get('/api/hotels/search', getHotelSearchResults);
+
+// Hotel Details Endpoints
+app.get('/api/hotels/:id/price', getRoomPrices);
+app.get('/api/hotels/:id', getHotelById);
 
 // UC4 — Book & Make Payment
 // Payment and lookup are throttled: without a limit these are a card-testing
@@ -163,13 +173,32 @@ app.get('/api/supabase-test', async (req, res) => {
   res.json({ success: true, storage: 'supabase', table: 'bookings' });
 });
 
+// Supabase delete endpoint
+app.delete('/api/users/:uid', async (req, res) => {
+  try {
+    const userId = req.params.uid; 
+    
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'User ID is missing.' });
+    }
+
+    await deleteUser(userId);    
+    res.status(200).json({ success: true, message: 'User deleted successfully' });
+    
+  } catch (error: any) {
+    console.error('Delete error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Export for testing purposes
 export default app;
 
 // Only listen when run directly, so importing this in tests does not bind a port.
 const __filename = fileURLToPath(import.meta.url);
 const isDirectRun = process.argv[1] === __filename;
 if (isDirectRun) {
-  app.listen(PORT, () => {
+  app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`🚀 Transcenda Hotels Backend running natively on http://localhost:${PORT}`);
 
     // The in-memory store is per-process and cleared on restart. Under `tsx

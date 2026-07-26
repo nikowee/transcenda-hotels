@@ -101,6 +101,11 @@ Build and launch both services with a single command:
 docker compose up --build
 ```
 
+> ⚠️ **Important:** When running with `--build`, Redis is automatically handled as part of the build process. However, if you need to perform local development or testing without the full build, you must start Redis separately first:
+> ```bash
+> docker compose up -d redis
+> ```
+
 This command will:
 
 1. 🏗️ **Build** the Docker images for `backend` and `frontend`
