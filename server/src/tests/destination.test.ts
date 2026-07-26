@@ -1,11 +1,10 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import request from 'supertest';
-import { app } from './setup.ts';
+import { app } from './setup.js';
 
 describe('Destination Search API', () => {
   
-  // Test 1: Query with <2 characters returns empty array
   it('should return empty array for query with less than 2 characters', async () => {
     const response = await request(app)
       .get('/api/destinations/search')
@@ -15,7 +14,6 @@ describe('Destination Search API', () => {
     expect(response.body).to.be.an('array').that.is.empty;
   });
 
-  // Test 2: Typo tolerance returns Singapore
   it('should handle typos and return Singapore for "sinagpore"', async () => {
     const response = await request(app)
       .get('/api/destinations/search')
@@ -32,7 +30,6 @@ describe('Destination Search API', () => {
     expect(singaporeResult.term).to.include('Singapore');
   });
 
-  // Test 3: Exact match returns correct result
   it('should return exact match for "Singapore"', async () => {
     const response = await request(app)
       .get('/api/destinations/search')
@@ -48,7 +45,6 @@ describe('Destination Search API', () => {
     expect(hasSingapore).to.be.true;
   });
 
-  // Test 4: Max 5 results returned
   it('should return at most 5 results', async () => {
     const response = await request(app)
       .get('/api/destinations/search')
@@ -59,7 +55,6 @@ describe('Destination Search API', () => {
     expect(response.body.length).to.be.at.most(5);
   });
 
-  // Test 5: Unknown query returns empty array
   it('should return empty array for unknown query', async () => {
     const response = await request(app)
       .get('/api/destinations/search')
@@ -69,7 +64,6 @@ describe('Destination Search API', () => {
     expect(response.body).to.be.an('array').that.is.empty;
   });
 
-  // Test 6: Case insensitivity
   it('should be case-insensitive', async () => {
     const lowerResponse = await request(app)
       .get('/api/destinations/search')
@@ -82,7 +76,6 @@ describe('Destination Search API', () => {
     expect(lowerResponse.body.length).to.equal(upperResponse.body.length);
   });
 
-  // Test 7: Health check endpoint
   it('should return health status', async () => {
     const response = await request(app)
       .get('/api/health');

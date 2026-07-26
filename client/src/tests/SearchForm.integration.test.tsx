@@ -7,7 +7,6 @@ import { server } from './setup';
 import SearchForm from '../components/SearchForm';
 
 describe('SearchForm Integration Tests (MSW)', () => {
-  // Test 1: Successful search returns suggestions
   it('fetches and displays suggestions when user types', async () => {
     const user = userEvent.setup();
     
@@ -27,7 +26,6 @@ describe('SearchForm Integration Tests (MSW)', () => {
     });
   });
 
-  // Test 2: Empty query returns empty array
   it('returns empty array when query is less than 2 characters', async () => {
     const user = userEvent.setup();
     
@@ -46,7 +44,6 @@ describe('SearchForm Integration Tests (MSW)', () => {
     });
   });
 
-  // Test 3: Network error shows fallback
   it('handles network errors gracefully', async () => {
     const user = userEvent.setup();
     const consoleErrorMock = vi.fn();
@@ -80,7 +77,6 @@ describe('SearchForm Integration Tests (MSW)', () => {
     });
   });
 
-  // Test 4: Debounce prevents excessive requests
   it('debounces requests (only makes one request after typing stops)', async () => {
     const user = userEvent.setup();
     

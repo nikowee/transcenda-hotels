@@ -1,6 +1,6 @@
 import { type Request, type Response } from 'express';
 import { searchHotels, fetchRoomPrices, fetchHotelById, type MergedHotel } from '../services/ascendaServices.ts';
-import { redis, CACHE_TTL } from '../lib/redisClient.ts';
+import { redis, CACHE_TTL, isCacheReady } from '../lib/redisClient.ts';
 
 // Build a unique cache key according to the search parameters.
 const buildCacheKey = (params: {
@@ -103,7 +103,7 @@ export const getHotelSearchResults = async (req: Request, res: Response) => {
 
     // Check Redis cache for the cache key
     console.log(`🔍 Checking cache for: ${cacheKey}`);
-    const cachedData = await redis.get(cacheKey);
+    const cachedData = isCacheReady() ? await redis.get(cacheKey) : null;
 
     let hotels: MergedHotel[];
 
@@ -125,10 +125,14 @@ export const getHotelSearchResults = async (req: Request, res: Response) => {
       console.log(`Received ${hotels.length} hotels from service`);
 
       // Cache in Redis with TTL
-      console.log(`💾 Storing ${hotels.length} hotels in cache (TTL: ${CACHE_TTL}s)`);
-      await redis.set(cacheKey, JSON.stringify(hotels), {
-        expiration: {type: 'EX', value: CACHE_TTL}
-      });
+      // Cache is an optimisation, never a dependency — a search must still
+      // answer when Redis is down.
+      if (isCacheReady()) {
+        console.log(`💾 Storing ${hotels.length} hotels in cache (TTL: ${CACHE_TTL}s)`);
+        await redis.set(cacheKey, JSON.stringify(hotels), {
+          expiration: {type: 'EX', value: CACHE_TTL}
+        });
+      }
     };
 
     // Apply filters

@@ -1,0 +1,64 @@
+-- 002 — one booking per Stripe payment
+--
+-- Three writers reach insertOne for a single charge: the browser posting
+-- /confirm, the Stripe webhook recovering, and Stripe redelivering that webhook.
+-- bookingModel now serialises them by payment_id, which is what stops duplicates
+-- being produced. That lock is per-process, so it holds for a single Express
+-- instance and stops holding the moment there are two.
+--
+-- This constraint is the version that does not care how many processes there
+-- are. bookingModel already catches the 23505 it raises and returns the row the
+-- winning writer produced, so adding it changes no application code — until it
+-- exists, that handler has nothing to catch.
+--
+-- Observed before the in-process lock: 7 of 11 payments carried two or three
+-- rows each, every set written 9–164ms apart.
+--
+-- Run in: Supabase Dashboard → SQL Editor → New query
+--
+-- ⚠️  This DELETES rows. Existing duplicates must go before a unique constraint
+--     can exist — Postgres will reject the ALTER otherwise. Step 1 shows you
+--     exactly what step 2 would remove. Run step 1 on its own first.
+
+-- ── Step 1: inspect. Read-only, safe to run at any time. ─────────────────────
+-- Every payment_id with more than one row, and the row that would survive.
+--
+--   select payment_id,
+--          count(*)                          as rows,
+--          min(created_at)                   as keeping,
+--          count(*) - 1                      as would_delete
+--   from public.bookings
+--   group by payment_id
+--   having count(*) > 1
+--   order by min(created_at);
+
+
+-- ── Step 2: dedupe and constrain, atomically. ────────────────────────────────
+-- Wrapped in a transaction on purpose: if the ALTER fails for any reason, the
+-- DELETE is rolled back with it, rather than leaving the table stripped of rows
+-- and still without the constraint that justified stripping them.
+--
+-- Uncomment and run as one statement block.
+--
+--   begin;
+--
+--   -- Keep the earliest row for each payment_id; delete the rest. The earliest
+--   -- is the one the guest was shown on the confirmation page, so it is the id
+--   -- that may already exist in a bookmark, an email or a support ticket.
+--   delete from public.bookings dupe
+--   using public.bookings keep
+--   where dupe.payment_id = keep.payment_id
+--     and keep.created_at < dupe.created_at;
+--
+--   alter table public.bookings
+--     add constraint bookings_payment_id_key unique (payment_id);
+--
+--   commit;
+
+
+-- ── Step 3: verify. ──────────────────────────────────────────────────────────
+--   select conname from pg_constraint where conname = 'bookings_payment_id_key';
+--   -- expect exactly one row
+
+-- Related: an index on user_id would also help the booking-history endpoint,
+-- which filters on it. Separate concern, separate migration.
