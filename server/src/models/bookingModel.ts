@@ -153,14 +153,60 @@ const fromRow = (row: BookingRow): BookingRecord => ({
 });
 
 /**
+ * Writes in progress, keyed by payment_id.
+ *
+ * Three writers reach insertOne for a single charge: the browser posting
+ * /confirm, the Stripe webhook recovering, and Stripe redelivering that webhook
+ * when the first delivery is slow. They are concurrent requests, and they all
+ * land in this one Express process.
+ *
+ * Without this map they interleave. `await findByPaymentId` yields, so every
+ * one of them observes "no booking yet" before any of them has written, and
+ * every one of them then writes. That is not theoretical: 7 of the 11 payments
+ * in the development database had two or three rows each, written 9–164ms
+ * apart. A read-then-write cannot fix itself — something has to serialise the
+ * writers, and in a single-process deployment this is the cheapest thing that
+ * can.
+ *
+ * Callers share the *promise*, so the second caller waits for the first write
+ * and receives the row it produced rather than starting a second one.
+ */
+const writesInFlight = new Map<string, Promise<BookingRecord>>();
+
+/**
  * Writes a paid booking.
  *
- * Idempotent by payment_id: a retried confirmation or a redelivered webhook
- * returns the existing row rather than inserting a duplicate. The check is a
- * read-then-write, so it narrows the window rather than closing it — the unique
- * constraint in schema.sql is what would close it.
+ * Idempotent by payment_id at three layers, because each closes a gap the one
+ * below it cannot:
+ *
+ *   1. writesInFlight serialises concurrent writers inside this process. This
+ *      is what stops the duplicates actually being produced today.
+ *   2. findByPaymentId answers cheaply for a confirmation that arrives after
+ *      an earlier one has already completed and left the map.
+ *   3. A 23505 from Postgres catches a writer in *another* process — a second
+ *      replica, or a restart mid-flight. That one needs the unique constraint
+ *      in migrations/002_unique_payment_id.sql to exist; until it does, layer 3
+ *      has nothing to catch and layers 1 and 2 are load-bearing.
  */
 export const insertOne = async (input: BookingInput): Promise<BookingRecord> => {
+  /**
+   * No await between the lookup and the set, so a second caller entering here
+   * cannot slip past before the first has registered its write. That ordering
+   * is the entire mechanism — introducing an await above the `set` below would
+   * silently restore the race this exists to close.
+   */
+  const inFlight = writesInFlight.get(input.paymentId);
+  if (inFlight) return inFlight;
+
+  const write = performWrite(input).finally(() => {
+    writesInFlight.delete(input.paymentId);
+  });
+
+  writesInFlight.set(input.paymentId, write);
+  return write;
+};
+
+const performWrite = async (input: BookingInput): Promise<BookingRecord> => {
   const existing = await findByPaymentId(input.paymentId);
   if (existing) return existing;
 
@@ -183,7 +229,27 @@ export const insertOne = async (input: BookingInput): Promise<BookingRecord> => 
     .select()
     .single();
 
-  if (error) throw new Error(`Booking write failed: ${error.message}`);
+  /**
+   * 23505 is Postgres' unique_violation: another request inserted this
+   * payment_id between the findByPaymentId above and this insert.
+   *
+   * That gap is real. The browser confirms while the webhook recovers, or the
+   * confirmation page mounts twice — both read no booking, both write one, and
+   * the guest ends up with two rows for one charge. Losing that race is the
+   * correct outcome, not an error: return whatever the winner wrote.
+   *
+   * This only bites once `bookings_payment_id_key` exists — see
+   * ../data/migrations/002_unique_payment_id.sql. Without the constraint
+   * Postgres accepts both rows and there is nothing here to catch.
+   */
+  if (error) {
+    if (error.code === '23505') {
+      const winner = await findByPaymentId(input.paymentId);
+      if (winner) return winner;
+    }
+    throw new Error(`Booking write failed: ${error.message}`);
+  }
+
   return fromRow(row as BookingRow);
 };
 

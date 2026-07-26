@@ -391,6 +391,33 @@ describe('UC4 — Book & Make Payment', () => {
   });
 
   describe('POST /api/bookings/confirm', () => {
+    /**
+     * The duplicate-bookings defect, end to end.
+     *
+     * Two confirmations for one session arriving together is the ordinary case,
+     * not an unlucky one — the browser posts /confirm on the confirmation page
+     * while the Stripe webhook independently recovers the same charge. Before
+     * insertOne serialised writers by payment_id, both wrote, and 7 of the 11
+     * payments in the development database ended up with two or three rows.
+     *
+     * Sending them sequentially is what the older tests do and is exactly the
+     * shape that cannot catch this.
+     */
+    it('writes one booking when two confirmations arrive together', async () => {
+      const sessionId = await startCheckout();
+
+      const [first, second] = await Promise.all([
+        quietly(() => request(app).post('/api/bookings/confirm').send({ sessionId })),
+        quietly(() => request(app).post('/api/bookings/confirm').send({ sessionId })),
+      ]);
+
+      expect(first.status, JSON.stringify(first.body)).to.equal(200);
+      expect(second.status, JSON.stringify(second.body)).to.equal(200);
+
+      // Same row, not two rows that happen to describe the same stay.
+      expect(second.body.booking.id).to.equal(first.body.booking.id);
+    });
+
     it('writes the booking once Stripe says the charge cleared', async () => {
       const booking = await bookAndConfirm();
 

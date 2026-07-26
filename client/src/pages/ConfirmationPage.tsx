@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import axios from 'axios';
 import {
@@ -104,12 +104,24 @@ export default function ConfirmationPage() {
   const paymentIntentId = searchParams.get('payment_intent');
   const bookingId = searchParams.get('id');
 
+  /**
+   * Holds the in-flight confirmation, not a "have I run" boolean.
+   *
+   * This used to deliberately allow the effect to run twice, on the grounds
+   * that confirming is idempotent server-side. It is not: insertOne reads
+   * findByPaymentId and then inserts, with nothing atomic in between and no
+   * unique constraint behind it, so two concurrent confirmations both see no
+   * booking and both write one. Rows milliseconds apart sharing a payment_id
+   * are exactly that race.
+   *
+   * A plain run-once ref is the wrong fix and was correctly rejected before —
+   * it strands the page in its loading state, because the first mount's cleanup
+   * has already tripped `cancelled`. Caching the promise gives one request and
+   * lets whichever mount is still alive consume it.
+   */
+  const confirmRequest = useRef<Promise<unknown> | null>(null);
+
   useEffect(() => {
-    // Deliberately no run-once ref here. StrictMode double-mounts in dev, and a
-    // guard that skips the second mount leaves the first mount's work orphaned
-    // behind an already-tripped `cancelled` flag — the page then never leaves
-    // its loading state. Confirming twice is idempotent server-side (the insert
-    // is keyed on the Stripe payment id), so let it re-run.
     let cancelled = false;
 
     const finalise = async () => {
@@ -142,11 +154,24 @@ export default function ConfirmationPage() {
         if (cancelled) return;
 
         try {
-          const response = await axios.post(
-            `${API_URL}/api/bookings/confirm`,
-            paymentIntentId ? { paymentIntentId } : { sessionId }
-          );
+          confirmRequest.current ??= axios
+            .post(
+              `${API_URL}/api/bookings/confirm`,
+              paymentIntentId ? { paymentIntentId } : { sessionId }
+            )
+            .catch((requestError) => {
+              // Cleared so the next poll retries rather than replaying a
+              // rejection for the remaining attempts.
+              confirmRequest.current = null;
+              throw requestError;
+            });
+
+          const response = (await confirmRequest.current) as { data: unknown };
           if (cancelled) return;
+
+          // A poll that came back unsettled must ask again, not re-read the
+          // same resolved promise forever.
+          confirmRequest.current = null;
 
           const record = readBooking(response.data);
           if (record) {

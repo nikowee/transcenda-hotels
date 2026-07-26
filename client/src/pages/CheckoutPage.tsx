@@ -59,8 +59,6 @@ const SALUTATIONS = ['Mr', 'Mrs', 'Ms', 'Mx', 'Dr', 'Prof'];
 /** The schema stores no currency column: the platform prices everything in SGD. */
 const CURRENCY = 'SGD';
 
-const iso = (date: Date) => date.toISOString().slice(0, 10);
-
 const emptyGuest: GuestDetails = {
   salutation: SALUTATIONS[0],
   firstName: '',
@@ -128,34 +126,77 @@ export default function CheckoutPage() {
 
   const wasCancelled = searchParams.get('cancelled') === '1';
 
-  // Falls back to a near-term stay so /checkout is reachable directly, before
-  // the results page is wired up to pass real room selections through.
+  /**
+   * The stay comes from the URL and nowhere else.
+   *
+   * This used to fall back to 'demo-hotel' / 'Demo Hotel' / 'deluxe-king' and a
+   * near-term date range so /checkout could be opened directly before the
+   * results page existed. It exists now, and those defaults had become a real
+   * bug: any parameter that failed to arrive was silently replaced, the server
+   * dutifully priced the substitute, and the guest was shown a payment page for
+   * a stay they had never chosen. A missing parameter has to be visible.
+   *
+   * The alternate spellings stay — dest/in/out/guests are what the search and
+   * hotel-details pages emit — but nothing is invented.
+   */
   const stayParams = useMemo(() => {
-    const today = new Date();
-    const defaultIn = new Date(today.getTime() + 86_400_000);
-    const defaultOut = new Date(today.getTime() + 4 * 86_400_000);
+    const get = (...names: string[]) => {
+      for (const name of names) {
+        const value = searchParams.get(name)?.trim();
+        if (value) return value;
+      }
+      return '';
+    };
 
     return {
-      destinationId: searchParams.get('destinationId') ?? searchParams.get('dest') ?? 'demo-dest',
-      hotelId: searchParams.get('hotelId') ?? 'demo-hotel',
-      hotelName: searchParams.get('hotelName') ?? 'Demo Hotel',
+      destinationId: get('destinationId', 'dest'),
+      hotelId: get('hotelId'),
+      // Optional: the server resolves it from the supplier when absent, which is
+      // how a booking started from RoomList works at all.
+      hotelName: get('hotelName'),
       // Comma-joined rather than repeated keys: `room_types` is stored that way,
       // so the string survives the whole round trip without re-encoding.
-      roomTypes: searchParams.get('roomTypes') ?? searchParams.get('roomId') ?? 'deluxe-king',
-      startDate: searchParams.get('startDate') ?? searchParams.get('in') ?? iso(defaultIn),
-      endDate: searchParams.get('endDate') ?? searchParams.get('out') ?? iso(defaultOut),
-      // SearchForm still emits a single `guests` count; until it splits the two,
-      // treat everyone it sends as an adult rather than silently defaulting.
-      adults: searchParams.get('adults') ?? searchParams.get('guests') ?? '2',
-      children: searchParams.get('children') ?? '0',
+      roomTypes: get('roomTypes', 'roomId'),
+      startDate: get('startDate', 'in'),
+      endDate: get('endDate', 'out'),
+      // Search emits a single head count and has no children field, so everyone
+      // it sends is an adult until one exists.
+      adults: get('adults', 'guests'),
+      children: get('children') || '0',
     };
   }, [searchParams]);
+
+  /** Named, so the guest is told which part of the link is missing. */
+  const missingParams = useMemo(
+    () =>
+      (
+        [
+          ['destinationId', stayParams.destinationId],
+          ['hotelId', stayParams.hotelId],
+          ['roomTypes', stayParams.roomTypes],
+          ['startDate', stayParams.startDate],
+          ['endDate', stayParams.endDate],
+          ['adults', stayParams.adults],
+        ] as const
+      )
+        .filter(([, value]) => !value)
+        .map(([name]) => name),
+    [stayParams]
+  );
 
   // Sequence step 1: GET /checkout
   useEffect(() => {
     let cancelled = false;
 
     const loadQuote = async () => {
+      if (missingParams.length > 0) {
+        setQuoteError(
+          `This checkout link is missing ${missingParams.join(', ')}. ` +
+            'Please choose your room again from the hotel page.'
+        );
+        return;
+      }
+
       try {
         const response = await axios.get<CheckoutQuote>(`${API_URL}/api/bookings/checkout`, {
           params: stayParams,
@@ -177,7 +218,7 @@ export default function CheckoutPage() {
     return () => {
       cancelled = true;
     };
-  }, [stayParams]);
+  }, [stayParams, missingParams]);
 
   // Sequence step 3 (+ alternative flow 1a-3a)
   const handleGuestSubmit: React.SubmitEventHandler<HTMLFormElement> = async (event) => {

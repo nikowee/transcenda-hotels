@@ -75,7 +75,20 @@ const quoteHandler = (overrides: Partial<CheckoutQuote> = {}) =>
  * router arrived there with the handoff written"; what the payment page then
  * does with it is PaymentPage.test.tsx's problem.
  */
-const renderCheckout = (entry = '/checkout') =>
+/**
+ * A complete stay, because the page no longer invents one.
+ *
+ * It used to fall back to 'demo-hotel' / 'Demo Hotel' / 'deluxe-king' when a
+ * parameter was absent, so every case here could mount a bare '/checkout' and
+ * still get a quote. That default was the bug behind "the payment page shows a
+ * booking I never made": anything that failed to arrive was silently replaced
+ * and priced. These entries now carry what the hotel page actually sends.
+ */
+const STAY_QUERY =
+  'destinationId=dest-1&hotelId=marina-bay&hotelName=Marina%20Bay%20Sands' +
+  '&roomTypes=deluxe-king&startDate=2026-08-01&endDate=2026-08-04&adults=2&children=1';
+
+const renderCheckout = (entry = `/checkout?${STAY_QUERY}`) =>
   render(
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
@@ -192,6 +205,52 @@ describe('CheckoutPage', () => {
   afterEach(() => {
     sessionStorage.clear();
     vi.restoreAllMocks();
+  });
+
+  /**
+   * The bug this replaced: every parameter had a demo default, so a link that
+   * lost one still produced a quote — for a stay the guest never chose — and
+   * the payment page then showed that substitute back to them as their booking.
+   */
+  describe('an incomplete link', () => {
+    it('refuses to price a stay rather than inventing one', async () => {
+      renderCheckout('/checkout?hotelId=marina-bay&startDate=2026-08-01');
+
+      expect(await screen.findByText(/missing/i)).toBeInTheDocument();
+      expect(screen.queryByText('SGD 784.80')).toBeNull();
+      expect(screen.queryByText('Marina Bay Sands')).toBeNull();
+    });
+
+    it('names every parameter that is absent', async () => {
+      renderCheckout('/checkout?hotelId=marina-bay');
+
+      const message = await screen.findByText(/missing/i);
+      for (const name of ['destinationId', 'roomTypes', 'startDate', 'endDate', 'adults']) {
+        expect(message.textContent, name).toContain(name);
+      }
+    });
+
+    it('never asks the server to price an incomplete stay', async () => {
+      const quoted: string[] = [];
+      server.use(
+        http.get('*/api/bookings/checkout', ({ request }) => {
+          quoted.push(request.url);
+          return HttpResponse.json(QUOTE);
+        })
+      );
+
+      renderCheckout('/checkout?hotelId=marina-bay');
+      await screen.findByText(/missing/i);
+
+      expect(quoted).toHaveLength(0);
+    });
+
+    /** hotelName is the one the server resolves, so its absence is not fatal. */
+    it('still prices a stay that carries no hotel name', async () => {
+      renderCheckout(`/checkout?${STAY_QUERY.replace('&hotelName=Marina%20Bay%20Sands', '')}`);
+
+      expect(await waitForQuote()).toBeInTheDocument();
+    });
   });
 
   it('renders the server-priced quote', async () => {
@@ -458,7 +517,7 @@ describe('CheckoutPage', () => {
   it('says a payment was cancelled and charges nothing', async () => {
     // /payment sends the customer back here with ?cancelled=1 rather than
     // leaving them on a payment form that has already been abandoned.
-    renderCheckout('/checkout?cancelled=1');
+    renderCheckout(`/checkout?${STAY_QUERY}&cancelled=1`);
 
     expect(await screen.findByText(/you cancelled the payment/i)).toBeInTheDocument();
     expect(screen.getByText(/nothing was charged/i)).toBeInTheDocument();

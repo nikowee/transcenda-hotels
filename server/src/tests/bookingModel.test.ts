@@ -139,6 +139,62 @@ describe('bookingModel', () => {
       expect(second.id).to.equal(first.id);
     });
 
+    /**
+     * The case the sequential test above cannot see, and the one that actually
+     * happened: 7 of 11 payments in the development database had between two
+     * and three rows, every set written 9–164ms apart.
+     *
+     * Three writers reach insertOne for one charge — the browser confirming,
+     * the Stripe webhook recovering, and Stripe redelivering that webhook —
+     * and they are concurrent, not sequential. `await findByPaymentId` yields,
+     * so all of them observe "no booking yet" before any of them has written,
+     * and all of them then write.
+     *
+     * Awaiting the two calls one after the other, as the test above does, is
+     * exactly the shape that never reproduces it.
+     */
+    it('writes one row when two callers confirm the same charge at once', async () => {
+      const input = bookingInput();
+
+      const [first, second] = await Promise.all([insertOne(input), insertOne(input)]);
+
+      expect(second.id).to.equal(first.id);
+      expect(await findByPaymentId(input.paymentId)).to.not.equal(null);
+    });
+
+    it('writes one row when the browser, the webhook and a redelivery all land together', async () => {
+      const input = bookingInput();
+
+      const written = await Promise.all([
+        insertOne(input),
+        insertOne(input),
+        insertOne(input),
+      ]);
+
+      const ids = new Set(written.map((record) => record.id));
+      expect([...ids]).to.have.lengthOf(1);
+    });
+
+    it('lets a payment be retried after a write fails', async () => {
+      // The in-flight entry has to be cleared on rejection as well as on
+      // success. If it were only cleared on success, one transient failure
+      // would make that payment_id permanently unwritable — every later
+      // attempt would await the same rejected promise and fail identically,
+      // and the charge would never be recorded.
+      const input = bookingInput();
+
+      let rejected = false;
+      try {
+        await insertOne({ ...input, card: undefined as never });
+      } catch {
+        rejected = true;
+      }
+      expect(rejected).to.equal(true);
+
+      const record = await insertOne(input);
+      expect(record.paymentId).to.equal(input.paymentId);
+    });
+
     it('ignores the second caller\'s data entirely on a duplicate payment id', async () => {
       const input = bookingInput();
       const first = await insertOne(input);
