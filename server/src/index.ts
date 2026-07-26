@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { searchDestinations } from './controllers/destinationController.ts';
-import { getHotelById, getHotelPrices, getRoomPrices, getHotelSearchResults } from './controllers/hotelController.ts';
+import { getHotelById, getRoomPrices, getHotelSearchResults } from './controllers/hotelController.ts';
 import { supabaseAdmin, deleteUser } from './lib/supabaseClient.ts';
 
 dotenv.config();
@@ -25,7 +25,6 @@ app.get('/api/destinations/search', searchDestinations);
 app.get('/api/hotels/search', getHotelSearchResults);
 
 // Hotel Details Endpoints
-app.get('/api/hotels/:destId/prices', getHotelPrices);
 app.get('/api/hotels/:id/price', getRoomPrices);
 app.get('/api/hotels/:id', getHotelById);
 
