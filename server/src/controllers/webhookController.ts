@@ -1,5 +1,9 @@
 import { type Request, type Response } from 'express';
-import { constructWebhookEvent, verifySession } from '../services/paymentService.js';
+import {
+  constructWebhookEvent,
+  verifySession,
+  verifyPaymentIntent,
+} from '../services/paymentService.js';
 import { findByPaymentId } from '../models/bookingModel.js';
 import { recordPaidBooking } from './bookingController.js';
 
@@ -94,6 +98,47 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
       }
 
       /**
+       * The recovery path for the Elements flow, which is the one the client
+       * actually uses — /payment mints a PaymentIntent and confirms it in the
+       * browser, so no checkout.session event is ever emitted for it.
+       *
+       * Without this case the handler above recovered only the hosted-Checkout
+       * flow, and a 3-D Secure challenge finished on a phone, or a tab closed
+       * before the redirect back, left a captured charge with no booking row
+       * and nothing retrying. The docblock at the top of this file claimed to
+       * cover exactly that; it did not.
+       *
+       * Mirrors the session case deliberately: same short-circuit, same
+       * re-read for the card columns, same 5xx-throws / 4xx-escalates split.
+       */
+      case 'payment_intent.succeeded': {
+        const intent = event.data.object;
+
+        if (await findByPaymentId(intent.id)) break;
+
+        // The event payload is unexpanded, so it carries no payment_method and
+        // therefore none of the NOT NULL card columns.
+        const payment = await verifyPaymentIntent(intent.id);
+        const outcome = await recordPaidBooking(payment);
+
+        if (!outcome.ok) {
+          const detail = `intent ${intent.id} (${outcome.status}): ${outcome.error}`;
+
+          if (outcome.status >= 500) {
+            throw new Error(`Recovery insert failed for ${detail}`);
+          }
+
+          console.error(
+            `⚠️  PAID CHARGE WITH NO BOOKING — manual intervention required: ${detail}`
+          );
+          break;
+        }
+
+        console.log(`Webhook recovered booking ${outcome.booking.id} for intent ${intent.id}`);
+        break;
+      }
+
+      /**
        * Nothing to do. There is no status column to mark failed and no row was
        * ever written, so an abandoned or declined checkout leaves no trace by
        * design — the absence of a booking is the record of the failure.
@@ -102,6 +147,13 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
       case 'checkout.session.async_payment_failed': {
         const session = event.data.object;
         console.log(`Checkout ${session.id} ended without payment (${event.type}).`);
+        break;
+      }
+
+      /** The Elements flow's equivalent of the two above, and equally inert. */
+      case 'payment_intent.payment_failed': {
+        const intent = event.data.object;
+        console.log(`Payment intent ${intent.id} did not clear (${event.type}).`);
         break;
       }
 

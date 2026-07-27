@@ -678,6 +678,36 @@ export const recordPaidBooking = async (
   const stay = repriced ?? { ...carried.stay, nights };
 
   try {
+    /**
+     * Sequence steps 9-10, as insertOne's onCreated hook rather than a line
+     * after it.
+     *
+     * This used to sit below the insert, on the reasoning that the
+     * findByPaymentId short-circuit above meant a redelivery never reached it.
+     * That holds for a *sequential* retry and not for the concurrent one: the
+     * browser confirming while the webhook recovers is the exact race
+     * writesInFlight was added for, and both callers pass the short-circuit,
+     * both call insertOne, and both are handed the same record. Emailing from
+     * the return value therefore emailed twice for one booking. The hook fires
+     * only for whichever caller actually wrote the row.
+     *
+     * Never allowed to throw — the money is captured and the row is written,
+     * and a bounced email must not turn a successful booking into a failed
+     * request. insertOne isolates it too, so this is belt and braces.
+     */
+    const emailOnce = async (written: BookingRecord): Promise<void> => {
+      try {
+        const receipt = await sendConfirmation(written.guest.email, written);
+        if (!receipt.delivered) {
+          console.warn(
+            `Booking ${written.id} saved but confirmation email failed: ${receipt.errorMessage}`
+          );
+        }
+      } catch (error) {
+        console.warn(`Booking ${written.id} saved but confirmation email threw:`, error);
+      }
+    };
+
     const booking = await insertOne({
       userId: carried.userId,
       guest: carried.guest,
@@ -701,28 +731,7 @@ export const recordPaidBooking = async (
       // so the payer's email is the identifier of last resort.
       payeeId: payment.payeeId ?? carried.guest.email,
       card: payment.card ?? UNKNOWN_CARD,
-    });
-
-    /**
-     * Sequence steps 9-10. Safe to fire here and nowhere else: the
-     * findByPaymentId short-circuit above means a redelivered webhook or a
-     * retried /confirm never reaches this line, so the guest is emailed exactly
-     * once per booking even though both paths call into here.
-     *
-     * Awaited but never allowed to throw — the money is captured and the row is
-     * written, and a bounced email must not turn a successful booking into a
-     * failed request.
-     */
-    try {
-      const receipt = await sendConfirmation(booking.guest.email, booking);
-      if (!receipt.delivered) {
-        console.warn(
-          `Booking ${booking.id} saved but confirmation email failed: ${receipt.errorMessage}`
-        );
-      }
-    } catch (error) {
-      console.warn(`Booking ${booking.id} saved but confirmation email threw:`, error);
-    }
+    }, emailOnce);
 
     return { ok: true, booking };
   } catch (error) {
@@ -983,18 +992,25 @@ const preparePayment = async (
    *
    * Guest email is in the key so two people booking the same room for the same
    * nights get their own intents rather than sharing one.
+   *
+   * Every field the request carries must be in the key, not just the ones that
+   * decide the amount. Stripe rejects a repeated key used with *different
+   * parameters*, so a key narrower than the request is worse than no key: it
+   * turns an ordinary edit into a hard failure. A guest who goes back from
+   * /payment to fix a phone number or an address line, or who signs in
+   * mid-checkout and so adds a userId, would recompute the same key while
+   * sending different metadata and shipping — Stripe answers 400
+   * idempotency_error, which surfaces as a 502, and keeps answering it for the
+   * 24 hours it holds the key. The stay would become unpayable.
+   *
+   * So the key is built from the metadata that actually goes on the wire, plus
+   * the amount. Anything that changes the request changes the key, which mints
+   * a new intent — the correct outcome, since it *is* a different request.
    */
   const idempotencyKey = createHash('sha256')
     .update(
       JSON.stringify([
-        guest.email,
-        quote.destinationId,
-        quote.hotelId,
-        quote.roomTypes,
-        quote.startDate,
-        quote.endDate,
-        quote.adults,
-        quote.children,
+        metadata,
         quote.totalPrice,
         quote.currency,
       ])

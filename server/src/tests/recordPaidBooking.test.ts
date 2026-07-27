@@ -334,6 +334,39 @@ describe('recordPaidBooking', () => {
       expect(second.pricePaid).to.equal(784.8);
     });
 
+    it('sends the confirmation email once when two deliveries arrive together', async () => {
+      /**
+       * The concurrent case, which the sequential test below cannot reach.
+       *
+       * The browser confirming while the webhook recovers is the exact race
+       * writesInFlight exists for. Both callers pass the findByPaymentId
+       * short-circuit, both call insertOne, and both are handed the *same*
+       * record — so emailing from the return value emailed twice for one
+       * booking. Only the caller that actually wrote the row may email.
+       *
+       * Verified failing before the fix (2 emails) and passing after (1).
+       */
+      const payment = paymentFixture();
+
+      const original = console.log;
+      const lines: string[] = [];
+      console.log = (...args: unknown[]) => {
+        lines.push(args.map(String).join(' '));
+      };
+      try {
+        await Promise.all([
+          recordPaidBooking(payment),
+          recordPaidBooking(payment),
+          recordPaidBooking(payment),
+        ]);
+      } finally {
+        console.log = original;
+      }
+
+      const emails = lines.filter((line) => line.includes('Booking confirmation queued'));
+      expect(emails).to.have.lengthOf(1);
+    });
+
     it('sends the confirmation email once per booking, not once per delivery', async () => {
       // The findByPaymentId short-circuit is the whole guarantee here: both
       // callers reach this function, and only the one that writes the row gets

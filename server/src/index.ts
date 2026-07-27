@@ -20,7 +20,21 @@ import {
 import { handleStripeWebhook } from './controllers/webhookController.js';
 import { rateLimit } from './middleware/rateLimit.js';
 import { resolveUser, requireUser } from './middleware/auth.js';
-import { supabaseAdmin, deleteUser } from './lib/supabaseClient.js';
+/**
+ * Deliberately NOT a static import.
+ *
+ * ./lib/supabaseClient throws at module scope when SUPABASE_URL or
+ * SUPABASE_SECRET_KEY is absent. bookingModel and middleware/auth both import
+ * it lazily for exactly that reason — so the server can run on the in-memory
+ * store with no database, which the startup banner below explicitly describes
+ * as a supported mode. Importing it eagerly here defeated both of them: the
+ * process aborted during module evaluation, before Express bound a port, so
+ * the credential-free path never actually started. The test suite hid it by
+ * assigning placeholder credentials in tests/env.ts.
+ *
+ * The two routes that need it are the only places that pay for it.
+ */
+const supabaseLib = () => import('./lib/supabaseClient.js');
 import { isSupabaseConfigured } from './models/bookingModel.js';
 
 dotenv.config();
@@ -28,14 +42,53 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Trust the first proxy hop so req.ip is the real client behind a load balancer.
-app.set('trust proxy', 1);
+/**
+ * How many proxy hops to trust when resolving req.ip.
+ *
+ * Every rate limiter keys on req.ip, so this figure decides whether they
+ * throttle a caller or the whole internet. Set it too low behind a CDN plus a
+ * load balancer and req.ip resolves to the load balancer for every request, so
+ * all customers share one bucket; set it too high and a caller can spoof
+ * X-Forwarded-For to get a fresh bucket per request.
+ *
+ * Configurable because only the deployment knows the answer. Default 1.
+ */
+const trustedProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
+app.set('trust proxy', Number.isFinite(trustedProxyHops) ? trustedProxyHops : 1);
+
+/** Version-agnostic: a lookup id is not the place to enforce a UUID version. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Restrict to known origins; a bare cors() allows every site to call these APIs.
 const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+/**
+ * Fail loudly on a production deployment that forgot CORS_ORIGINS.
+ *
+ * The default is the localhost value, and production has no local-origin
+ * escape hatch, so an unset CORS_ORIGINS refuses every browser request from the
+ * real frontend while /api/health and curl — neither of which sends an Origin
+ * header — keep answering. The service looks healthy from the backend and the
+ * UI renders as empty results with a generic "could not reach the service"
+ * message. That is a very expensive thing to debug from the wrong end.
+ *
+ * A startup warning is the cheapest place to catch it. Not fatal: a deployment
+ * that genuinely only serves same-origin or non-browser callers is legitimate.
+ */
+if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
+  console.warn(
+    [
+      '⚠️  CORS_ORIGINS is not set and NODE_ENV=production.',
+      `   Only ${allowedOrigins.join(', ')} will be accepted, and the local-origin`,
+      '   fallback is disabled in production — every browser request from the',
+      '   deployed frontend will be blocked, while /api/health still answers.',
+      '   Set CORS_ORIGINS to the frontend origin(s).',
+    ].join('\n')
+  );
+}
 
 /**
  * Vite serves the same app on localhost, 127.0.0.1, and the LAN address it
@@ -132,7 +185,24 @@ app.post('/api/bookings/payment', paymentLimiter, resolveUser, postPayment);
 // Elements flow: returns a client secret instead of a redirect, so the card is
 // entered on our own /payment page rather than on a Stripe-hosted one.
 app.post('/api/bookings/payment-intent', paymentLimiter, resolveUser, postPaymentIntent);
-app.post('/api/bookings/confirm', paymentLimiter, postConfirmBooking);
+/**
+ * Its own limiter, not paymentLimiter.
+ *
+ * ConfirmationPage polls this up to MAX_POLLS times for a single booking while
+ * a charge settles, so one customer legitimately spends several requests. At
+ * the payment limiter's 10/min that left room for two guests a minute — and
+ * fewer behind a NAT or a CGNAT address, where they share a bucket. A throttled
+ * confirm is not a harmless retry either: the page treats 429 as neither paid
+ * nor missing, burns its remaining attempts and shows an unreachable-service
+ * error to someone whose card has already been charged.
+ *
+ * Raised rather than removed. The endpoint is still worth bounding — it takes a
+ * payment identifier — but the bound has to clear the polling loop it was
+ * throttling.
+ */
+const confirmLimiter = rateLimit({ windowMs: 60_000, max: 60 });
+
+app.post('/api/bookings/confirm', confirmLimiter, postConfirmBooking);
 
 // Literal segments before the wildcard. Registered the other way round,
 // `/:id` matches "checkout" and "user" and routes them to the lookup handler —
@@ -164,6 +234,7 @@ app.get('/api/supabase-test', async (req, res) => {
     return;
   }
 
+  const { supabaseAdmin } = await supabaseLib();
   const { error } = await supabaseAdmin.from('bookings').select('id').limit(1);
 
   if (error) {
@@ -182,21 +253,48 @@ app.get('/api/supabase-test', async (req, res) => {
   res.json({ success: true, storage: 'supabase', table: 'bookings' });
 });
 
-// Supabase delete endpoint
-app.delete('/api/users/:uid', async (req, res) => {
+/**
+ * Account deletion.
+ *
+ * This was unauthenticated: any caller who knew a UUID could permanently
+ * delete that account, and the UUID is not a secret — it appears in the URL of
+ * GET /api/bookings/user/:userId and in booking payloads. Deleting an auth user
+ * cascades to their profile row, so this was the single most destructive
+ * request the API accepted, from anyone.
+ *
+ * requireUser rejects an anonymous caller; the check below rejects a verified
+ * one acting on somebody else's account. Both are needed — the token proves who
+ * you are, not what you may delete. lookupLimiter caps the damage of a leaked
+ * token being used to walk ids.
+ */
+app.delete('/api/users/:uid', lookupLimiter, requireUser, async (req, res) => {
   try {
-    const userId = req.params.uid; 
-    
-    if (!userId) {
-      return res.status(400).json({ success: false, error: 'User ID is missing.' });
+    // Express 5 types a wildcard param as string | string[]; a repeated segment
+    // would arrive as an array and must not be pattern-tested as one.
+    const userId = typeof req.params.uid === 'string' ? req.params.uid : '';
+
+    if (!userId || !UUID_PATTERN.test(userId)) {
+      return res.status(400).json({ success: false, error: 'A valid user ID is required.' });
     }
 
-    await deleteUser(userId);    
+    // 403 rather than 404: the caller is authenticated, just not entitled.
+    if (req.auth?.userId !== userId) {
+      return res.status(403).json({ success: false, error: 'You can only delete your own account.' });
+    }
+
+    const { deleteUser } = await supabaseLib();
+    await deleteUser(userId);
     res.status(200).json({ success: true, message: 'User deleted successfully' });
-    
+
   } catch (error: any) {
-    console.error('Delete error:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    /**
+     * The message came straight from Supabase, which is how a caller learns
+     * whether an id exists and what the admin API thinks of it. Log it, return
+     * a correlation id.
+     */
+    const correlationId = `del_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    console.error(`[delete ${correlationId}] user deletion failed:`, error.message);
+    res.status(500).json({ success: false, error: 'Could not delete that account.', correlationId });
   }
 });
 

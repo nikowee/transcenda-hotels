@@ -270,11 +270,36 @@ export const listSupplierRooms = async (request: RoomRateRequest): Promise<RateL
       });
 
       /**
-       * The supplier rejected the query. Cached like any other settled answer:
-       * a malformed hotel or destination id will be just as malformed in four
-       * seconds, and retrying it eight times helps nobody.
+       * The supplier rejected the query — but "rejected" covers two different
+       * things, and caching them alike made a transient fault permanent.
+       *
+       * A 422 for an unknown hotel is a settled answer: the id will be just as
+       * unknown in four seconds, so caching it saves eight pointless polls.
+       * A 429 or a 408 is the opposite — the supplier is telling us to come
+       * back. Writing an empty table for those pinned a real, bookable hotel
+       * as "no availability" for the full 30-minute TTL, and no retry could
+       * clear it because the empty answer was itself the cached one. A guest
+       * saw the hotel in search results and a hard 400 on the checkout page,
+       * blaming the room rather than the supplier.
+       *
+       * 401 and 403 are also excluded: those mean our credentials are wrong,
+       * which is an operator problem, not an absence of rooms.
        */
+      const RETRYABLE_REJECTIONS = new Set([401, 403, 408, 425, 429]);
+
       if (response.status >= 400) {
+        if (RETRYABLE_REJECTIONS.has(response.status)) {
+          console.warn(
+            `Supplier could not answer the price query for hotel ${request.hotelId} ` +
+              `(HTTP ${response.status}). Not cached — this is transient.`
+          );
+          return {
+            ok: false,
+            status: 502,
+            error: 'We could not reach our room supplier. Please try again.',
+          };
+        }
+
         console.warn(
           `Supplier rejected the price query for hotel ${request.hotelId} ` +
             `(HTTP ${response.status}). Treating it as no availability.`

@@ -28,7 +28,12 @@ interface Call {
 /** Runs the middleware once against a synthetic request. */
 const call = (
   middleware: ReturnType<typeof rateLimit>,
-  { ip, path = '/api/bookings/payment' }: { ip?: string; path?: string }
+  {
+    ip,
+    path = '/api/bookings/payment',
+    route,
+    baseUrl = '',
+  }: { ip?: string; path?: string; route?: string; baseUrl?: string }
 ): Call => {
   const state: FakeResponse = { statusCode: null, headers: {}, body: undefined };
 
@@ -47,7 +52,13 @@ const call = (
   } as unknown as Response;
 
   let passed = false;
-  middleware({ ip, path } as Request, res, () => {
+  const req = {
+    ip,
+    path,
+    baseUrl,
+    ...(route ? { route: { path: route } } : {}),
+  } as unknown as Request;
+  middleware(req, res, () => {
     passed = true;
   });
 
@@ -131,6 +142,47 @@ describe('rateLimit middleware', () => {
     expect(call(middleware, { ip: '1.1.1.1', path: '/api/bookings/confirm' }).passed).to.equal(
       true
     );
+  });
+
+  it('shares one bucket across every id on a wildcard route', () => {
+    /**
+     * The defect this closes. lookupLimiter is mounted on GET
+     * /api/bookings/:id precisely to blunt reference enumeration, but the key
+     * was built from req.path — which on a wildcard route is the *resolved*
+     * URL, so every scanned id opened its own fresh bucket and the limiter
+     * never fired. The 30/min cap only ever applied to repeated hits on the
+     * same id, which is the one case that is harmless.
+     *
+     * Keying on req.route.path is what makes a walk of distinct ids share the
+     * bucket the limiter was put there to enforce.
+     */
+    const middleware = rateLimit({ windowMs: 1000, max: 2 });
+    const scan = (id: string) =>
+      call(middleware, {
+        ip: '1.1.1.1',
+        path: `/api/bookings/${id}`,
+        route: '/api/bookings/:id',
+      });
+
+    expect(scan('11111111-1111-1111-1111-111111111111').passed).to.equal(true);
+    expect(scan('22222222-2222-2222-2222-222222222222').passed).to.equal(true);
+    // Third distinct id, same route — must be throttled.
+    const third = scan('33333333-3333-3333-3333-333333333333');
+    expect(third.passed).to.equal(false);
+    expect(third.res.statusCode).to.equal(429);
+  });
+
+  it('still separates two different wildcard routes', () => {
+    // The fix must not collapse genuinely distinct routes into one bucket.
+    const middleware = rateLimit({ windowMs: 1000, max: 1 });
+
+    expect(
+      call(middleware, { ip: '1.1.1.1', path: '/api/bookings/abc', route: '/api/bookings/:id' })
+        .passed
+    ).to.equal(true);
+    expect(
+      call(middleware, { ip: '1.1.1.1', path: '/api/users/abc', route: '/api/users/:uid' }).passed
+    ).to.equal(true);
   });
 
   it('does not crash when req.ip is undefined', () => {

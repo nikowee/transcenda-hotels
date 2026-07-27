@@ -187,8 +187,18 @@ const writesInFlight = new Map<string, Promise<BookingRecord>>();
  *      replica, or a restart mid-flight. That one needs the unique constraint
  *      in migrations/002_unique_payment_id.sql to exist; until it does, layer 3
  *      has nothing to catch and layers 1 and 2 are load-bearing.
+ *
+ * `onCreated` fires for the caller that actually wrote the row, and for nobody
+ * else. Deduplicating the *write* is not enough on its own: two concurrent
+ * confirmers are handed the same record and cannot tell from the return value
+ * which of them produced it, so anything that must happen once per booking
+ * rather than once per call — sending the confirmation email — would happen
+ * twice. Passing it here is what makes "once" mean once.
  */
-export const insertOne = async (input: BookingInput): Promise<BookingRecord> => {
+export const insertOne = async (
+  input: BookingInput,
+  onCreated?: (record: BookingRecord) => void | Promise<void>
+): Promise<BookingRecord> => {
   /**
    * No await between the lookup and the set, so a second caller entering here
    * cannot slip past before the first has registered its write. That ordering
@@ -198,7 +208,7 @@ export const insertOne = async (input: BookingInput): Promise<BookingRecord> => 
   const inFlight = writesInFlight.get(input.paymentId);
   if (inFlight) return inFlight;
 
-  const write = performWrite(input).finally(() => {
+  const write = performWrite(input, onCreated).finally(() => {
     writesInFlight.delete(input.paymentId);
   });
 
@@ -206,7 +216,30 @@ export const insertOne = async (input: BookingInput): Promise<BookingRecord> => 
   return write;
 };
 
-const performWrite = async (input: BookingInput): Promise<BookingRecord> => {
+/**
+ * Runs onCreated without letting it affect the write.
+ *
+ * It executes inside the shared promise, so an exception here would reject that
+ * promise for the losing caller too — turning a side effect into a failed
+ * booking after the money is captured. Swallowed and logged instead.
+ */
+const announceCreated = async (
+  record: BookingRecord,
+  onCreated?: (record: BookingRecord) => void | Promise<void>
+): Promise<void> => {
+  if (!onCreated) return;
+  try {
+    await onCreated(record);
+  } catch (error) {
+    console.warn(`Booking ${record.id} written but its onCreated hook threw:`, error);
+  }
+};
+
+const performWrite = async (
+  input: BookingInput,
+  onCreated?: (record: BookingRecord) => void | Promise<void>
+): Promise<BookingRecord> => {
+  // Someone else already recorded this charge, so this caller created nothing.
   const existing = await findByPaymentId(input.paymentId);
   if (existing) return existing;
 
@@ -219,6 +252,7 @@ const performWrite = async (input: BookingInput): Promise<BookingRecord> => {
       }),
     };
     memoryStore.set(record.id, record);
+    await announceCreated(record, onCreated);
     return record;
   }
 
@@ -244,13 +278,17 @@ const performWrite = async (input: BookingInput): Promise<BookingRecord> => {
    */
   if (error) {
     if (error.code === '23505') {
+      // Lost the race in another process: that writer created the row, and
+      // will run its own onCreated. This one must not.
       const winner = await findByPaymentId(input.paymentId);
       if (winner) return winner;
     }
     throw new Error(`Booking write failed: ${error.message}`);
   }
 
-  return fromRow(row as BookingRow);
+  const created = fromRow(row as BookingRow);
+  await announceCreated(created, onCreated);
+  return created;
 };
 
 /** The confirmation page looks a booking up by its UUID. */
