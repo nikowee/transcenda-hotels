@@ -23,6 +23,7 @@ import type {
   GuestDetails,
   StayDetails,
 } from '../types/booking';
+import { formatMoney, formatNights, formatOccupancy, formatRooms } from '../lib/format';
 
 const API_URL = import.meta.env.VITE_API_URL;
 const PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
@@ -78,11 +79,6 @@ interface HandoffState {
   stay: StayDetails;
 }
 
-const formatMoney = (amount: number, currency: string) =>
-  `${currency} ${amount.toLocaleString('en-SG', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
 
 export default function PaymentPage() {
   const navigate = useNavigate();
@@ -312,19 +308,6 @@ function BookingSummary({
   quote: CheckoutQuote;
   guest: GuestDetails | null;
 }) {
-  const money = (amount: number) =>
-    `${quote.currency} ${amount.toLocaleString('en-SG', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
-
-  const occupancy = [
-    `${quote.adults} adult${quote.adults === 1 ? '' : 's'}`,
-    quote.children > 0 ? `${quote.children} child${quote.children === 1 ? '' : 'ren'}` : null,
-  ]
-    .filter(Boolean)
-    .join(', ');
-
   return (
     <aside
       aria-label="Booking summary"
@@ -341,10 +324,7 @@ function BookingSummary({
         </p>
         <p className="flex items-start gap-2">
           <BedDouble className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
-          {/* Per room, not for the whole list: a supplier that names some rooms
-              and not others should still show the names it gave, and a raw id
-              reads badly but reads — a blank line does not. */}
-          <span>{quote.roomTypes.map((id, index) => quote.roomLabels?.[index] ?? id).join(' · ')}</span>
+          <span>{formatRooms(quote.roomTypes, quote.roomLabels)}</span>
         </p>
         <p className="flex items-start gap-2">
           <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
@@ -352,13 +332,13 @@ function BookingSummary({
             {quote.startDate} → {quote.endDate}
             <span className="text-slate-400">
               {' '}
-              ({quote.nights} night{quote.nights === 1 ? '' : 's'})
+              ({formatNights(quote.nights)})
             </span>
           </span>
         </p>
         <p className="flex items-start gap-2">
           <Users className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
-          <span>{occupancy}</span>
+          <span>{formatOccupancy(quote.adults, quote.children)}</span>
         </p>
         {guest && (
           <p className="flex items-start gap-2">
@@ -375,17 +355,17 @@ function BookingSummary({
           <dt>
             {/* nightlyTotal, not a per-room rate: a multi-room stay bills the
                 sum of its rooms each night. */}
-            {money(quote.nightlyTotal)} × {quote.nights} night{quote.nights === 1 ? '' : 's'}
+            {formatMoney(quote.nightlyTotal)} × {quote.nights} night{quote.nights === 1 ? '' : 's'}
           </dt>
-          <dd>{money(quote.subtotal)}</dd>
+          <dd>{formatMoney(quote.subtotal)}</dd>
         </div>
         <div className="flex justify-between text-slate-300">
           <dt>Taxes &amp; fees</dt>
-          <dd>{money(quote.taxes)}</dd>
+          <dd>{formatMoney(quote.taxes)}</dd>
         </div>
         <div className="flex justify-between border-t border-white/10 pt-3 text-base font-extrabold text-white">
           <dt>Total</dt>
-          <dd>{money(quote.totalPrice)}</dd>
+          <dd>{formatMoney(quote.totalPrice)}</dd>
         </div>
       </dl>
     </aside>

@@ -28,6 +28,7 @@ import type {
   GuestDetails,
   GuestFieldErrors,
 } from '../types/booking';
+import { formatMoney, formatOccupancy, formatRooms } from '../lib/format';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -56,8 +57,6 @@ type Step = 'guest' | 'review';
 /** Matches the salutations the bookings table is populated with. */
 const SALUTATIONS = ['Mr', 'Mrs', 'Ms', 'Mx', 'Dr', 'Prof'];
 
-/** The schema stores no currency column: the platform prices everything in SGD. */
-const CURRENCY = 'SGD';
 
 const emptyGuest: GuestDetails = {
   salutation: SALUTATIONS[0],
@@ -98,15 +97,7 @@ const emptyBilling: BillingAddress = {
   country: 'SG',
 };
 
-const formatMoney = (amount: number) =>
-  `${CURRENCY} ${amount.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-/** Occupancy is two columns now, so it needs prose: "2 adults, 1 child". */
-const formatOccupancy = (adults: number, children: number) => {
-  const parts = [`${adults} ${adults === 1 ? 'adult' : 'adults'}`];
-  if (children > 0) parts.push(`${children} ${children === 1 ? 'child' : 'children'}`);
-  return parts.join(', ');
-};
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
@@ -804,11 +795,7 @@ function OrderSummary({ quote }: { quote: CheckoutQuote | null }) {
         </p>
         <p className="flex items-center gap-2">
           <BedDouble className="h-4 w-4 text-blue-400" />
-          {/* Falls back to the id per room rather than for the whole list: a
-              quote from before roomLabels existed has none, and a supplier that
-              names some rooms and not others should still show the names it
-              gave. A raw id reads badly but reads — an empty line does not. */}
-          {quote.roomTypes.map((id, index) => quote.roomLabels?.[index] ?? id).join(' · ')}
+          {formatRooms(quote.roomTypes, quote.roomLabels)}
         </p>
         <p className="flex items-center gap-2">
           <Calendar className="h-4 w-4 text-blue-400" />

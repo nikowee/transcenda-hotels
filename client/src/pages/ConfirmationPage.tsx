@@ -16,7 +16,8 @@ import {
   User,
   Users,
 } from 'lucide-react';
-import type { BookingRecord, CardDetails } from '../types/booking';
+import type { BookingRecord } from '../types/booking';
+import { formatCard, formatMoney, formatOccupancy } from '../lib/format';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -43,7 +44,6 @@ const POLL_INTERVAL_MS = 2000;
 const MAX_POLLS = 5;
 
 /** The schema stores no currency column: the platform prices everything in SGD. */
-const CURRENCY = 'SGD';
 
 /**
  * A 404 is an answer — that booking does not exist. Every other failure
@@ -65,18 +65,9 @@ const UNREACHABLE: PageError = {
     'Your payment may still have gone through. Nothing is lost — refresh this page in a moment.',
 };
 
-const formatMoney = (amount: number) =>
-  `${CURRENCY} ${amount.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const formatOccupancy = (adults: number, children: number) => {
-  const parts = [`${adults} ${adults === 1 ? 'adult' : 'adults'}`];
-  if (children > 0) parts.push(`${children} ${children === 1 ? 'child' : 'children'}`);
-  return parts.join(', ');
-};
 
 /** Stripe reports the brand lower-cased ("visa"); this page reads as a receipt. */
-const formatCard = (card: CardDetails) =>
-  `${card.brand.charAt(0).toUpperCase()}${card.brand.slice(1)} •••• ${card.last4}`;
 
 /** Confirm wraps the record; the by-id lookup returns it bare. */
 const readBooking = (payload: unknown): BookingRecord | null => {
