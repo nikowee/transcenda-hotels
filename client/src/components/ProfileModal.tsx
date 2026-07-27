@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import type { User } from '@supabase/supabase-js';
 
@@ -6,6 +6,14 @@ interface ProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: User | null;
+}
+
+interface FormattedBooking {
+  id: string;
+  hotel: string;
+  dates: string;
+  status: string;
+  price: string;
 }
 
 export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProps) {
@@ -19,9 +27,62 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  // State variables for live bookings
+  const [bookings, setBookings] = useState<FormattedBooking[]>([]);
+  const [isLoadingBookings, setIsLoadingBookings] = useState(false);
+
+  // Fetch bookings when the modal opens or the user switches to the bookings tab
+  useEffect(() => {
+    const fetchUserBookings = async () => {
+      if (!user || !user.id || activeTab !== 'bookings') return;
+
+      setIsLoadingBookings(true);
+
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('id, hotel_name, start_date, end_date, price_paid')
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error("Error fetching bookings:", error);
+        setIsLoadingBookings(false);
+        return;
+      }
+
+      if (data) {
+        const formattedBookings = data.map((booking) => {
+          const startDateObj = new Date(booking.start_date);
+          const endDateObj = new Date(booking.end_date);
+          const today = new Date(); // Grabs the exact current date and time
+        
+          // Format dates for the UI
+          const start = startDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          const end = endDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        
+          // The Date Check: If the end date is less than (before) today, it's completed
+          const currentStatus = endDateObj < today ? 'Completed' : 'Confirmed';
+
+          return {
+            id: booking.id,
+            hotel: booking.hotel_name,
+            dates: `${start} – ${end}`,
+            status: currentStatus, 
+            price: `$${booking.price_paid}`
+          };
+        });
+
+        setBookings(formattedBookings);
+      }
+      
+      setIsLoadingBookings(false);
+    };
+
+    fetchUserBookings();
+  }, [user, activeTab]);
+
   if (!isOpen || !user) return null;
 
-  const handlePasswordUpdate = async (e: React.FormEvent) => {
+  const handlePasswordUpdate = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setMessage(null);
     setIsUpdating(true);
@@ -83,11 +144,6 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
       setIsDeleting(false);
     }
   };
-
-  const dummyBookings = [
-    { id: '1', hotel: 'Skyline Luxury Suites', dates: 'Aug 12 - Aug 15, 2026', status: 'Confirmed', price: '$850' },
-    { id: '2', hotel: 'Grand Ocean Resort & Spa', dates: 'Sep 01 - Sep 04, 2026', status: 'Completed', price: '$1,200' },
-  ];
 
   return (
     <>
@@ -191,11 +247,14 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
             {activeTab === 'bookings' && (
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold text-slate-400">Your Recent Trips</h3>
-                {dummyBookings.length === 0 ? (
+                
+                {isLoadingBookings ? (
+                  <p className="text-slate-400 text-sm text-center py-8">Loading your reservations...</p>
+                ) : bookings.length === 0 ? (
                   <p className="text-slate-400 text-sm text-center py-8">No bookings found yet. Time to plan an escape!</p>
                 ) : (
                   <div className="space-y-3">
-                    {dummyBookings.map((booking) => (
+                    {bookings.map((booking) => (
                       <div key={booking.id} className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 flex justify-between items-center hover:border-slate-700 transition-colors">
                         <div>
                           <h4 className="text-white font-medium text-sm">{booking.hotel}</h4>
