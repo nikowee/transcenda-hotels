@@ -17,13 +17,14 @@ import {
   User,
   Users,
 } from 'lucide-react';
-import type {
-  BillingAddress,
-  CheckoutQuote,
-  GuestDetails,
-  StayDetails,
-} from '../types/booking';
+import type { CheckoutQuote, GuestDetails } from '../types/booking';
 import { formatMoney, formatNights, formatOccupancy, formatRooms } from '../lib/format';
+import {
+  clearHandoff,
+  readHandoff,
+  stayToCheckoutQuery,
+  type CheckoutHandoff,
+} from '../lib/checkoutHandoff';
 
 const API_URL = import.meta.env.VITE_API_URL;
 const PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
@@ -68,16 +69,7 @@ interface IntentResponse {
   quote: CheckoutQuote;
 }
 
-interface HandoffState {
-  guestDetails: GuestDetails;
-  /**
-   * Forwarded verbatim to /payment-intent. The server validates it again there
-   * and refuses without it, so dropping it here is not a missing-field bug — it
-   * is a payment that cannot start at all.
-   */
-  billingAddress: BillingAddress;
-  stay: StayDetails;
-}
+
 
 
 export default function PaymentPage() {
@@ -92,14 +84,31 @@ export default function PaymentPage() {
    * state so a refresh on this page does not lose them and strand the customer
    * mid-flow. Cleared once the booking is confirmed.
    */
-  const handoff = useMemo<HandoffState | null>(() => {
-    try {
-      const raw = sessionStorage.getItem('transcenda:checkout');
-      return raw ? (JSON.parse(raw) as HandoffState) : null;
-    } catch {
-      return null;
-    }
-  }, []);
+  const handoff = useMemo<CheckoutHandoff | null>(() => readHandoff(), []);
+
+  /**
+   * Where "back" goes, and why it carries a query string.
+   *
+   * The checkout page reads its stay from the URL, so a bare /checkout link
+   * landed on "this checkout link is missing destinationId, hotelId, …" — a dead
+   * end with no route back to payment at all. Rebuilding the query from the
+   * handoff means the page can price the stay again, and because the handoff is
+   * still in storage it resumes at the review step with the guest's details
+   * intact rather than an empty form.
+   *
+   * With no handoff there is no stay to go back *to*, and this is exactly the
+   * case the page reaches when it says "your booking details have expired" —
+   * offering "back to details" there sends the customer to a checkout page with
+   * no booking. Search is the only honest destination, so the label changes with
+   * the target rather than promising details that no longer exist.
+   */
+  const back = useMemo(
+    () =>
+      handoff
+        ? { to: `/checkout?${stayToCheckoutQuery(handoff.stay)}`, label: 'Back to details' }
+        : { to: '/', label: 'Back to search' },
+    [handoff]
+  );
 
   /**
    * Holds the in-flight request, not a "have I run" boolean.
@@ -173,7 +182,13 @@ export default function PaymentPage() {
   }, [handoff]);
 
   const onPaid = (paymentIntentId: string) => {
-    sessionStorage.removeItem('transcenda:checkout');
+    // Only on success: a failed payment must leave it so the customer can
+    // resume at the review step instead of re-entering the whole booking.
+    //
+    // Not the only place this happens — a 3DS challenge navigates away and never
+    // comes back through here, so ConfirmationPage clears it too, on the
+    // confirmed record. Both paths, one meaning.
+    clearHandoff();
     navigate(`/confirmation?payment_intent=${encodeURIComponent(paymentIntentId)}`);
   };
 
@@ -188,11 +203,11 @@ export default function PaymentPage() {
           Transcenda<span className="text-blue-500">.</span>
         </Link>
         <Link
-          to="/checkout"
+          to={back.to}
           className="flex items-center gap-1.5 text-sm font-semibold text-slate-300 transition-colors hover:text-white"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to details
+          {back.label}
         </Link>
       </nav>
 
@@ -229,10 +244,10 @@ export default function PaymentPage() {
             <h2 className="mt-4 text-xl font-bold text-slate-800">We can't take payment yet</h2>
             <p className="mt-2 text-slate-500">{error}</p>
             <Link
-              to="/checkout"
+              to={back.to}
               className="mt-6 inline-flex h-12 items-center rounded-xl bg-blue-600 px-8 font-bold text-white shadow-md shadow-blue-200 transition-colors hover:bg-blue-700"
             >
-              Back to details
+              {back.label}
             </Link>
           </div>
         )}

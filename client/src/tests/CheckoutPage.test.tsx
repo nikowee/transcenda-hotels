@@ -182,6 +182,179 @@ const watchLegacyPaymentEndpoint = () => {
 };
 
 describe('CheckoutPage', () => {
+  describe('resuming after a failed payment', () => {
+    /**
+     * The complaint this closes: a payment that did not go through dropped the
+     * customer back on an empty guest form and made them re-enter their name,
+     * email, phone and full billing address before they could try the card
+     * again — while the cancelled banner told them to "pick up where you left
+     * off". The handoff was in sessionStorage the whole time; the page simply
+     * never read it back.
+     */
+    const RESUMABLE = {
+      guestDetails: {
+        salutation: 'Dr',
+        firstName: 'Jane',
+        lastName: 'Tan',
+        email: 'jane@example.com',
+        phone: '+65 9123 4567',
+        specialRequests: 'High floor',
+      },
+      billingAddress: {
+        line1: '1 Marina Boulevard',
+        line2: '',
+        city: 'Singapore',
+        state: '',
+        postalCode: '018989',
+        country: 'SG',
+      },
+      stay: {
+        destinationId: 'dest-1',
+        hotelId: 'marina-bay',
+        hotelName: 'Marina Bay Sands',
+        roomTypes: ['deluxe-king'],
+        startDate: '2026-08-01',
+        endDate: '2026-08-04',
+        adults: 2,
+        children: 1,
+      },
+    };
+
+    it('lands on the review step rather than the guest form', async () => {
+      sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(RESUMABLE));
+
+      renderCheckout();
+
+      /**
+       * /pay sgd/i, not /pay/i — the guest step's submit reads "Continue to
+       * payment", which a loose match also satisfies, so the looser assertion
+       * passed even with the page starting on step 1.
+       */
+      expect(await screen.findByRole('button', { name: /pay sgd/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /continue to payment/i })).toBeNull();
+    });
+
+    it('keeps the guest details the customer already entered', async () => {
+      sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(RESUMABLE));
+
+      renderCheckout();
+
+      // Rendered on the review step, so the customer can see them before retrying.
+      expect(await screen.findByText(/jane@example.com/i)).toBeInTheDocument();
+    });
+
+    it('still starts at the guest form when there is nothing to resume', async () => {
+      renderCheckout();
+
+      // "Continue to payment" is the guest step's submit; the review step has
+      // a "Pay …" button instead.
+      expect(
+        await screen.findByRole('button', { name: /continue to payment/i })
+      ).toBeInTheDocument();
+    });
+
+    it('ignores a malformed handoff rather than throwing', async () => {
+      // sessionStorage is user-writable, so the reader must not trust it.
+      sessionStorage.setItem(HANDOFF_KEY, 'not json at all');
+
+      renderCheckout();
+
+      expect(
+        await screen.findByRole('button', { name: /continue to payment/i })
+      ).toBeInTheDocument();
+    });
+
+    /**
+     * The billing address is the half of the resume nothing was pinning.
+     *
+     * It is also the expensive half — six fields including a postal code — and
+     * it is invisible from the review step, so a regression that dropped it
+     * would have shown up as a 422 on the payment page rather than as anything
+     * wrong here. Stepping back to the form is the only way to see it.
+     */
+    it('keeps the billing address as well as the guest', async () => {
+      sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(RESUMABLE));
+
+      const user = userEvent.setup();
+      renderCheckout();
+
+      await user.click(await screen.findByRole('button', { name: /^back$/i }));
+
+      expect(screen.getByDisplayValue('1 Marina Boulevard')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('018989')).toBeInTheDocument();
+    });
+
+    /**
+     * The wrong-guest bug. A handoff outlives the booking it was written for —
+     * nothing clears it on abandonment, by design — so a customer who walked
+     * away from paying for one stay and then started a different one had the
+     * first booking's guest seated on the second one's review step, one click
+     * from being confirmed and emailed under someone else's name.
+     */
+    it('does not resume a handoff belonging to a different stay', async () => {
+      sessionStorage.setItem(
+        HANDOFF_KEY,
+        JSON.stringify({
+          ...RESUMABLE,
+          stay: { ...RESUMABLE.stay, hotelId: 'raffles', hotelName: 'Raffles Hotel' },
+        })
+      );
+
+      renderCheckout();
+
+      // Step 1, where the details are re-validated against the stay on screen.
+      expect(
+        await screen.findByRole('button', { name: /continue to payment/i })
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /pay sgd/i })).toBeNull();
+    });
+
+    /**
+     * A handoff with no address cannot pass the payment endpoint's billing
+     * validator, and step 2 has nowhere to enter one — so resuming onto it puts
+     * the customer in front of a Pay button that can only ever 422.
+     */
+    it('starts at the form when the handoff carries no billing address', async () => {
+      const { billingAddress: _dropped, ...withoutBilling } = RESUMABLE;
+      sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(withoutBilling));
+
+      renderCheckout();
+
+      expect(
+        await screen.findByRole('button', { name: /continue to payment/i })
+      ).toBeInTheDocument();
+      // The typing is still salvaged — only the step differs.
+      expect(screen.getByDisplayValue('jane@example.com')).toBeInTheDocument();
+    });
+
+    /**
+     * A bare /checkout is what an old bookmark, or the browser's back button off
+     * a redirect, actually produces. The page reads its stay from the URL, so
+     * without the handoff filling in it would answer "this checkout link is
+     * missing destinationId, hotelId, …" about a stay sitting in storage.
+     */
+    it('prices the stored stay when the link carries no parameters', async () => {
+      sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(RESUMABLE));
+
+      renderCheckout('/checkout');
+
+      expect(await screen.findByRole('button', { name: /pay sgd/i })).toBeInTheDocument();
+      expect(screen.queryByText(/this checkout link is missing/i)).toBeNull();
+    });
+
+    /**
+     * Verbatim, because the E2E spec asserts this sentence case-sensitively and
+     * a reworded banner passed every unit test while breaking that run.
+     */
+    it('says nothing was charged when the payment was cancelled', async () => {
+      sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(RESUMABLE));
+
+      renderCheckout(`/checkout?${STAY_QUERY}&cancelled=1`);
+
+      expect(await screen.findByText(/Nothing was charged/)).toBeInTheDocument();
+    });
+  });
+
   let paymentCalls: string[];
 
   beforeEach(() => {

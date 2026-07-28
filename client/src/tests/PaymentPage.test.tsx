@@ -279,9 +279,67 @@ describe('PaymentPage', () => {
       ).toBeInTheDocument();
       expect(requestsTo('/api/bookings')).toEqual([]);
 
-      // Two links back: the persistent nav one and the error card's own
-      // recovery action, so the dead end is escapable without the back button.
-      expect(screen.getAllByRole('link', { name: /back to details/i })).toHaveLength(2);
+      /**
+       * Two links out: the persistent nav one and the error card's own recovery
+       * action, so the dead end is escapable without the back button.
+       *
+       * To search, not to details. This case *is* "there are no details" — the
+       * handoff is what /checkout would have been resumed from, and without it
+       * that page can only say the link is missing every parameter. Offering
+       * "back to details" here sent the customer from one dead end to another,
+       * which is why the destination is asserted and not just the count.
+       */
+      const escapes = screen.getAllByRole('link', { name: /back to search/i });
+      expect(escapes).toHaveLength(2);
+      escapes.forEach((link) => expect(link).toHaveAttribute('href', '/'));
+      expect(screen.queryByRole('link', { name: /back to details/i })).toBeNull();
+    });
+
+    /**
+     * "Back to details" has to carry the stay, or it is not a way back.
+     *
+     * /checkout reads its stay from the URL, so a bare link lands on "this
+     * checkout link is missing destinationId, hotelId, …" — the customer is off
+     * the payment page and cannot return to it. The query is what lets that page
+     * price the stay again and resume at the review step.
+     */
+    it('links back to the details page with the stay it needs', async () => {
+      renderPayment();
+
+      const [link] = await screen.findAllByRole('link', { name: /back to details/i });
+      const href = link.getAttribute('href') ?? '';
+
+      expect(href.startsWith('/checkout?')).toBe(true);
+      const params = new URLSearchParams(href.slice(href.indexOf('?') + 1));
+      expect(Object.fromEntries(params)).toMatchObject({
+        destinationId: 'dest-1',
+        hotelId: 'marina-bay',
+        roomTypes: 'deluxe-king',
+        startDate: '2026-08-01',
+        endDate: '2026-08-04',
+        adults: '2',
+        children: '1',
+      });
+    });
+
+    /**
+     * A stay object that is present but incomplete used to pass the handoff
+     * guard and then throw inside render when the back link was built. There is
+     * no ErrorBoundary in this bundle, so a throw during render unmounts the
+     * whole tree: the customer gets a blank white page, not an error.
+     */
+    it('treats a handoff with an unusable stay as no handoff at all', async () => {
+      sessionStorage.setItem(
+        HANDOFF_KEY,
+        JSON.stringify({ ...HANDOFF, stay: { hotelId: 'marina-bay' } })
+      );
+
+      renderPayment();
+
+      expect(
+        await screen.findByText(/your booking details have expired\. please start again\./i)
+      ).toBeInTheDocument();
+      expect(requestsTo('/api/bookings')).toEqual([]);
     });
 
     it.each([

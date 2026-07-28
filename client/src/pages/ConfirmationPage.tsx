@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { BookingRecord } from '../types/booking';
 import { formatCard, formatMoney, formatOccupancy } from '../lib/format';
+import { clearHandoff } from '../lib/checkoutHandoff';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -129,6 +130,7 @@ export default function ConfirmationPage() {
           const response = await axios.get<BookingRecord>(`${API_URL}/api/bookings/${bookingId}`);
           if (cancelled) return;
           setBooking(response.data);
+          clearHandoff();
           setError(null);
         } catch (fetchError) {
           if (cancelled) return;
@@ -167,6 +169,20 @@ export default function ConfirmationPage() {
           const record = readBooking(response.data);
           if (record) {
             setBooking(record);
+            /**
+             * Here, not only in PaymentPage's success handler.
+             *
+             * That handler runs for cards Stripe settles inline, but a bank that
+             * demands a 3DS challenge takes the whole page away and returns the
+             * browser straight to this URL — confirmPayment never resolves, so
+             * nothing on the payment page clears anything. The handoff then
+             * survives a paid booking and auto-resumes the customer's *next*
+             * checkout onto the stay they have already paid for.
+             *
+             * A confirmed booking record is the one signal both paths share, and
+             * it is the definition of "this handoff is spent".
+             */
+            clearHandoff();
             setError(null);
             setIsLoading(false);
             return;

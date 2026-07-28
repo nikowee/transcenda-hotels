@@ -109,6 +109,42 @@ describe('ConfirmationPage', () => {
     expect(screen.getAllByText('jane@example.com')).toHaveLength(2);
   });
 
+  /**
+   * The handoff has to die here, not only on the payment page.
+   *
+   * PaymentPage clears it in its success handler, which covers cards Stripe
+   * settles inline. A bank that demands a 3DS challenge takes the whole page
+   * away and returns the browser straight to this URL, so confirmPayment never
+   * resolves and that handler never runs. The handoff then survives a paid
+   * booking, and the customer's next visit to /checkout is auto-resumed onto
+   * the stay they have already paid for.
+   */
+  it('clears the checkout handoff once a booking is confirmed', async () => {
+    sessionStorage.setItem(
+      'transcenda:checkout',
+      JSON.stringify({
+        guestDetails: { salutation: 'Dr', firstName: 'Jane', lastName: 'Tan' },
+        stay: {
+          destinationId: 'dest-1',
+          hotelId: 'marina-bay',
+          hotelName: 'Marina Bay Sands',
+          roomTypes: ['deluxe-king'],
+          startDate: '2026-08-01',
+          endDate: '2026-08-04',
+          adults: 2,
+          children: 1,
+        },
+      })
+    );
+
+    server.use(http.post('*/api/bookings/confirm', () => HttpResponse.json({ booking: PAID })));
+
+    renderConfirmation(RETURNED_FROM_STRIPE);
+    await screen.findByText(BOOKING_ID, undefined, FIND);
+
+    expect(sessionStorage.getItem('transcenda:checkout')).toBeNull();
+  });
+
   it('verifies the Stripe session server-side before rendering anything', async () => {
     // The browser is told nothing about the payment; it hands the session id
     // back and the server asks Stripe. A body carrying a status or an amount
