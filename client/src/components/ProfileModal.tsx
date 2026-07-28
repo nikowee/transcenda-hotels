@@ -53,13 +53,11 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
         const formattedBookings = data.map((booking) => {
           const startDateObj = new Date(booking.start_date);
           const endDateObj = new Date(booking.end_date);
-          const today = new Date(); // Grabs the exact current date and time
+          const today = new Date(); 
         
-          // Format dates for the UI
           const start = startDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
           const end = endDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         
-          // The Date Check: If the end date is less than (before) today, it's completed
           const currentStatus = endDateObj < today ? 'Completed' : 'Confirmed';
 
           return {
@@ -117,7 +115,7 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
       }
 
       // 2. Call your backend server route to delete the user via admin API using VITE_API_URL
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+      const apiUrl = import.meta.env.VITE_API_URL;
       const response = await fetch(`${apiUrl}/api/users/${user.id}`, {
         method: 'DELETE',
         headers: {

@@ -13,15 +13,15 @@ export default function WelcomeBird({ onComplete }: WelcomeBirdProps) {
       setIsVisible(true);
     }, 100);
 
-    // 2. Fade OUT: Start fading out at 2.8 seconds
+    // 2. Fade OUT: Start fading out at 1.8 seconds
     const fadeOutTimer = setTimeout(() => {
       setIsVisible(false);
-    }, 2800);
+    }, 1800);
 
-    // 3. COMPLETE: Unmount at exactly 3.5 seconds (2800ms + 700ms transition)
+    // 3. COMPLETE: Unmount at exactly 2.5 seconds (1800ms + 700ms transition)
     const completeTimer = setTimeout(() => {
       onComplete();
-    }, 3500);
+    }, 2500);
     
     return () => {
       clearTimeout(fadeInTimer);
