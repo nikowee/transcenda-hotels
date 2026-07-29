@@ -22,7 +22,7 @@ Sign In/Up/Out Admin API ('deleteUser')
 
 │ ┌──────────┴──────────────────────────┐
 
-│ │ Backend API (Express :5001) │
+│ │ Backend API (Express :5000) │
 
 │ │ (Requires Service Role Admin Key) │
 
