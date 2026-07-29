@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import axios from 'axios';
-import SearchForm from './SearchForm';
+import SearchForm from '../components/SearchForm';
 
 // Mock axios to prevent real API calls during tests
 vi.mock('axios');
