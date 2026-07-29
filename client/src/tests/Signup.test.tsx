@@ -124,13 +124,11 @@ describe('Authentication: Signup Constraints and Execution Paths', () => {
     if (form) fireEvent.submit(form);
 
     await waitFor(() => {
-      const baseUrl = import.meta.env.VITE_API_URL;
-      
       expect(supabase.auth.signUp).toHaveBeenCalledWith({
         email: 'newuser@test.com',
         password: 'securepassword123',
         options: {
-          emailRedirectTo: `${baseUrl}/login`,
+          emailRedirectTo: `${window.location.origin}/login`,
         },
       });
     });
