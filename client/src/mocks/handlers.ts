@@ -111,7 +111,9 @@ export const handlers = [
     let filtered = [...mockHotels];
 
     if (starRating) {
-      filtered = filtered.filter((h) => h.rating >= parseInt(starRating));
+      // Exact match, mirroring hotelController.ts — a "4★" button that shows
+      // 5-star hotels in mock-driven dev would read as a bug in the label.
+      filtered = filtered.filter((h) => Math.round(h.rating) === parseInt(starRating));
     }
     if (minGuestRating) {
       filtered = filtered.filter((h) => h.rating >= parseFloat(minGuestRating));

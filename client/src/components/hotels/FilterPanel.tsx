@@ -47,7 +47,7 @@ export default function FilterPanel({
                                     : 'bg-brand-surface-muted text-brand-text-secondary hover:bg-brand-border'
                             }`}
                         >
-                            {rating}{'★'}{rating > 0 ? '+' : ''}
+                            {rating}{'★'}
                         </button>
                     ))}
                 </div>

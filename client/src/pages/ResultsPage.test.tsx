@@ -201,8 +201,10 @@ describe('ResultsPage Component', () => {
       expect(screen.getByText('Marina Bay Sands')).toBeInTheDocument();
     });
 
-    // Find the first star rating button (5★+) by its text
-    const starButtons = screen.getAllByRole('button', { name: /5★\+/ });
+    // Find the 5-star button by its exact label. The buttons read "5★", not
+    // "5★+" — the filter is exact-match server-side (hotelController), and the
+    // label was aligned with that.
+    const starButtons = screen.getAllByRole('button', { name: '5★' });
     await userEvent.click(starButtons[0]);
 
     // Click Apply Filters
@@ -230,8 +232,8 @@ describe('ResultsPage Component', () => {
       expect(screen.getByText('Marina Bay Sands')).toBeInTheDocument();
     });
 
-    // Apply a filter first by clicking the first star button
-    const starButtons = screen.getAllByRole('button', { name: /5★\+/ });
+    // Apply a filter first by clicking the 5-star button (exact label, no '+')
+    const starButtons = screen.getAllByRole('button', { name: '5★' });
     await userEvent.click(starButtons[0]);
 
     const applyButton = screen.getByText('Apply Filters');
