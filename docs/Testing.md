@@ -14,28 +14,28 @@ This page documents the complete testing suite for Transcenda Hotels, covering a
 
 ```
                     ┌─────────────────────────────────────┐
-                    │       E2E Tests (16 tests)          │
+                    │        E2E Tests (22 tests)         │
                     │  Playwright — full system in Docker │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │     Contract Tests (79 tests)       │
-                    │  nock — real SDK/client, faked wire │
-                    │  Stripe (61) · Ascenda hotels (18)  │
+                    │  Backend (375 tests, +3 pending)    │
+                    │  Mocha + Chai + Supertest; nock     │
+                    │  fakes Stripe and Ascenda at the    │
+                    │  socket, network blocked outright   │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │    Integration Tests (229 tests)    │
-                    │  Frontend: MSW + Vitest (89)        │
-                    │  Backend:  Mocha + Supertest (140)  │
-                    └─────────────────────────────────────┘
-                                        ▲
-                    ┌─────────────────────────────────────┐
-                    │      Unit Tests (138 tests)         │
-                    │  Vitest + Testing Library (6)       │
-                    │  Mocha + Chai (132)                 │
+                    │      Frontend (166 tests)           │
+                    │  Vitest + Testing Library, MSW      │
+                    │  intercepting every request         │
                     └─────────────────────────────────────┘
 ```
+
+Counts are per test runner because that is what a runner reports and what a
+red build shows; the earlier unit/integration/contract split was drifting
+every time a suite grew. The 3 pending are the `BILLING-PENDING-MIGRATION`
+trio — they un-skip when `migrations/001_billing_address.sql` is applied.
 
 Both external dependencies are faked the same way and at the same layer — nock
 intercepts the socket, so the real Stripe SDK and the real axios client build
@@ -89,13 +89,13 @@ un-skip all four together.
 ## 🚀 Quick Start
 
 ```bash
-# Frontend: 95 tests
+# Frontend: 166 tests
 cd client && npm run test
 
-# Backend: 351 tests (+3 pending)
+# Backend: 375 tests (+3 pending)
 cd server && npm run test
 
-# E2E: 16 tests, auto-starts Docker
+# E2E: 22 tests, auto-starts Docker
 cd e2e_testing && npm ci && npx playwright install chromium && npx playwright test
 ```
 
