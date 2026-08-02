@@ -7,6 +7,14 @@ import { type Request, type Response, type NextFunction } from 'express';
  * forbids adding dependencies on a feature branch. Per-process and in-memory,
  * so it does not hold across replicas — swap for the real library (or a Redis
  * store) before this runs on more than one instance.
+ *
+ * Scaling past one instance is gated on exactly two things, and this map is
+ * the lesser of them:
+ *   1. migrations/002_unique_payment_id.sql — without that constraint,
+ *      duplicate-booking protection is bookingModel's in-process lock, which
+ *      a second replica silently defeats. Money-correctness, fix first.
+ *   2. This store — N replicas make every limit effectively N× its configured
+ *      value. Degraded protection, not corruption; fix second.
  */
 
 interface Bucket {

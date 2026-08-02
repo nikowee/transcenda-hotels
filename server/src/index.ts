@@ -216,47 +216,6 @@ app.get('/api/bookings/user/:userId', lookupLimiter, requireUser, getBookingsByU
 app.get('/api/bookings/:id', lookupLimiter, getBookingById);
 
 /**
- * Connectivity probe. Deliberately targets `bookings` — the table this service
- * actually reads and writes — rather than a table that merely happens to exist,
- * so a green result here means the booking flow will work.
- *
- * Selects only `id`, so a reachable table reports success without pulling guest
- * data into a debug response. A HEAD/count-only request would be tidier still,
- * but PostgREST returns no body for one — including on failure — so the error
- * message comes back empty and the probe cannot say what went wrong.
- */
-app.get('/api/supabase-test', async (req, res) => {
-  if (!isSupabaseConfigured()) {
-    res.status(503).json({
-      success: false,
-      storage: 'memory',
-      error:
-        'Bookings are using the in-memory store, so Supabase is not in use. ' +
-        'Clear BOOKINGS_STORAGE in .env to switch to the database.',
-    });
-    return;
-  }
-
-  const { supabaseAdmin } = await supabaseLib();
-  const { error } = await supabaseAdmin.from('bookings').select('id').limit(1);
-
-  if (error) {
-    res.status(500).json({
-      success: false,
-      storage: 'supabase',
-      // code/hint are what distinguish "table not created" (42P01) from a key
-      // or RLS problem, which is the whole question this endpoint answers.
-      error: error.message,
-      code: error.code,
-      hint: error.hint,
-    });
-    return;
-  }
-
-  res.json({ success: true, storage: 'supabase', table: 'bookings' });
-});
-
-/**
  * Account deletion.
  *
  * This was unauthenticated: any caller who knew a UUID could permanently
