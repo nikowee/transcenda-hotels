@@ -36,6 +36,9 @@ import { resolveUser, requireUser } from './middleware/auth.js';
  */
 const supabaseLib = () => import('./lib/supabaseClient.js');
 import { isSupabaseConfigured } from './models/bookingModel.js';
+// Already loaded transitively via hotelController; imported here only so
+// shutdown can release the connection after the HTTP listener drains.
+import { redis } from './lib/redisClient.js';
 
 dotenv.config();
 
@@ -305,7 +308,7 @@ export default app;
 const __filename = fileURLToPath(import.meta.url);
 const isDirectRun = process.argv[1] === __filename;
 if (isDirectRun) {
-  app.listen(Number(PORT), '0.0.0.0', () => {
+  const server = app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`🚀 Transcenda Hotels Backend running natively on http://localhost:${PORT}`);
 
     // The in-memory store is per-process and cleared on restart. Under `tsx
@@ -323,4 +326,39 @@ if (isDirectRun) {
       );
     }
   });
+
+  /**
+   * Graceful shutdown, on the signal orchestrators actually send.
+   *
+   * ECS, Kubernetes and `docker stop` all deliver SIGTERM and wait; unhandled,
+   * Node dies mid-request — including a confirm that has captured money but
+   * not yet written the booking row, which is the one request this server must
+   * never drop. `server.close` stops accepting new connections and lets
+   * in-flight ones finish, then Redis is torn down last.
+   *
+   * The forced exit below is the backstop for a connection that never drains
+   * (an abandoned SSE or a stuck client): better a bounded 10 s than an
+   * orchestrator SIGKILL at its own, unknown timeout.
+   */
+  const shutdown = (signal: string) => {
+    console.log(`${signal} received, draining connections…`);
+    const force = setTimeout(() => {
+      console.error('Drain timed out, exiting.');
+      process.exit(1);
+    }, 10_000);
+    force.unref();
+
+    server.close(async () => {
+      try {
+        await redis.destroy();
+        console.log('🔌 Redis disconnected');
+      } catch {
+        // Already down — nothing left to release.
+      }
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }

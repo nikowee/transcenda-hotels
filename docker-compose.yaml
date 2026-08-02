@@ -4,6 +4,10 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+      # The dev stage: full dependencies (tsx included) so the watcher command
+      # below works. Plain `docker build` without a target produces the
+      # production runtime stage instead.
+      target: dev
     ports:
       - "5000:5000"            # Maps your local desktop port 5000 directly to container port 5000
     volumes:
@@ -22,6 +26,9 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
+      # The dev stage: Vite dev server with full dependencies. Plain
+      # `docker build` produces the nginx production stage instead.
+      target: dev
     ports:
       - "3000:3000"            # Maps your local desktop port 3000 directly to container port 3000
     volumes:

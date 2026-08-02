@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "npx tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && rm -rf dist/data && cp -r src/data dist/data",
     "type-check": "tsc --noEmit",
     "test": "mocha --exit -r tsx src/tests/**/*.test.ts",
     "test:watch": "mocha --exit -r tsx --watch src/tests/**/*.test.ts",

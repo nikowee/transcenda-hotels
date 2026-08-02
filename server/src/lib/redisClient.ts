@@ -85,9 +85,7 @@ void redis.connect().catch((err: unknown) => {
 /** True only when a command will actually succeed. Callers must check. */
 export const isCacheReady = (): boolean => redis.isReady;
 
-// Shutdown
-process.on('SIGINT', async () => {
-    try { await redis.destroy(); } catch {}
-    console.log('🔌 Redis disconnected');
-    process.exit(0);
-});
+// Shutdown lives in index.ts, not here: it must close the HTTP listener and
+// drain in-flight requests *before* tearing Redis down, and only the entry
+// point holds the server handle. A second signal handler in this module would
+// race that drain and exit mid-request.
