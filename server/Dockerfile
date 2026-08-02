@@ -1,5 +1,6 @@
-# Initialize from our lightweight Linux environment
-FROM node:22-alpine
+# Exact tag, not a floating one: the toolchain expects node >=22.22, and a
+# floating node:22 tag makes the build depend on whatever 22.x it points at today.
+FROM node:22.22-alpine
 
 WORKDIR /app
 

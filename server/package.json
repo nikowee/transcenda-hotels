@@ -35,7 +35,7 @@
     "@types/node": "^26.1.1",
     "@types/supertest": "^7.2.1",
     "chai": "^6.2.2",
-    "mocha": "^11.7.6",
+    "mocha": "12.0.0-rc.5",
     "nock": "^14.0.16",
     "supertest": "^7.2.2",
     "tsx": "^4.23.1",
@@ -43,8 +43,7 @@
   },
   "overrides": {
     "diff": "^8.0.3",
-    "serialize-javascript": "^7.0.7",
-    "brace-expansion": "^5.0.8"
+    "serialize-javascript": "^7.0.7"
   },
   "allowScripts": {
     "esbuild@0.28.1": true
