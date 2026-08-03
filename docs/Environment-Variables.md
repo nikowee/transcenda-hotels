@@ -28,6 +28,14 @@ The backend requires a `.env` file located at `server/.env`. Below is the comple
 | `REDIS_STARTUP_RETRIES` | ❌ No | Connection attempts before giving up on a Redis that never came up (default 5). The cache is optional; search works without it | `5` |
 | `WEBHOOK_TARGET` | ❌ No | Where `npm run stripe:send` delivers its signed test event (default `http://localhost:PORT`). Dev tooling only — the server never reads it | `https://tunnel.example.com` |
 
+### CI-only secrets (GitHub repository secrets — never read by server code)
+
+| Secret | Used by | Description |
+|--------|---------|-------------|
+| `SUPABASE_ACCESS_TOKEN` | `migrate` CI job | Personal access token for the Supabase CLI (`supabase.com/dashboard/account/tokens`) |
+| `SUPABASE_PROJECT_REF` | `migrate` CI job | The project ref — the subdomain of `SUPABASE_URL` (`<ref>.supabase.co`) |
+| `SUPABASE_DB_PASSWORD` | `migrate` CI job | Database password (dashboard → Project Settings → Database). `supabase db push` connects to Postgres directly with it — the only way DDL reaches this project, since PostgREST exposes none |
+
 ---
 
 ## 🔍 Variable Explanations
