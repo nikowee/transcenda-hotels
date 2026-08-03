@@ -2,6 +2,10 @@
 --
 -- This mirrors what is deployed in Supabase. The application is written to
 -- match it; if you change a column here, change bookingModel.ts with it.
+--
+-- Pending changes are NOT edited here — they are timestamped files in
+-- supabase/migrations/, applied with `supabase db push` (see
+-- migrations/README.md in this directory). Update this mirror after they land.
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- profiles — one row per authenticated user, keyed to Supabase auth.

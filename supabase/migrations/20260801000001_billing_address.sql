@@ -10,7 +10,8 @@
 -- charge that cannot be recorded at all. Validation belongs at the form, where
 -- rejecting costs a re-submit rather than an orphaned payment.
 --
--- Run in: Supabase Dashboard → SQL Editor → New query
+-- Applied by `supabase db push` (see supabase/migrations layout); still safe to
+-- paste into the dashboard SQL editor by hand.
 
 alter table public.bookings add column if not exists billing_line1       text;
 alter table public.bookings add column if not exists billing_line2       text;

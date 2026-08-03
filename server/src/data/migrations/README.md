@@ -1,40 +1,48 @@
-# Migrations — what to run, in what order, and what happens after
+# Migrations moved → `supabase/migrations/`
 
-There is no migration runner and PostgREST cannot issue DDL, so these are
-applied by a human: **Supabase Dashboard → SQL Editor → New query**, paste,
-run. `schema.sql` (one directory up) describes the schema as deployed; these
-files are the pending changes to it.
+The SQL now lives in the Supabase CLI's convention (timestamp-prefixed, applied
+in order, tracked remotely), so applying it is one command instead of three
+dashboard pastes:
 
-Status is verifiable without the dashboard — the server's own probe answers
-42703 for a missing column, and the queries at the bottom of each file confirm
-success.
+```bash
+npx supabase@latest login                       # or set SUPABASE_ACCESS_TOKEN
+npx supabase@latest link --project-ref <ref>    # <ref> = subdomain of SUPABASE_URL
+npx supabase@latest db push                     # prompts for the DB password
+```
 
-## Order and effect
+CI can do the same: the `migrate` job in `.github/workflows/ci.yml` is
+`workflow_dispatch`-only (schema changes must never auto-apply on push) and
+reads `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_REF`
+from repository secrets.
 
-| # | File | Risk | What it unblocks |
-|---|------|------|------------------|
-| 1 | `001_billing_address.sql` | None — additive, idempotent, all columns nullable | The billing address actually persists. Then flip the code sites tagged `BILLING-PENDING-MIGRATION` (grep the token: `bookingModel.toRow` writes, `schema.sql` columns, three `it.skip` tests) → suite goes 372+3 pending → **375+0** |
-| 2 | `002_unique_payment_id.sql` | **Deletes rows** — run its step 1 (inspect) alone first, then step 2 inside the provided transaction | Cross-process duplicate protection. `bookingModel`'s 23505 handler is already written and inert until this constraint exists. **This is the gate for running more than one server instance.** |
-| 3 | `003_hardening.sql` | None — idempotent | RLS (the browser's anon key currently has direct PostgREST read access to `bookings`/`profiles`), the two lookup indexes, the date-order check |
+The files also remain valid to paste into the dashboard SQL editor by hand —
+every one is idempotent, including 002's destructive step, which is guarded on
+the constraint it creates.
 
-## Why each is manual
+## What is pending, and what each unlocks
 
-- The app talks to Postgres only through PostgREST, which exposes CRUD and
-  deliberately no DDL; no `.rpc()` functions exist either.
-- 002 destroys data by design (existing duplicates must go before a unique
-  constraint can exist) — exactly the migration that should never run
-  unattended. Its dangerous half ships fully commented-out so pasting the
-  whole file does nothing.
+| Migration | What it unlocks |
+|---|---|
+| `..._billing_address.sql` | The billing address persists. Then flip the code sites tagged `BILLING-PENDING-MIGRATION` (grep the token) → suite goes 375+3 pending → 378+0 |
+| `..._unique_payment_id.sql` | Cross-process duplicate protection — **the gate for running more than one server instance**. Deletes true duplicate rows (keeping the earliest, the id the guest was shown) before adding the constraint; preview with the inspect query in the file header |
+| `..._hardening.sql` | RLS (the anon key in every browser bundle currently has direct PostgREST read access to `bookings`/`profiles`), the two lookup indexes, the date-order check |
 
-## After applying, prove it
+## Prove it applied
 
 ```sql
--- 001: six rows expected
+-- billing columns: six rows expected
 select column_name from information_schema.columns
 where table_name = 'bookings' and column_name like 'billing_%';
 
--- 002: exactly one row
+-- unique payment: exactly one row
 select conname from pg_constraint where conname = 'bookings_payment_id_key';
 
--- 003: see the Verify block at the bottom of the file
+-- RLS: both rows true
+select relname, relrowsecurity from pg_class
+where relname in ('bookings', 'profiles');
 ```
+
+`schema.sql` (one directory up) still describes the deployed schema; PostgREST
+cannot run DDL and no `.rpc()` functions exist, which is why migrations go
+through the CLI's direct Postgres connection rather than any code path in this
+server.

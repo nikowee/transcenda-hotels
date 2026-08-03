@@ -21,7 +21,8 @@
 --              already refuses end_date <= start_date; the constraint is for
 --              whatever writes rows without going through it.
 --
--- Run in: Supabase Dashboard → SQL Editor → New query
+-- Applied by `supabase db push` (see supabase/migrations layout); still safe to
+-- paste into the dashboard SQL editor by hand.
 
 alter table public.bookings enable row level security;
 alter table public.profiles enable row level security;

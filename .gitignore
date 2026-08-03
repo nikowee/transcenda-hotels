@@ -44,3 +44,5 @@ Thumbs.db
 coverage/
 e2e_testing/playwright-report/
 e2e_testing/test-results/
+# Supabase CLI link/scratch state — machine-local, holds the project ref
+supabase/.temp/
