@@ -16,7 +16,7 @@ export type {
 
 /**
  * BookingModel — the «Database Model» box from the UC4 class diagram, written
- * against the deployed schema in ../data/schema.sql.
+ * against the deployed Supabase `bookings` table.
  *
  * The table has payment_id and price_paid NOT NULL and no status column, so a
  * booking cannot be represented before it is paid for. insertOne is therefore
@@ -25,8 +25,8 @@ export type {
  *
  * The cost of that is stated plainly: if this insert fails, the customer has
  * been charged and no row exists. findByPaymentId plus the webhook retry are
- * the recovery path — see webhookController. Adding a unique constraint on
- * payment_id (see schema.sql) is what would make that recovery airtight.
+ * the recovery path — see webhookController. A unique constraint on
+ * payment_id is what would make that recovery airtight.
  */
 
 const TABLE = 'bookings';
@@ -67,28 +67,12 @@ const toRow = (input: BookingInput) => ({
   guest_email: input.guest.email,
   guest_phone: input.guest.phone,
   /**
-   * BILLING-PENDING-MIGRATION — grep this token to restore. See
-   * ../data/migrations/001_billing_address.sql.
-   *
-   * The six billing_* columns are not on the deployed table yet. PostgREST
-   * rejects an insert wholesale if any column in it is unknown, so leaving these
-   * in does not merely fail to store the address — it fails the entire booking,
-   * after the charge has already been captured. That is the worst possible place
-   * to discover a schema gap, and it is what the two e2e failures are.
-   *
-   * Commented out rather than deleted because nothing else about the billing
-   * address changes: the form still collects it, validateBillingAddress still
-   * enforces it, and it still travels to Stripe in the PaymentIntent's
-   * billing_details for the AVS check. Only the write to our own table is
-   * suspended. Uncomment once the migration is applied.
+   * No billing_* columns are written: the deployed table does not have them,
+   * and PostgREST rejects an insert wholesale if any column in it is unknown —
+   * which would fail the entire booking after the charge has already been
+   * captured. The address still travels to Stripe in the PaymentIntent's
+   * billing_details for the AVS check, which is where it is used.
    */
-  // billing_line1: input.billing?.line1 ?? null,
-  // billing_line2: input.billing?.line2 ?? null,
-  // billing_city: input.billing?.city ?? null,
-  // billing_state: input.billing?.state ?? null,
-  // billing_postal_code: input.billing?.postalCode ?? null,
-  // // character(2) — normalised on write so the stored code is always comparable.
-  // billing_country: input.billing?.country ? input.billing.country.toUpperCase().slice(0, 2) : null,
   price_paid: input.pricePaid,
   payment_id: input.paymentId,
   payee_id: input.payeeId,
@@ -121,13 +105,10 @@ const fromRow = (row: BookingRow): BookingRecord => ({
     specialRequests: row.special_requests,
   },
   /**
-   * BILLING-PENDING-MIGRATION — this read needs no change and is left alone.
-   *
-   * A column that does not exist is simply absent from a `select('*')` response,
-   * so row.billing_line1 is undefined and this resolves to null — the same
-   * answer it already gives for a booking written before the columns existed.
-   * Commenting it out too would mean two places to restore and would break
-   * reads the moment the migration lands.
+   * Tolerant read: a column that does not exist is simply absent from a
+   * `select('*')` response, so row.billing_line1 is undefined and this
+   * resolves to null — the deployed table has no billing_* columns, and the
+   * same answer covers any booking written before such columns exist.
    */
   billing: row.billing_line1
     ? {
@@ -184,9 +165,9 @@ const writesInFlight = new Map<string, Promise<BookingRecord>>();
  *   2. findByPaymentId answers cheaply for a confirmation that arrives after
  *      an earlier one has already completed and left the map.
  *   3. A 23505 from Postgres catches a writer in *another* process — a second
- *      replica, or a restart mid-flight. That one needs the unique constraint
- *      in migrations/002_unique_payment_id.sql to exist; until it does, layer 3
- *      has nothing to catch and layers 1 and 2 are load-bearing.
+ *      replica, or a restart mid-flight. That one needs a unique constraint
+ *      on payment_id, which the deployed table does not have yet; until it
+ *      does, layer 3 has nothing to catch and layers 1 and 2 are load-bearing.
  *
  * `onCreated` fires for the caller that actually wrote the row, and for nobody
  * else. Deduplicating the *write* is not enough on its own: two concurrent
@@ -272,9 +253,9 @@ const performWrite = async (
    * the guest ends up with two rows for one charge. Losing that race is the
    * correct outcome, not an error: return whatever the winner wrote.
    *
-   * This only bites once `bookings_payment_id_key` exists — see
-   * ../data/migrations/002_unique_payment_id.sql. Without the constraint
-   * Postgres accepts both rows and there is nothing here to catch.
+   * This only bites once a unique constraint on payment_id exists in the
+   * database. Without it Postgres accepts both rows and there is nothing
+   * here to catch.
    */
   if (error) {
     if (error.code === '23505') {

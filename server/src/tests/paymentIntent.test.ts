@@ -985,61 +985,14 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
   });
 
   /**
-   * The billing address has to survive the same round trip the guest does: out
-   * to Stripe as metadata, back on the return leg, into the row. Nothing is
-   * persisted before payment, so if it does not travel it is simply lost, and a
-   * booking that was authorised against an address would have none recorded.
+   * The billing address has to travel out to Stripe with the intent. Nothing
+   * else stores it, so if it does not travel it is simply lost, and a booking
+   * that was authorised against an address would have none recorded.
    */
   describe('billing address round trip', () => {
     /**
-     * BILLING-PENDING-MIGRATION — the next three are pending, not broken.
-     *
-     * bookingModel.toRow has the six billing_* writes commented out because the
-     * columns are not on the deployed table, so nothing reaches the row to be
-     * read back. Skipped rather than deleted or rewritten to expect null: these
-     * assert the behaviour the schema is supposed to have, and rewriting them to
-     * match the gap would mean the migration lands to a green suite that no
-     * longer checks anything. Un-skip together with the writes.
-     *
-     * What is not suspended is covered below and still runs: the address is
-     * validated, refused when absent, and handed to Stripe for the AVS check.
-     */
-    it.skip('carries the address out and writes it to the booking', async () => {
-      const booking = await bookViaIntent();
-
-      expect(booking.billing).to.deep.equal({
-        line1: '10 Bayfront Avenue',
-        line2: '#12-34',
-        city: 'Singapore',
-        state: null,
-        postalCode: '018956',
-        country: 'SG',
-      });
-    });
-
-    it.skip('upper-cases the country and postal code on the way in', async () => {
-      // billing_country is character(2); normalising on write keeps the stored
-      // code comparable however the customer typed it.
-      const booking = await bookViaIntent({
-        billingAddress: { ...VALID_BILLING, country: 'sg', postalCode: 'sw1a 1aa' },
-      });
-
-      expect(booking.billing?.country).to.equal('SG');
-      expect(booking.billing?.postalCode).to.equal('SW1A 1AA');
-    });
-
-    it.skip('stores an omitted line2 and state as null, not empty strings', async () => {
-      const booking = await bookViaIntent({
-        billingAddress: { ...VALID_BILLING, line2: '', state: '' },
-      });
-
-      expect(booking.billing?.line2).to.equal(null);
-      expect(booking.billing?.state).to.equal(null);
-    });
-
-    /**
-     * While BILLING-PENDING-MIGRATION holds, the Stripe object is the only place
-     * the address is recorded anywhere, so "it reaches Stripe" stops being a
+     * The Stripe object is the only place the address is recorded anywhere —
+     * our own table stores none of it — so "it reaches Stripe" stops being a
      * nicety and becomes the whole of its persistence.
      *
      * Asserted on the wire because that is the only layer that can show it. The

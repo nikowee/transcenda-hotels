@@ -1,8 +1,8 @@
 /**
  * Shared shapes for UC4 — Book & Make Payment.
  *
- * Mirrors server/src/models/bookingTypes.ts, which is itself derived from
- * server/src/data/schema.sql. If a column moves there, it moves here.
+ * Mirrors server/src/models/bookingTypes.ts, which itself mirrors the
+ * deployed Supabase schema. If a column moves there, it moves here.
  */
 
 /**

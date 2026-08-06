@@ -377,8 +377,8 @@ export interface PaymentIntentInput {
    * change to PaymentPage, not to this call.
    *
    * `shipping` is still worth sending: it puts the address on the Stripe object
-   * where Radar can score it and support can read it, and while
-   * BILLING-PENDING-MIGRATION holds it is the only copy that exists anywhere.
+   * where Radar can score it and support can read it — and since our own table
+   * stores no address, it is the only copy that exists anywhere.
    */
   billing?: {
     name: string;

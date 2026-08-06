@@ -1,7 +1,0 @@
-# Supabase CLI configuration.
-#
-# Only what `supabase db push` needs. project_id names the *local* project for
-# the CLI; the remote target comes from `supabase link --project-ref <ref>`,
-# where <ref> is the subdomain of SUPABASE_URL (<ref>.supabase.co). The link
-# state lands in supabase/.temp/, which is gitignored.
-project_id = "transcenda-hotels"

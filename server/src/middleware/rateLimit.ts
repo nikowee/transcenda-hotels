@@ -10,9 +10,9 @@ import { type Request, type Response, type NextFunction } from 'express';
  *
  * Scaling past one instance is gated on exactly two things, and this map is
  * the lesser of them:
- *   1. migrations/002_unique_payment_id.sql — without that constraint,
- *      duplicate-booking protection is bookingModel's in-process lock, which
- *      a second replica silently defeats. Money-correctness, fix first.
+ *   1. A unique constraint on bookings.payment_id in the database — without
+ *      it, duplicate-booking protection is bookingModel's in-process lock,
+ *      which a second replica silently defeats. Money-correctness, fix first.
  *   2. This store — N replicas make every limit effectively N× its configured
  *      value. Degraded protection, not corruption; fix second.
  */

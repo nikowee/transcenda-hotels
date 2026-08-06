@@ -126,9 +126,9 @@ describe('bookingModel', () => {
 
     /**
      * The single most important property in this file. A retried /confirm and a
-     * redelivered webhook both land here with the same payment_id, and there is
-     * no unique constraint on the column yet (see schema.sql), so this read-then
-     * -write is the only thing stopping one charge becoming two bookings.
+     * redelivered webhook both land here with the same payment_id, and the
+     * database has no unique constraint on the column, so this read-then-write
+     * is the only thing stopping one charge becoming two bookings.
      */
     it('returns the existing booking instead of writing the same charge twice', async () => {
       const input = bookingInput();

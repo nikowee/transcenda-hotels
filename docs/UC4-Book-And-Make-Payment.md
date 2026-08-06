@@ -58,8 +58,8 @@ Two defects in the original diagrams are also corrected:
 
 This is the change that matters most, and everything below follows from it.
 
-[`server/src/data/schema.sql`](../server/src/data/schema.sql) declares `bookings`
-with `payment_id` and `price_paid` **`NOT NULL`** and **no status column**. A row
+The deployed `bookings` table declares
+`payment_id` and `price_paid` **`NOT NULL`** and **no status column**. A row
 in that table cannot describe a booking that has not been paid for — there is no
 value to put in `payment_id`, and no state to mark it with. So the order reverses:
 
@@ -116,12 +116,8 @@ null before either writes. The deployed schema has **no unique constraint on
 `payment_id`**, so nothing at the database level stops the second insert. The
 observable result is two paid bookings for one charge.
 
-`schema.sql` carries the fix as a one-liner:
-
-```sql
-alter table public.bookings
-  add constraint bookings_payment_id_key unique (payment_id);
-```
+The fix is a one-line constraint, applied in the Supabase dashboard: a unique
+index on `bookings.payment_id`.
 
 **This is the single highest-value change to make to this system.** It converts the
 race from "duplicate row" into "insert fails, caller reads the winner", and it is
@@ -301,7 +297,7 @@ so a malformed one still surfaces as a constraint violation *after* the card is
 charged rather than before — the gap the arrow implied was closed.
 
 **`bookings.user_id` is still `ON DELETE CASCADE` onto `profiles`.** The table and
-the constraint are real — see `schema.sql` — which is why the annotation sits on
+the constraint are real in the deployed schema, which is why the annotation sits on
 the field rather than on a class. Deleting an account deletes its bookings, which
 is discussed under [Data model](#data-model) and is not obviously what anyone
 wants.
@@ -507,7 +503,7 @@ Verified by exercising the running API, and held by the test suites named in
 | Missing credentials cannot silently pass | Payment endpoints 503 unless `PAYMENTS_MODE=simulate`; production refuses to boot without `STRIPE_SECRET_KEY` |
 | Webhooks cannot be spoofed | `constructWebhookEvent` signature verification, mounted on `express.raw` before the JSON parser |
 | A captured charge is not silently lost | The webhook inserts when `findByPaymentId` returns null — recovery, and only for as long as Stripe retries |
-| Confirmation is *mostly* idempotent | `insertOne` short-circuits on `findByPaymentId`. Read-then-write: it narrows the duplicate window, it does not close it. See the unique constraint in `schema.sql` |
+| Confirmation is *mostly* idempotent | `insertOne` short-circuits on `findByPaymentId`. Read-then-write: it narrows the duplicate window, it does not close it; a unique constraint on `payment_id` is what closes it |
 | Unknown rooms are not priced | `ROOM_RATES` lookup; an unknown room type returns 400 |
 | Card testing is throttled | 10 requests/min per IP on `/payment`, 30/min on lookup |
 | Errors leak nothing | Stripe messages mapped to an allowlist; storage faults return a correlation ID and log the cause |
@@ -520,8 +516,8 @@ would be the most misleading thing in this document.
 
 ### Still open
 
-- **`payment_id` has no unique constraint.** One `alter table`, already written out
-  in `schema.sql`. Highest-value change available; everything about duplicate
+- **`payment_id` has no unique constraint.** One `alter table` in the Supabase
+  dashboard. Highest-value change available; everything about duplicate
   bookings depends on it.
 - **Refunds cannot be recorded.** A refunded booking reads as paid. Needs
   `refunded_at` and `refund_id`.
@@ -551,9 +547,9 @@ would be the most misleading thing in this document.
   [`middleware/auth.ts`](../server/src/middleware/auth.ts).
 - **No row-level security.** Writes go through the service role from the Express
   gateway, so enabling RLS with no public policy costs nothing and closes direct
-  client access to other people's bookings. Statements are in `schema.sql`.
+  client access to other people's bookings.
 - **No index on `user_id` or `guest_email`.** Fine at current volume, not fine for
-  "my bookings" at scale. Also in `schema.sql`.
+  "my bookings" at scale.
 - **`ROOM_RATES` is a placeholder.** `AscendaService.searchHotels` on
   `feature/search-results` is the real source — `MergedHotel.price`. Wire it into
   `buildQuote()` once that branch merges.
@@ -571,12 +567,11 @@ would be the most misleading thing in this document.
 
 ## Data model
 
-DDL lives at [`server/src/data/schema.sql`](../server/src/data/schema.sql), which is
-the source of truth for both tables and carries the recommended-but-unapplied
-migrations at the bottom. The TypeScript mirror is
+The deployed Supabase schema is the source of truth for both tables. Its
+TypeScript mirror is
 [`server/src/models/bookingTypes.ts`](../server/src/models/bookingTypes.ts); the
 client's copy is [`client/src/types/booking.ts`](../client/src/types/booking.ts). A
-column change starts in the SQL and propagates outward in that order.
+column change starts in the database and propagates outward in that order.
 
 ### `bookings`
 

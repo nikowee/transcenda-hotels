@@ -1,9 +1,9 @@
 # Deployment — AWS (compute) + Supabase (database)
 
 The repo is deployment-ready as of the UC4 branch: images that build and start
-themselves, a compiled server that has actually been executed, migrations as
-code, graceful shutdown, and a CI pipeline. This page is the order of
-operations for standing it up.
+themselves, a compiled server that has actually been executed, graceful
+shutdown, and a CI pipeline. This page is the order of operations for standing
+it up.
 
 ## The shape
 
@@ -20,25 +20,22 @@ Long-lived containers, not Lambda: the server holds an 8 MB destinations
 dataset and its Fuse index in memory (paid once at boot), and the Stripe
 webhook needs raw request bytes — both fit a warm task and fight a cold start.
 
-## 1. Database first: apply the migrations
+## 1. Database first: the schema prerequisites
 
-One command (or the CI `migrate` job — workflow_dispatch, three repo secrets):
+Schema changes are applied in the Supabase dashboard, outside this repo. Three
+things are worth having in place before real traffic:
 
-```bash
-npx supabase@latest login
-npx supabase@latest link --project-ref <ref>   # subdomain of SUPABASE_URL
-npx supabase@latest db push
-```
+- a **unique constraint on `bookings.payment_id`** — see the scale rule below
+- **Row Level Security** on `bookings` and `profiles` (no public policy) — the
+  publishable key baked into every browser bundle can otherwise read both
+  tables directly over PostgREST, bypassing the API entirely
+- lookup **indexes** on `bookings.user_id` and `bookings.guest_email`
 
-This lands billing-address columns, the `bookings_payment_id_key` unique
-constraint, RLS + indexes. Then flip the `BILLING-PENDING-MIGRATION` code
-sites (grep the token) so the address persists and the 3 pending tests run.
-
-**Why it matters for scale:** until the unique constraint exists, duplicate-
-booking protection is an in-process lock — the comment in
-`server/src/middleware/rateLimit.ts` names the two multi-instance gates. After
-`db push`, gate 1 (money-correctness) is closed; only the shared rate-limit
-store remains before desired-count > 1.
+**Why the constraint matters for scale:** until it exists, duplicate-booking
+protection is an in-process lock — the comment in
+`server/src/middleware/rateLimit.ts` names the two multi-instance gates. With
+the constraint in place, gate 1 (money-correctness) is closed; only the shared
+rate-limit store remains before desired-count > 1.
 
 ## 2. Server image → ECR → ECS
 
@@ -103,7 +100,7 @@ encoded in the repo:
 | Desired count | Requirement |
 |---|---|
 | 1 | Nothing beyond the above |
-| > 1 | Migration 002 applied (done in step 1) **and** a shared rate-limit store — the in-memory buckets make every limit N× at N tasks. Auth-token cache staying per-task is fine (hit-rate only) |
+| > 1 | The unique `payment_id` constraint in place (step 1) **and** a shared rate-limit store — the in-memory buckets make every limit N× at N tasks. Auth-token cache staying per-task is fine (hit-rate only) |
 
 ## 6. Smoke checklist after first deploy
 
@@ -117,7 +114,6 @@ encoded in the repo:
 
 ## Related
 
-- `server/src/data/migrations/README.md` — migration flow and verification SQL
-- `docs/Environment-Variables.md` — every variable and the CI-only secrets
-- `docs/Testing.md` — what green looks like (server 375+3 → 378 after step 1,
+- `docs/Environment-Variables.md` — every variable the server and client read
+- `docs/Testing.md` — what green looks like (server 375,
   client 166, E2E 22)

@@ -19,7 +19,7 @@ This page documents the complete testing suite for Transcenda Hotels, covering a
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │  Backend (375 tests, +3 pending)    │
+                    │       Backend (375 tests)           │
                     │  Mocha + Chai + Supertest; nock     │
                     │  fakes Stripe and Ascenda at the    │
                     │  socket, network blocked outright   │
@@ -34,8 +34,7 @@ This page documents the complete testing suite for Transcenda Hotels, covering a
 
 Counts are per test runner because that is what a runner reports and what a
 red build shows; the earlier unit/integration/contract split was drifting
-every time a suite grew. The 3 pending are the `BILLING-PENDING-MIGRATION`
-trio — they un-skip when `migrations/001_billing_address.sql` is applied.
+every time a suite grew.
 
 Both external dependencies are faked the same way and at the same layer — nock
 intercepts the socket, so the real Stripe SDK and the real axios client build
@@ -76,13 +75,6 @@ report, which excludes `src/tests/`.
 | `booking-flow.spec.ts` | 11 | Playwright | `e2e_testing/tests/` |
 | `search-*.spec.ts` | 5 | Playwright | `e2e_testing/tests/` |
 | **Total** | **462** | — | — |
-
-Plus **3 pending** — the billing-address storage round trip in
-`paymentIntent.test.ts`. They are skipped, not deleted: the six `billing_*`
-columns are not on the deployed table yet, so `bookingModel.toRow` has the
-matching writes commented out under the token `BILLING-PENDING-MIGRATION`.
-Grep that token, run `server/src/data/migrations/001_billing_address.sql`, and
-un-skip all four together.
 
 ---
 

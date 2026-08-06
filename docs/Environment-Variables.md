@@ -28,14 +28,6 @@ The backend requires a `.env` file located at `server/.env`. Below is the comple
 | `REDIS_STARTUP_RETRIES` | ❌ No | Connection attempts before giving up on a Redis that never came up (default 5). The cache is optional; search works without it | `5` |
 | `WEBHOOK_TARGET` | ❌ No | Where `npm run stripe:send` delivers its signed test event (default `http://localhost:PORT`). Dev tooling only — the server never reads it | `https://tunnel.example.com` |
 
-### CI-only secrets (GitHub repository secrets — never read by server code)
-
-| Secret | Used by | Description |
-|--------|---------|-------------|
-| `SUPABASE_ACCESS_TOKEN` | `migrate` CI job | Personal access token for the Supabase CLI (`supabase.com/dashboard/account/tokens`) |
-| `SUPABASE_PROJECT_REF` | `migrate` CI job | The project ref — the subdomain of `SUPABASE_URL` (`<ref>.supabase.co`) |
-| `SUPABASE_DB_PASSWORD` | `migrate` CI job | Database password (dashboard → Project Settings → Database). `supabase db push` connects to Postgres directly with it — the only way DDL reaches this project, since PostgREST exposes none |
-
 ---
 
 ## 🔍 Variable Explanations
@@ -50,7 +42,7 @@ The backend requires a `.env` file located at `server/.env`. Below is the comple
 
 - **What it is:** The Supabase **service role** key for server-side admin operations. This key bypasses Row-Level Security (RLS) and has full access to your database. It must **never** be exposed to the client side.
 - **Where to find it:** Supabase Dashboard → Your Project → **Settings** → **API** → **service_role** key.
-- **How it's used:** The server-side Supabase admin client uses this key for privileged operations like user management (e.g., `deleteUser`), database migrations, and admin-level queries.
+- **How it's used:** The server-side Supabase admin client uses this key for privileged operations like user management (e.g., `deleteUser`), token verification, and admin-level queries.
 - **⚠️ Security:** Never commit this key to version control. Only use it in the backend, never in client-side code.
 
 ### `STRIPE_SECRET_KEY`

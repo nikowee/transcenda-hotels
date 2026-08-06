@@ -555,8 +555,8 @@ describe('validateGuestDetails', () => {
 /**
  * Billing address validation.
  *
- * Required at the form because Stripe runs an AVS check against it, but the
- * columns are nullable — see schema.sql. That split is deliberate: a rejected
+ * Required at the form because Stripe runs an AVS check against it, with
+ * nothing enforced at the database layer. That split is deliberate: a rejected
  * form costs a re-submit, whereas a NOT NULL column would turn any gap in the
  * metadata round trip into a captured charge with nowhere to record it.
  */

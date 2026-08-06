@@ -190,7 +190,7 @@ describe('Stripe refunds (live SDK path via nock)', () => {
   /**
    * The reconciliation gap, pinned as a test rather than left as a comment.
    *
-   * schema.sql has no refund_id, no refunded_at and no status column, so a
+   * The bookings table has no refund_id, no refunded_at and no status column, so a
    * refunded stay goes on reading as fully paid in our database and Stripe is
    * the only system that knows otherwise. That is a deliberate, documented
    * limitation of the current schema — this asserts its exact shape so that

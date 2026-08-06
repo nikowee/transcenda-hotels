@@ -170,9 +170,9 @@ const COUNTRY_PATTERN = /^[A-Za-z]{2}$/;
  * Validates the billing address.
  *
  * Required at the form because Stripe runs AVS against it and a missing address
- * weakens that check, but the columns themselves are nullable — see schema.sql.
- * Rejecting here costs a re-submitted form; rejecting at insert time would cost
- * a captured charge with nowhere to record it.
+ * weakens that check; nothing at the database layer enforces it. Rejecting here
+ * costs a re-submitted form; rejecting at insert time would cost a captured
+ * charge with nowhere to record it.
  */
 export const validateBillingAddress = (
   body: Partial<BillingAddress> | undefined
@@ -1066,10 +1066,9 @@ export const postPaymentIntent = async (req: Request, res: Response): Promise<vo
        * intent, but this call site never passed it, so the parameter was dead
        * and every intent went out with no address on it at all.
        *
-       * It matters more while BILLING-PENDING-MIGRATION is in force: with the
-       * write to our own table suspended, the Stripe object is the only place
-       * the address is recorded, and an address sent nowhere would be one
-       * collected for nothing. Note this lands as `shipping`, not as the
+       * It matters because our own table stores no address: the Stripe object
+       * is the only place it is recorded, and an address sent nowhere would be
+       * one collected for nothing. Note this lands as `shipping`, not as the
        * billing_details an AVS check reads — see paymentService.
        */
       billing: {

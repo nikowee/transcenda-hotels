@@ -1,9 +1,9 @@
 /**
- * Canonical booking shapes, derived from server/src/data/schema.sql.
+ * Canonical booking shapes, mirroring the deployed Supabase `bookings` table.
  *
  * Split out from bookingModel so the controller, the webhook handler and the
  * tests can share one definition of the row without importing the storage
- * layer. If a column changes in schema.sql, it changes here first.
+ * layer. If a column changes in the database, it changes here first.
  *
  * Naming: camelCase everywhere in TypeScript, snake_case only at the SQL
  * boundary. bookingModel's toRow/fromRow are the only places both appear.
