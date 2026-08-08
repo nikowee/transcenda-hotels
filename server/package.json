@@ -8,7 +8,9 @@
     "build": "tsc",
     "type-check": "tsc --noEmit",
     "test": "mocha --exit -r tsx src/tests/**/*.test.ts",
-    "test:watch": "mocha --exit -r tsx --watch src/tests/**/*.test.ts"
+    "test:watch": "mocha --exit -r tsx --watch src/tests/**/*.test.ts --exclude 'tests/integration/**'",
+    "test:integration": "mocha --import tsx 'tests/integration/**/*.test.ts'",
+    "test:all": "mocha --import tsx 'tests/**/*.test.ts'"
   },
   "keywords": [],
   "author": "",
@@ -31,10 +33,12 @@
     "@types/mocha": "^10.0.10",
     "@types/nock": "^10.0.3",
     "@types/node": "^26.1.1",
+    "@types/sinon": "^22.0.0",
     "@types/supertest": "^7.2.1",
     "chai": "^6.2.2",
     "mocha": "^11.7.6",
     "nock": "^14.0.16",
+    "sinon": "^22.1.0",
     "supertest": "^7.2.2",
     "tsx": "^4.23.1",
     "typescript": "^6.0.3"
