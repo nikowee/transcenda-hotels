@@ -52,9 +52,13 @@ Task definition env:
 
 | Source | Variables |
 |---|---|
-| **Secrets Manager** | `SUPABASE_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, (`RESEND_API_KEY`) |
-| **Plain env** | `NODE_ENV=production`, `PORT=5000`, `SUPABASE_URL`, `APP_URL` (public frontend URL — Stripe return URLs build from it), `CORS_ORIGINS` (deployed frontend origin), `TRUST_PROXY_HOPS=1` (per ALB hop — see `.env.example` for why both directions of wrong are bad), `REDIS_URL` (ElastiCache), `EMAIL_FROM` |
+| **Secrets Manager** | `SUPABASE_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
+| **Plain env** | `NODE_ENV=production`, `PORT=5000`, `SUPABASE_URL`, `APP_URL` (public frontend URL — Stripe return URLs build from it), `CORS_ORIGINS` (deployed frontend origin), `REDIS_URL` (ElastiCache) |
 | **Leave unset** | `BOOKINGS_STORAGE` (memory = bookings vanish per task), `PAYMENTS_MODE` (ignored in production anyway) |
+
+Trust-proxy depth is fixed at 1 hop in `server/src/index.ts` (the single-ALB
+shape); change the literal there if the topology ever differs. Confirmation
+email is log-only — no mail provider is configured.
 
 Boot refusals are deliberate: with `NODE_ENV=production` and no
 `STRIPE_SECRET_KEY` the process exits rather than silently accepting every
@@ -108,7 +112,7 @@ encoded in the repo:
 - A search from the deployed frontend (CORS proves `CORS_ORIGINS`; results
   prove outbound to Ascenda; a repeat proves Redis if configured)
 - A full test-mode booking → confirmation page shows a booking id, exactly one
-  row in `bookings`, one confirmation email (or one log line if Resend unset)
+  row in `bookings`, one confirmation log line in the task logs
 - `stripe listen`/dashboard: webhook deliveries answering 200
 - Kill a task: draining, not 502s (SIGTERM handler)
 

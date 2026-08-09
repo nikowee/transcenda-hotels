@@ -66,7 +66,7 @@ export const signInRejectsOthers = (): void => {
 /**
  * Clears verified tokens between tests.
  *
- * The middleware caches a successful verification for AUTH_CACHE_MS, which
+ * The middleware caches a successful verification for its 60 s TTL, which
  * outlives a test — a token proven valid in one would stay valid in the next
  * even after its interceptor was removed, so a test could pass on a session it
  * never established. Call inside describe().

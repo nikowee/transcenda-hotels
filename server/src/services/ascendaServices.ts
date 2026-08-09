@@ -155,7 +155,7 @@ const constructImageUrls = (imageDetails: HotelDetails['image_details']): string
 
 // ── Public API functions ──
 
-const BASE_URL = process.env.ASC_BASE_API_URL || 'https://hotelapi.loyalty.dev/api';
+const BASE_URL = 'https://hotelapi.loyalty.dev/api';
 
 /**
  * Fetches room prices for a specific hotel, polling until the API returns completed.

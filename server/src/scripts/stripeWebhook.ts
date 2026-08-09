@@ -35,7 +35,7 @@ import Stripe from 'stripe';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = resolve(HERE, '../../.env');
 
-const API = process.env.WEBHOOK_TARGET ?? `http://localhost:${process.env.PORT ?? 5000}`;
+const API = `http://localhost:${process.env.PORT ?? 5000}`;
 const WEBHOOK_PATH = '/api/webhooks/stripe';
 
 // ── Secret generation ───────────────────────────────────────────────────────

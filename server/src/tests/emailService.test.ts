@@ -1,4 +1,4 @@
-import { describe, it, afterEach } from 'mocha';
+import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import nock from 'nock';
 import { sendConfirmation } from '../services/emailService.js';
@@ -130,77 +130,18 @@ describe('emailService', () => {
   });
 
   /**
-   * The live transport. Everything above ran with RESEND_API_KEY unset and
-   * therefore proved the log path; these prove the Resend path — including
-   * that a provider outage still cannot sink a paid booking.
-   *
-   * globalSetup blocks all outbound sockets, so a request that escapes these
-   * interceptors fails the test rather than reaching api.resend.com.
+   * The log path must be the only path: delivery that touched the network
+   * would leak bookings to a provider nobody opted into. globalSetup blocks
+   * outbound sockets outright, so an escaped request would fail loudly — this
+   * interceptor existing and staying unused is the affirmative proof.
    */
-  describe('with a Resend key configured', () => {
-    afterEach(() => {
-      delete process.env.RESEND_API_KEY;
-      delete process.env.EMAIL_FROM;
-      nock.cleanAll();
-    });
+  it('makes no HTTP request at all', async () => {
+    const scope = nock('https://api.resend.com').post('/emails').reply(200, { id: 'nope' });
 
-    const configure = () => {
-      process.env.RESEND_API_KEY = 're_test_key';
-      process.env.EMAIL_FROM = 'bookings@transcenda.example';
-    };
+    const { receipt } = await capture();
 
-    it('delivers through the API and returns the provider message id', async () => {
-      configure();
-
-      let sent: Record<string, unknown> | null = null;
-      const scope = nock('https://api.resend.com', {
-        reqheaders: { authorization: 'Bearer re_test_key' },
-      })
-        .post('/emails', (body) => {
-          sent = body;
-          return true;
-        })
-        .reply(200, { id: 'email_abc123' });
-
-      const receipt = await sendConfirmation('jane@example.com', BOOKING);
-
-      expect(scope.isDone()).to.equal(true);
-      expect(receipt.delivered).to.equal(true);
-      expect(receipt.messageId).to.equal('email_abc123');
-      // The same content the log path prints — booking id first among it.
-      expect(sent, 'request body was captured').to.not.equal(null);
-      const body = sent as unknown as { from: string; to: string[]; subject: string; text: string };
-      expect(body.from).to.equal('bookings@transcenda.example');
-      expect(body.to).to.deep.equal(['jane@example.com']);
-      expect(body.subject).to.contain(BOOKING.id);
-      expect(body.text).to.contain('The Fullerton Hotel Singapore');
-      expect(body.text).to.contain('SGD 1990.49');
-    });
-
-    it('reports a provider failure without rejecting', async () => {
-      configure();
-
-      nock('https://api.resend.com')
-        .post('/emails')
-        .reply(500, { message: 'internal error' });
-
-      const receipt = await sendConfirmation('jane@example.com', BOOKING).catch(() => null);
-
-      expect(receipt, 'must resolve, never reject').to.not.equal(null);
-      expect(receipt?.delivered).to.equal(false);
-      expect(receipt?.errorMessage).to.be.a('string');
-    });
-
-    it('makes no HTTP request at all when the key is absent', async () => {
-      // Deliberately NOT configured. A log-path delivery that still touched
-      // the network would leak bookings to a provider nobody opted into.
-      const scope = nock('https://api.resend.com').post('/emails').reply(200, { id: 'nope' });
-
-      const { receipt } = await capture();
-
-      expect(receipt.delivered).to.equal(true);
-      expect(receipt.messageId).to.contain('log_');
-      expect(scope.isDone(), 'no request may reach the API').to.equal(false);
-    });
+    expect(receipt.delivered).to.equal(true);
+    expect(receipt.messageId).to.contain('log_');
+    expect(scope.isDone(), 'no request may leave the process').to.equal(false);
   });
 });
