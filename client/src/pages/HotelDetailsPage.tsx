@@ -257,7 +257,7 @@ export default function HotelDetailPage() {
                             Checking live room rates…
                         </div>
                     ) : (
-                        <RoomList rooms={rooms} />
+                        <RoomList rooms={rooms} hotelName={hotel.name} />
                     )}
                 </section>
             </div>

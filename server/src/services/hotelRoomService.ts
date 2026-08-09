@@ -25,10 +25,7 @@ import axios from 'axios';
  * shadow a real room with a cheaper fake one.
  */
 
-const HOTEL_API_BASE = (process.env.HOTEL_API_URL ?? 'https://hotelapi.loyalty.dev/api').replace(
-  /\/+$/,
-  ''
-);
+const HOTEL_API_BASE = 'https://hotelapi.loyalty.dev/api';
 
 /**
  * Required on every priced Ascenda request — they select the white-label
@@ -47,6 +44,10 @@ const PARTNER_PARAMS = {
  * The price endpoint answers immediately with `completed: false` and an empty
  * room list while it fans out to suppliers, so the first response is almost
  * never the answer. Poll until it settles.
+ *
+ * The env reads are test plumbing, not configuration: tests/env.ts shrinks
+ * them so polls resolve against nock interceptors instantly instead of
+ * sleeping 1200 ms × 8. Nothing else sets them.
  */
 const POLL_INTERVAL_MS = Number(process.env.HOTEL_API_POLL_MS ?? 1200);
 const MAX_POLLS = Number(process.env.HOTEL_API_MAX_POLLS ?? 8);
@@ -60,7 +61,7 @@ const REQUEST_TIMEOUT_MS = 8_000;
  * is what makes those three reads return the same number. It is a correctness
  * mechanism first and a latency one second.
  */
-const CACHE_TTL_MS = Number(process.env.HOTEL_API_CACHE_MS ?? 30 * 60 * 1000);
+const CACHE_TTL_MS = 30 * 60 * 1000;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 

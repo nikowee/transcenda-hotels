@@ -72,8 +72,9 @@ if (isSimulated()) {
  * hangs rather than failing. The fetch client has no such handshake and nock
  * intercepts it cleanly.
  *
- * Set STRIPE_HTTP_CLIENT=fetch to swap. Tests do; production leaves it unset
- * and keeps the default keep-alive agent.
+ * STRIPE_HTTP_CLIENT is test plumbing, not configuration: tests/env.ts sets it
+ * to 'fetch' so nock can intercept. Nothing else sets it, and production keeps
+ * the default keep-alive agent.
  */
 const httpClient =
   process.env.STRIPE_HTTP_CLIENT === 'fetch'

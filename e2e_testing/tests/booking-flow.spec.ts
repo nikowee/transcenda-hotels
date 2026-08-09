@@ -37,7 +37,7 @@ const CHECKOUT_URL =
  */
 const ROOM_LIST_HANDOFF =
   '/booking?hotel=marina-bay&dest=dest-1&in=2026-08-15&out=2026-08-20' +
-  '&guests=2&key=deluxe-king';
+  '&guests=2&key=deluxe-king&name=Marina%20Bay%20Sands';
 
 /** A well-formed UUID that no booking will ever have. */
 const ABSENT_BOOKING_ID = '00000000-0000-4000-8000-000000000000';
@@ -173,7 +173,9 @@ test.describe('Booking Flow', () => {
     // Priced by the server for a second time, from the same stay. A figure the
     // browser carried over would still read correctly here — this only holds
     // because nothing priced was in the handoff to carry.
-    await expect(page.getByText('SGD 1,308.00', { exact: true })).toBeVisible();
+    await expect(
+      page.getByLabel('Booking summary').getByText('SGD 1,308.00', { exact: true })
+    ).toBeVisible();
 
     // ─── 6. Pay with a card typed into the demo form ────────
     const cardField = page.locator('#demo-card-number');
@@ -382,9 +384,11 @@ test.describe('Booking Flow', () => {
     });
     expect(apiPosts.filter((post) => post.path.startsWith('/api/bookings'))).toHaveLength(0);
 
-    // Escapable without the back button.
-    await page.getByRole('link', { name: /back to details/i }).first().click();
-    await expect(page).toHaveURL(/.*\/checkout/);
+    // Escapable without the back button — and honestly: with no handoff there
+    // are no details to go back to, so the page offers search instead of a
+    // /checkout that could only answer "this link is missing everything".
+    await page.getByRole('link', { name: /back to search/i }).first().click();
+    await expect(page).toHaveURL(/\/$/);
   });
 
   test('A cancelled payment says so and charges nothing', async ({ page }) => {
@@ -420,5 +424,53 @@ test.describe('Booking Flow', () => {
       timeout: 15000,
     });
     await expect(page.getByRole('button', { name: /pay sgd/i })).toHaveCount(0);
+  });
+
+  test('Back button from review step repopulates the guest form', async ({ page }) => {
+    // A guest who spots a typo on the review step clicks Back and expects to
+    // see their details pre-filled — not an empty form. This broke before:
+    // the handoff was written but never read back on re-mount.
+    await page.goto(CHECKOUT_URL);
+    await fillGuestDetails(page);
+    await page.getByRole('button', { name: /continue to payment/i }).click();
+
+    // Now on review step — confirm the details are shown.
+    await expect(page.getByText('Dr Jane Tan')).toBeVisible();
+    await expect(page.getByRole('button', { name: /pay sgd/i })).toBeVisible();
+
+    // Go back.
+    await page.getByRole('button', { name: /^back$/i }).click();
+
+    // Should be back on step 1 with all fields repopulated.
+    await expect(
+      page.getByRole('button', { name: /continue to payment/i })
+    ).toBeVisible();
+
+    // Core fields should be retained.
+    await expect(page.getByPlaceholder('you@example.com')).toHaveValue('jane@example.com');
+    await expect(page.getByPlaceholder('As it appears on your passport')).toHaveValue('Jane');
+    await expect(page.getByPlaceholder('Family name')).toHaveValue('Tan');
+    await expect(page.getByPlaceholder('10 Bayfront Avenue')).toHaveValue(BILLING.line1);
+  });
+
+  test('Resuming after a cancelled payment pre-fills the form', async ({ page }) => {
+    // A guest who cancels payment is dropped back on /checkout?cancelled=1.
+    // Their details should still be in the form so they can retry without
+    // re-entering everything — the handoff survives a cancellation by design.
+    await page.goto(CHECKOUT_URL);
+    await fillGuestDetails(page);
+    await page.getByRole('button', { name: /continue to payment/i }).click();
+    await page.getByRole('button', { name: /pay sgd/i }).click();
+    await expect(page).toHaveURL(/.*\/payment/, { timeout: 15000 });
+
+    // Simulate cancellation by navigating back with the cancelled flag.
+    await page.goto(`${CHECKOUT_URL}&cancelled=1`);
+
+    await expect(page.getByText(/Nothing was charged/)).toBeVisible();
+
+    // The form should be on the review step ready to retry, not empty step 1.
+    await expect(
+      page.getByRole('button', { name: /pay sgd/i })
+    ).toBeVisible({ timeout: 10000 });
   });
 });

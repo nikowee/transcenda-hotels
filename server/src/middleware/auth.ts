@@ -39,21 +39,8 @@ declare module 'express-serve-static-core' {
  * the bound is the thing being tuned. Only successful verifications are cached
  * — a rejection is cheap to repeat and must not be sticky.
  */
-const DEFAULT_CACHE_TTL_MS = 60_000;
+const CACHE_TTL_MS = 60_000;
 const CACHE_MAX_ENTRIES = 500;
-
-/**
- * `??` alone is not enough here. dotenv assigns the empty string to a key
- * written as `AUTH_CACHE_MS=`, and `'' ?? default` is `''`, which Number()
- * turns into 0 — so the documented "leave blank for the default" would in fact
- * disable the cache. Anything that is not a usable number falls back.
- */
-const CACHE_TTL_MS = (() => {
-  const configured = Number(process.env.AUTH_CACHE_MS);
-  return process.env.AUTH_CACHE_MS && Number.isFinite(configured) && configured >= 0
-    ? configured
-    : DEFAULT_CACHE_TTL_MS;
-})();
 
 interface CacheEntry {
   user: AuthenticatedUser;

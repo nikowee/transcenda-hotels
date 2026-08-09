@@ -85,7 +85,7 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
 
   if (!isOpen || !user) return null;
 
-  const handlePasswordUpdate = async (e: React.FormEvent) => {
+  const handlePasswordUpdate = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setMessage(null);
     setIsUpdating(true);

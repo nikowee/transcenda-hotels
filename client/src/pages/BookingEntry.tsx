@@ -15,9 +15,10 @@ import { AlertCircle } from 'lucide-react';
  * parameter names keeps the query contract of the booking flow single, and keeps
  * this adapter deletable the day the two agree.
  *
- * `hotelName` is deliberately not forwarded: RoomList does not have it, and the
- * server resolves it from the supplier when it is absent. Nothing priced is
- * forwarded either — /checkout re-quotes from the supplier regardless.
+ * `hotelName` rides along when RoomList had it on screen (`name`), because the
+ * server's supplier lookup cannot resolve a name for a hotel the details
+ * endpoint does not know. Nothing priced is ever forwarded — /checkout
+ * re-quotes from the supplier regardless.
  */
 export default function BookingEntry() {
   const [params] = useSearchParams();
@@ -89,6 +90,13 @@ export default function BookingEntry() {
     adults: String(adults),
     children: '0',
   });
+
+  // Optional, and forwarded only when RoomList had it on screen: the server
+  // resolves a missing name from the supplier, but that lookup cannot succeed
+  // for a hotel the supplier's details endpoint does not know — so a name we
+  // already have must not be thrown away between two pages.
+  const hotelName = params.get('name')?.trim() ?? '';
+  if (hotelName) checkout.set('hotelName', hotelName);
 
   return <Navigate to={`/checkout?${checkout.toString()}`} replace />;
 }

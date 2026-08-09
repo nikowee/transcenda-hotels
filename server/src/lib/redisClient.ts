@@ -3,8 +3,11 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// REDIS_URL is deployment-injected env (docker-compose sets redis://redis:6379;
+// a cloud deploy points it at its cache) — not an .env knob.
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-export const CACHE_TTL = parseInt(process.env.REDIS_TTL || '300', 10);
+/** Search-result cache lifetime, seconds. */
+export const CACHE_TTL = 300;
 
 /**
  * How long to keep trying before giving up on the *initial* connection, and how
@@ -22,7 +25,7 @@ export const CACHE_TTL = parseInt(process.env.REDIS_TTL || '300', 10);
  * `retries` counts from zero on each fresh disconnect, and `hasConnected` is
  * what distinguishes "never came up" from "came up and dropped".
  */
-const STARTUP_RETRY_LIMIT = Number(process.env.REDIS_STARTUP_RETRIES ?? 5);
+const STARTUP_RETRY_LIMIT = 5;
 let hasConnected = false;
 
 export const redis = createClient({

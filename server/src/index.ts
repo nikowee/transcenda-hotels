@@ -46,18 +46,17 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 /**
- * How many proxy hops to trust when resolving req.ip.
+ * One proxy hop is trusted when resolving req.ip.
  *
  * Every rate limiter keys on req.ip, so this figure decides whether they
- * throttle a caller or the whole internet. Set it too low behind a CDN plus a
- * load balancer and req.ip resolves to the load balancer for every request, so
- * all customers share one bucket; set it too high and a caller can spoof
- * X-Forwarded-For to get a fresh bucket per request.
- *
- * Configurable because only the deployment knows the answer. Default 1.
+ * throttle a caller or the whole internet. Too low behind a load balancer and
+ * req.ip resolves to the balancer for every request, so all customers share
+ * one bucket; too high and a caller can spoof X-Forwarded-For for a fresh
+ * bucket per request. Fixed at 1 — the single-ALB shape this deploys behind;
+ * local dev is unaffected because Express only consults this when an
+ * X-Forwarded-For header is present. Change the literal if the topology does.
  */
-const trustedProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
-app.set('trust proxy', Number.isFinite(trustedProxyHops) ? trustedProxyHops : 1);
+app.set('trust proxy', 1);
 
 /** Version-agnostic: a lookup id is not the place to enforce a UUID version. */
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
