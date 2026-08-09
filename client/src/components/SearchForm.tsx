@@ -13,7 +13,7 @@ export default function SearchForm() {
     const [selectedDestId, setSelectedDestId] = useState('');
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [suggestions, setSuggestions] = useState<Array<{ uid: string; term: string }>>([]);
-    const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
+    const [debounceTimer, setDebounceTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
     const [isLoading, setIsLoading] = useState(false);
 
     const [checkIn, setCheckIn] = useState('');
