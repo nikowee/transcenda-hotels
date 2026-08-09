@@ -37,7 +37,7 @@ const CHECKOUT_URL =
  */
 const ROOM_LIST_HANDOFF =
   '/booking?hotel=marina-bay&dest=dest-1&in=2026-08-15&out=2026-08-20' +
-  '&guests=2&key=deluxe-king';
+  '&guests=2&key=deluxe-king&name=Marina%20Bay%20Sands';
 
 /** A well-formed UUID that no booking will ever have. */
 const ABSENT_BOOKING_ID = '00000000-0000-4000-8000-000000000000';
@@ -382,9 +382,11 @@ test.describe('Booking Flow', () => {
     });
     expect(apiPosts.filter((post) => post.path.startsWith('/api/bookings'))).toHaveLength(0);
 
-    // Escapable without the back button.
-    await page.getByRole('link', { name: /back to details/i }).first().click();
-    await expect(page).toHaveURL(/.*\/checkout/);
+    // Escapable without the back button — and honestly: with no handoff there
+    // are no details to go back to, so the page offers search instead of a
+    // /checkout that could only answer "this link is missing everything".
+    await page.getByRole('link', { name: /back to search/i }).first().click();
+    await expect(page).toHaveURL(/\/$/);
   });
 
   test('A cancelled payment says so and charges nothing', async ({ page }) => {
