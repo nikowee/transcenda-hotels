@@ -17,10 +17,7 @@ import WelcomeBird from './components/WelcomeBird';
  *   /  →  /results  →  /hotel/:id  →  /booking  →  /checkout  →  /payment
  *                                                             →  /confirmation
  *
- * /booking is the seam between Feature 3 and UC4 and is not a page anyone sees.
- * RoomList navigates there with its own spelling of a stay (hotel, dest, in,
- * out, guests, key) and BookingEntry redirects to /checkout with the one query
- * the booking flow understands.
+ * /booking is a connector page and not diretly navigable to.
  */
 export default function App() {
   const [showSplash, setShowSplash] = useState(() => {
@@ -50,7 +47,7 @@ export default function App() {
         <Route path="/results" element={<ResultsPage />} />
         <Route path="/hotel/:id" element={<HotelDetailPage />} />
 
-        {/* UC4 — Book & Make Payment */}
+        {/* Book & Make Payment */}
         <Route path="/booking" element={<BookingEntry />} />
         <Route path="/checkout" element={<CheckoutPage />} />
         <Route path="/payment" element={<PaymentPage />} />
