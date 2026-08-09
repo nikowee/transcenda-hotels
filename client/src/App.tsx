@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router';
 import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
@@ -21,10 +22,24 @@ import ConfirmationPage from './pages/ConfirmationPage';
  * the booking flow understands.
  */
 export default function App() {
+  const [showSplash, setShowSplash] = useState(() => {
+    return !sessionStorage.getItem('hasSeenBird');
+  });
+
+  const handleBirdComplete = () => {
+    sessionStorage.setItem('hasSeenBird', 'true');
+    setShowSplash(false);
+  };
+
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
+    <>
+      {/* 1. Render the splash screen OVER the app if it's active */}
+      {showSplash && <WelcomeBird onComplete={handleBirdComplete} />}
+
+      {/* 2. Render the actual app underneath so it can be blurred */}
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
 
         {/* Auth */}
         <Route path="/login" element={<Login />} />
