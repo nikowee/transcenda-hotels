@@ -9,6 +9,7 @@ import BookingEntry from './pages/BookingEntry';
 import CheckoutPage from './pages/CheckoutPage';
 import PaymentPage from './pages/PaymentPage';
 import ConfirmationPage from './pages/ConfirmationPage';
+import WelcomeBird from './components/WelcomeBird';
 
 /**
  * The whole journey, in the order a guest walks it:
@@ -56,5 +57,6 @@ export default function App() {
         <Route path="/confirmation" element={<ConfirmationPage />} />
       </Routes>
     </BrowserRouter>
+    </>
   );
 }

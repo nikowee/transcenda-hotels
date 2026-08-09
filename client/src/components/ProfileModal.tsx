@@ -34,14 +34,6 @@ interface ProfileModalProps {
   user: User | null;
 }
 
-interface FormattedBooking {
-  id: string;
-  hotel: string;
-  dates: string;
-  status: string;
-  price: string;
-}
-
 export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProps) {
   const [activeTab, setActiveTab] = useState<'details' | 'bookings'>('details');
   const [newPassword, setNewPassword] = useState('');
