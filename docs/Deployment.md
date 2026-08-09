@@ -8,7 +8,7 @@ it up.
 ## The shape
 
 ```
-Browser ── CloudFront/S3 or nginx container (client bundle)
+Browser ── Vercel (client bundle)
    │
    └── ALB ──► ECS Fargate: server image ──► Supabase (auth + Postgres, via PostgREST)
                     │                   ──► Stripe (payments + webhook back in)
@@ -67,25 +67,23 @@ card — a crash loop right after launch usually means a missed secret.
 Networking: tasks make outbound calls to Supabase, Stripe, Ascenda and (if
 set) Resend — private subnets need a NAT gateway or VPC endpoints.
 
-## 3. Client bundle
+## 3. Client bundle → Vercel
 
-```bash
-docker build \
-  --build-arg VITE_API_URL=https://api.example.com \
-  --build-arg VITE_SUPABASE_URL=... \
-  --build-arg VITE_SUPABASE_PUBLISHABLE_KEY=... \
-  --build-arg VITE_STRIPE_PUBLISHABLE_KEY=pk_live_... \
-  -t transcenda-client client/
-```
+The client deploys to Vercel, not a container. Connect the GitHub repo, set
+the project root to `client/`, and put the `VITE_*` values in the Vercel
+project settings (Environment Variables). They are baked into the bundle at
+build time — there is no runtime injection into a static bundle, so **each
+environment needs its own build**.
 
-`VITE_*` values are baked at build time — there is no runtime injection into a
-static bundle, so **each environment needs its own build**. The build refuses
-to produce an image when the Supabase args are empty (it greps the bundle for
-`auth/v1`); without that guard the broken build is *smaller* and looks like an
-optimisation. The image is nginx with an SPA fallback (deep-link refreshes on
-/checkout etc. answer index.html, hashed assets cache immutable). Serving the
-same `dist/` from S3+CloudFront instead is equivalent — keep the fallback
-(403/404 → /index.html) and the no-cache rule for index.html.
+Vercel handles the two things the old nginx config did by hand:
+
+- **SPA fallback** — unknown routes (deep-link refreshes on /checkout etc.)
+  answer with `index.html` by default, so the router can take over.
+- **Caching** — hashed assets are served immutable; `index.html` is revalidated
+  so a deploy never pins users to a dead build.
+
+The client Dockerfile is dev-only now (single stage, no nginx): it exists for
+`docker-compose` local development and is not part of the production path.
 
 ## 4. Stripe webhook
 
