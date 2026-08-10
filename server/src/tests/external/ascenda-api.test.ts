@@ -3,11 +3,12 @@ import { expect } from 'chai';
 import axios from 'axios';
 
 // ────────────────────────────────────────────────────────────────────
-// INTEGRATION TESTS:
+// EXTERNAL REAL-NETWORK SMOKE TESTS:
 //
-//   - Run them with their own script (see note at bottom of this file),
-//     NOT as part of default `npm test`, so a flaky/offline
-//     external service doesn't fail regular CI run.
+//   - This folder (`src/tests/external/`) is excluded from the default
+//     `npm test` glob, so a flaky/offline external service doesn't fail
+//     regular CI run.
+//   - Run them on demand with `npm run test:external` (or `test:all`).
 //   - They assert loosely (status + presence of expected fields), not
 //     exact values, since the mock data can change over time.
 // ────────────────────────────────────────────────────────────────────
@@ -113,12 +114,12 @@ describe('Ascenda API - integration smoke tests (real network)', function () {
 });
 
 // ────────────────────────────────────────────────────────────────────
-// Suggested package.json scripts:
+// package.json scripts (see server/package.json):
 //
-//   "test":             "mocha --require ts-node/register 'tests/**/*.test.ts' --exclude 'tests/integration/**'",
-//   "test:integration":  "mocha --require ts-node/register 'tests/integration/**/*.test.ts'",
-//   "test:all":          "mocha --require ts-node/register 'tests/**/*.test.ts'"
+//   "test":          "mocha --exit -r tsx src/tests/**/*.test.ts --exclude 'src/tests/external/**'",
+//   "test:external": "mocha --exit -r tsx src/tests/external/**/*.test.ts",
+//   "test:all":      "mocha --exit -r tsx src/tests/**/*.test.ts"
 //
-// Run `npm test` normally / in CI, and `npm run test:integration`
+// Run `npm test` normally / in CI, and `npm run test:external`
 // occasionally (or in a separate CI job) to catch upstream API drift.
 // ────────────────────────────────────────────────────────────────────
