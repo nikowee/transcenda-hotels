@@ -129,10 +129,24 @@ const transformCategories = (categories: any): string[] => {
         .map((c: { name: string }) => c.name);
 };
 
-// Helper: Strip HTML tags from description
+// Helper: Strip HTML tags from description.
+// Block-level tags become newlines first so paragraph breaks survive for
+// the frontend's whitespace-pre-line rendering, then entities are decoded.
 const cleanDescription = (description: string): string => {
     if (!description) return '';
-    return description.replace(/<[^>]*>/g, '').trim();
+    return description
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;|&apos;/gi, "'")
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/[ \t]+/g, ' ')
+        .trim();
 };
 
 // Helper function to simulate delay.
@@ -192,7 +206,10 @@ export async function fetchRoomPrices(
 export async function fetchHotelById(id: string): Promise<HotelDetails> {
     try {
         const response = await axios.get<HotelDetails>(`${BASE_URL}/hotels/${id}`);
-        return response.data;
+        return {
+            ...response.data,
+            description: cleanDescription(response.data.description || ''),
+        };
     } catch (err) {
         console.error('Hotel detail API error:', err);
         throw new Error('Failed to fetch hotel details');
