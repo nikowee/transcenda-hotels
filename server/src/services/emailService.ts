@@ -117,6 +117,12 @@ export const sendConfirmation = async (
           timeout: SEND_TIMEOUT_MS,
         }
       );
+      // The provider id is the only handle for tracing this delivery in
+      // Resend's dashboard, so it goes to the log — the caller discards the
+      // receipt on success.
+      console.log(
+        `📧 Confirmation sent — booking ${bookingDetails.id} → ${email} (resend ${response.data.id})`
+      );
       return { delivered: true, messageId: response.data.id };
     }
 
@@ -125,6 +131,13 @@ export const sendConfirmation = async (
   } catch (error: any) {
     // Confirmation email is not allowed to sink a paid booking — the money is
     // already taken and the row is already committed by this point.
-    return { delivered: false, errorMessage: error?.message ?? 'Email delivery failed' };
+    //
+    // Resend puts the actionable cause ("The domain is not verified") in the
+    // response body; axios's own message is just the status code.
+    const providerDetail = error?.response?.data?.message;
+    const errorMessage =
+      (providerDetail ? `${error.message}: ${providerDetail}` : error?.message) ??
+      'Email delivery failed';
+    return { delivered: false, errorMessage };
   }
 };

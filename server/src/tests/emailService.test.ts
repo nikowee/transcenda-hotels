@@ -64,6 +64,16 @@ describe('emailService', () => {
     delete process.env.EMAIL_FROM;
   });
 
+  /**
+   * The no-HTTP test below registers an interceptor precisely so it stays
+   * unconsumed; without this cleanup nock hands that stale interceptor to the
+   * nested suite's first request (oldest match wins) and its own scope never
+   * completes.
+   */
+  afterEach(() => {
+    nock.cleanAll();
+  });
+
   it('reports delivery with a message id tied to the booking', async () => {
     const { receipt } = await capture();
 
