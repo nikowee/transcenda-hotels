@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "npx tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && rm -rf dist/data && cp -r src/data dist/data",
     "type-check": "tsc --noEmit",
     "test": "mocha --exit -r tsx src/tests/**/*.test.ts",
     "test:watch": "mocha --exit -r tsx --watch src/tests/**/*.test.ts --exclude 'tests/integration/**'",
@@ -36,7 +36,7 @@
     "@types/sinon": "^22.0.0",
     "@types/supertest": "^7.2.1",
     "chai": "^6.2.2",
-    "mocha": "^11.7.6",
+    "mocha": "12.0.0-rc.5",
     "nock": "^14.0.16",
     "sinon": "^22.1.0",
     "supertest": "^7.2.2",

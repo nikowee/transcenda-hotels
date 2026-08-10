@@ -216,20 +216,6 @@ app.get('/api/health', (req, res) => {
 // Destination Search (autocomplete)
 app.get('/api/destinations/search', searchDestinations);
 
-// Supabase test endpoint (debugging)
-app.get('/api/supabase-test', async (req, res) => {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .limit(1);
-    if (error) throw error;
-    res.json({ success: true, data });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 export default app;
 ```
 
