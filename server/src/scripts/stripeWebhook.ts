@@ -13,10 +13,18 @@
  *   npm run stripe:secret -- --write   ...and write it into server/.env
  *
  *   npm run stripe:send                book, then deliver the completion event
- *   npm run stripe:send -- --session sim_sess_...   replay a known session
+ *   npm run stripe:send -- --session <sim_sess_…|cs_…>   replay a known session
  *   npm run stripe:send -- --event checkout.session.expired
- *   npm run stripe:send -- --event charge.refunded --payment-intent sim_pi_...
+ *   npm run stripe:send -- --event charge.refunded --payment-intent <pi_…>
+ *   npm run stripe:send -- --event payment_intent.succeeded --payment-intent pi_…
  *   npm run stripe:send -- --tamper    flip a byte after signing; expect a 400
+ *
+ * Works against the simulator and against real Stripe test keys. Under real
+ * keys a session id is a `cs_…` the script resolves through the API for its
+ * payment intent, and the handler still asks Stripe whether the session was
+ * actually paid — so recovery can only be exercised for a payment that really
+ * completed. The E2E suite produces those: take the `pi_…` from a run and
+ * deliver `payment_intent.succeeded` for it.
  */
 import 'dotenv/config';
 import { randomBytes, randomUUID } from 'crypto';
@@ -51,6 +59,49 @@ const writeSecretToEnv = (secret: string): void => {
     : `${original.replace(/\n*$/, '\n')}${line}\n`;
 
   writeFileSync(ENV_PATH, updated, 'utf-8');
+};
+
+// ── Real-mode session resolution ────────────────────────────────────────────
+
+/** Only constructed when a real id needs resolving; simulate mode never calls this. */
+const stripeClient = (): Stripe => {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) {
+    throw new Error(
+      'A real Stripe id was given but STRIPE_SECRET_KEY is not set, so the session\n' +
+        'cannot be resolved. Set the key, or use a sim_sess_/sim_pi_ id.'
+    );
+  }
+  return new Stripe(key, { apiVersion: '2026-06-24.dahlia' });
+};
+
+const isRealSession = (id: string): boolean => id.startsWith('cs_');
+
+/**
+ * Turns a real `cs_…` into the payment intent the handler will verify, and
+ * says so plainly when the session was never paid — the handler refuses those,
+ * which is correct and otherwise reads as a mysterious 4xx.
+ */
+const resolveRealSession = async (sessionId: string): Promise<string> => {
+  const session = await stripeClient().checkout.sessions.retrieve(sessionId);
+  const intent = session.payment_intent;
+  const paymentIntentId = typeof intent === 'string' ? intent : (intent?.id ?? '');
+
+  if (!paymentIntentId) {
+    throw new Error(
+      `Session ${sessionId} has no payment intent yet (status: ${session.payment_status}).\n` +
+        'Complete the payment in a browser first, or pass an already-paid session.'
+    );
+  }
+
+  if (session.payment_status !== 'paid') {
+    console.warn(
+      `⚠️  Session ${sessionId} is ${session.payment_status}, not paid.\n` +
+        '   The handler verifies with Stripe and will refuse to write a booking.\n'
+    );
+  }
+
+  return paymentIntentId;
 };
 
 // ── Event fixtures ──────────────────────────────────────────────────────────
@@ -97,6 +148,17 @@ const chargeRefunded = (paymentIntentId: string, amount: number) =>
     amount_refunded: amount,
     currency: 'sgd',
     refunded: true,
+  });
+
+/** The Elements flow's own completion event — what a real card confirmation emits. */
+const paymentIntentSucceeded = (paymentIntentId: string, amount: number) =>
+  envelope('payment_intent.succeeded', {
+    id: paymentIntentId,
+    object: 'payment_intent',
+    status: 'succeeded',
+    amount,
+    amount_received: amount,
+    currency: 'sgd',
   });
 
 // ── Delivery ────────────────────────────────────────────────────────────────
@@ -177,17 +239,36 @@ const createSession = async (): Promise<{ sessionId: string; paymentIntentId: st
   }
 
   const { redirectUrl } = (await response.json()) as { redirectUrl: string };
-  const sessionId = new URL(redirectUrl, API).searchParams.get('session_id');
+
+  /**
+   * Two redirect shapes, because the two modes redirect to different places.
+   * The simulator returns our own confirmation URL carrying ?session_id=; real
+   * Stripe returns its hosted page, where the cs_… is a path segment.
+   */
+  const url = new URL(redirectUrl, API);
+  const sessionId =
+    url.searchParams.get('session_id') ??
+    url.pathname.split('/').find((segment) => segment.startsWith('cs_'));
 
   if (!sessionId) {
-    throw new Error(`No session_id in the redirect URL: ${redirectUrl}`);
+    throw new Error(`No session id in the redirect URL: ${redirectUrl}`);
   }
 
-  // How the simulator derives it — see verifySession in paymentService.
-  const paymentIntentId = `sim_pi_${sessionId.replace(/^sim_sess_/, '')}`;
+  const paymentIntentId = isRealSession(sessionId)
+    ? await resolveRealSession(sessionId)
+    : // How the simulator derives it — see verifySession in paymentService.
+      `sim_pi_${sessionId.replace(/^sim_sess_/, '')}`;
 
   console.log(`Created session ${sessionId}`);
-  console.log('The customer has paid and has not returned. Delivering the webhook...\n');
+  if (isRealSession(sessionId)) {
+    console.log(
+      'Real Stripe session: nobody has paid it, so the handler will refuse to\n' +
+        'write a booking. To exercise recovery, complete a payment (the E2E suite\n' +
+        'does) and deliver payment_intent.succeeded for its pi_… instead.\n'
+    );
+  } else {
+    console.log('The customer has paid and has not returned. Delivering the webhook...\n');
+  }
 
   return { sessionId, paymentIntentId };
 };
@@ -241,6 +322,24 @@ const main = async (): Promise<void> => {
     return;
   }
 
+  if (type === 'payment_intent.succeeded') {
+    const paymentIntentId = flag('payment-intent');
+    if (!paymentIntentId) {
+      console.error(
+        'payment_intent.succeeded needs --payment-intent <pi_…>. Take one from an\n' +
+          'E2E run or the Stripe dashboard; it must be a payment that really settled.'
+      );
+      process.exitCode = 1;
+      return;
+    }
+    await deliver(
+      paymentIntentSucceeded(paymentIntentId, Number(flag('amount') ?? 78480)),
+      secret,
+      tamper
+    );
+    return;
+  }
+
   if (type === 'charge.refunded') {
     const paymentIntentId = flag('payment-intent') ?? `sim_pi_${randomUUID()}`;
     await deliver(chargeRefunded(paymentIntentId, Number(flag('amount') ?? 78480)), secret, tamper);
@@ -255,7 +354,12 @@ const main = async (): Promise<void> => {
 
   const given = flag('session');
   const { sessionId, paymentIntentId } = given
-    ? { sessionId: given, paymentIntentId: `sim_pi_${given.replace(/^sim_sess_/, '')}` }
+    ? {
+        sessionId: given,
+        paymentIntentId: isRealSession(given)
+          ? await resolveRealSession(given)
+          : `sim_pi_${given.replace(/^sim_sess_/, '')}`,
+      }
     : await createSession();
 
   const status = await deliver(sessionCompleted(sessionId, paymentIntentId), secret, tamper);
