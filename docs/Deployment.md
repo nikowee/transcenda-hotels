@@ -22,14 +22,18 @@ webhook needs raw request bytes — both fit a warm task and fight a cold start.
 
 ## 1. Database first: the schema prerequisites
 
-Schema changes are applied in the Supabase dashboard, outside this repo. Three
-things are worth having in place before real traffic:
+Two migrations in `supabase/migrations/` cover the schema prerequisites — see
+that directory's README for how to apply them and what each one risks:
 
-- a **unique constraint on `bookings.payment_id`** — see the scale rule below
+- a **unique constraint on `bookings.payment_id`** — see the scale rule below.
+  Deletes duplicate rows, so run its inspect query first
 - **Row Level Security** on `bookings` and `profiles` (no public policy) — the
   publishable key baked into every browser bundle can otherwise read both
-  tables directly over PostgREST, bypassing the API entirely
-- lookup **indexes** on `bookings.user_id` and `bookings.guest_email`
+  tables directly over PostgREST, bypassing the API entirely — plus lookup
+  indexes on `user_id` and `guest_email`
+
+Also confirm `NODE_ENV=production` reaches the container: it disables the demo
+room catalogue, whose hardcoded rates must never back a real charge.
 
 **Why the constraint matters for scale:** until it exists, duplicate-booking
 protection is an in-process lock — the comment in

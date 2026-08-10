@@ -57,11 +57,25 @@ const DEMO_NIGHTLY_RATES: Record<string, { label: string; nightlyRate: number }>
   'family-room': { label: 'Family Room', nightlyRate: 310 },
 };
 
+/**
+ * Production guardrail: the demo catalogue is development scaffolding priced
+ * from a hardcoded table, so it must never back a real charge. Without this a
+ * request naming a demo slug is quoted and charged at an invented rate for a
+ * room the supplier never sold.
+ *
+ * Read per call rather than captured at module scope, matching isSimulated(),
+ * so a test can exercise both sides. Gated at the source so every path is
+ * covered at once — resolveRateTable's merge and buildQuote's rates fallback.
+ */
+const demoRoomsEnabled = (): boolean => process.env.NODE_ENV !== 'production';
+
 /** Object.hasOwn, not a plain lookup: DEMO_NIGHTLY_RATES['constructor'] resolves to a function off Object.prototype rather than undefined, so a `!== undefined` test waves every inherited key straight through. */
-export const isDemoRoom = (roomId: string): boolean => Object.hasOwn(DEMO_NIGHTLY_RATES, roomId);
+export const isDemoRoom = (roomId: string): boolean =>
+  demoRoomsEnabled() && Object.hasOwn(DEMO_NIGHTLY_RATES, roomId);
 
 export const demoRateTable = (nights: number): RateTable => {
   const table: RateTable = {};
+  if (!demoRoomsEnabled()) return table;
 
   for (const [key, room] of Object.entries(DEMO_NIGHTLY_RATES)) {
     const subtotal = round2(room.nightlyRate * nights);

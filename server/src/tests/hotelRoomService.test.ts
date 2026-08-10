@@ -1,4 +1,4 @@
-import { describe, it } from 'mocha';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import nock from 'nock';
 import {
@@ -82,6 +82,33 @@ describe('hotelRoomService', () => {
       for (const key of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
         expect(isDemoRoom(key), key).to.equal(false);
       }
+    });
+
+    /**
+     * The production guardrail. These rates are hardcoded scaffolding, so a
+     * deployment taking real money must not be able to price against them —
+     * otherwise a request naming a demo slug is charged an invented amount for
+     * a room the supplier never sold.
+     */
+    describe('under NODE_ENV=production', () => {
+      const original = process.env.NODE_ENV;
+      beforeEach(() => {
+        process.env.NODE_ENV = 'production';
+      });
+      afterEach(() => {
+        if (original === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = original;
+      });
+
+      it('recognises no demo room', () => {
+        for (const key of ['deluxe-king', 'standard-queen', 'executive-suite', 'family-room']) {
+          expect(isDemoRoom(key), key).to.equal(false);
+        }
+      });
+
+      it('prices nothing from the demo catalogue', () => {
+        expect(demoRateTable(3)).to.deep.equal({});
+      });
     });
   });
 
