@@ -19,14 +19,14 @@ This page documents the complete testing suite for Transcenda Hotels, covering a
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │       Backend (375 tests)           │
+                    │       Backend (377 tests)           │
                     │  Mocha + Chai + Supertest; nock     │
                     │  fakes Stripe and Ascenda at the    │
                     │  socket, network blocked outright   │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │      Frontend (166 tests)           │
+                    │      Frontend (178 tests)           │
                     │  Vitest + Testing Library, MSW      │
                     │  intercepting every request         │
                     └─────────────────────────────────────┘
@@ -81,10 +81,10 @@ report, which excludes `src/tests/`.
 ## 🚀 Quick Start
 
 ```bash
-# Frontend: 166 tests
+# Frontend: 178 tests
 cd client && npm run test
 
-# Backend: 375 tests (+3 pending)
+# Backend: 377 tests
 cd server && npm run test
 
 # E2E: 22 tests, auto-starts Docker
