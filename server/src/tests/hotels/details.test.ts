@@ -4,6 +4,10 @@ import request from 'supertest';
 import nock from 'nock';
 import { app } from '../setup.ts';
 
+// NOTE: assumes GET /api/hotels/:id in your route file calls fetchHotelById()
+// from ascendaServices.ts. If your route path or response shape differs,
+// adjust the mocked path / assertions below to match.
+
 const API_BASE = 'https://hotelapi.loyalty.dev';
 const HOTELS_PATH = '/api/hotels';
 
@@ -16,6 +20,8 @@ const mockHotelDetail = {
   longitude: 103.8591,
   description: '<p>Iconic luxury hotel with infinity pool.</p><p>Rooms &amp; suites overlook the bay.</p>',
   categories: { luxury: { name: 'Luxury' } },
+  description: '<p>Iconic luxury hotel with infinity pool.</p>',
+  categories: { luxury: { name: 'Luxury' }, city: { name: 'City' } },
   amenities: { pool: true, spa: true },
   image_details: { prefix: 'https://example.com/', suffix: '.jpg', count: 2 },
 };
@@ -91,6 +97,12 @@ describe('Hotel Details API', () => {
   });
 
   it('should return an error status when the hotel id does not exist', async () => {
+    // NOTE: getHotelById currently returns 502 for ANY upstream failure,
+    // including a genuine 404 from Ascenda - it doesn't distinguish
+    // "not found" from "upstream is down". This test documents the
+    // current behavior. Consider having the controller check
+    // err.response?.status and forward a real 404 when the upstream
+    // itself returned one, so clients can tell the two cases apart.
     nock(API_BASE).get(`${HOTELS_PATH}/does-not-exist`).reply(404, { message: 'Not found' });
 
     const response = await request(app).get('/api/hotels/does-not-exist');

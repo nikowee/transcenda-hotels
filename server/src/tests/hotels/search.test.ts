@@ -2,7 +2,7 @@ import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import request from 'supertest';
 import nock from 'nock';
-import { app } from './setup.ts';
+import { app } from '../setup.ts';
 
 const API_BASE = 'https://hotelapi.loyalty.dev';
 const PRICES_PATH = '/api/hotels/prices';
@@ -112,16 +112,8 @@ describe('Hotel Search API', () => {
 
   // Test 2: Valid params returns hotels
   it('should return hotels for a valid search', async () => {
-    // Mock Ascenda API calls
-    nock(API_BASE)
-      .get(PRICES_PATH)
-      .query(true)
-      .reply(200, mockPriceResponse);
-
-    nock(API_BASE)
-      .get(HOTELS_PATH)
-      .query(true)
-      .reply(200, mockHotelDetails);
+    nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+    nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
 
     const response = await request(app)
       .get('/api/hotels/search')
@@ -147,15 +139,8 @@ describe('Hotel Search API', () => {
 
   // Test 3: Star rating filter
   it('should filter by star rating', async () => {
-    nock(API_BASE)
-      .get(PRICES_PATH)
-      .query(true)
-      .reply(200, mockPriceResponse);
-
-    nock(API_BASE)
-      .get(HOTELS_PATH)
-      .query(true)
-      .reply(200, mockHotelDetails);
+    nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+    nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
 
     const response = await request(app)
       .get('/api/hotels/search')
@@ -170,7 +155,6 @@ describe('Hotel Search API', () => {
 
     expect(response.status).to.equal(200);
     expect(response.body.hotels).to.be.an('array');
-    // All returned hotels should have rating 5
     response.body.hotels.forEach((hotel: any) => {
       expect(Math.round(hotel.rating)).to.equal(5);
     });
@@ -178,15 +162,8 @@ describe('Hotel Search API', () => {
 
   // Test 4: Min price filter
   it('should filter by minimum price', async () => {
-    nock(API_BASE)
-      .get(PRICES_PATH)
-      .query(true)
-      .reply(200, mockPriceResponse);
-
-    nock(API_BASE)
-      .get(HOTELS_PATH)
-      .query(true)
-      .reply(200, mockHotelDetails);
+    nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+    nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
 
     const response = await request(app)
       .get('/api/hotels/search')
@@ -200,8 +177,6 @@ describe('Hotel Search API', () => {
       });
 
     expect(response.status).to.equal(200);
-    expect(response.body.hotels).to.be.an('array');
-    // All returned hotels should have price >= 300
     response.body.hotels.forEach((hotel: any) => {
       expect(hotel.price).to.be.at.least(300);
     });
@@ -209,15 +184,8 @@ describe('Hotel Search API', () => {
 
   // Test 5: Max price filter
   it('should filter by maximum price', async () => {
-    nock(API_BASE)
-      .get(PRICES_PATH)
-      .query(true)
-      .reply(200, mockPriceResponse);
-
-    nock(API_BASE)
-      .get(HOTELS_PATH)
-      .query(true)
-      .reply(200, mockHotelDetails);
+    nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+    nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
 
     const response = await request(app)
       .get('/api/hotels/search')
@@ -231,8 +199,6 @@ describe('Hotel Search API', () => {
       });
 
     expect(response.status).to.equal(200);
-    expect(response.body.hotels).to.be.an('array');
-    // All returned hotels should have price <= 100
     response.body.hotels.forEach((hotel: any) => {
       expect(hotel.price).to.be.at.most(100);
     });
@@ -240,15 +206,8 @@ describe('Hotel Search API', () => {
 
   // Test 6: Price sorting (ascending)
   it('should sort by price ascending', async () => {
-    nock(API_BASE)
-      .get(PRICES_PATH)
-      .query(true)
-      .reply(200, mockPriceResponse);
-
-    nock(API_BASE)
-      .get(HOTELS_PATH)
-      .query(true)
-      .reply(200, mockHotelDetails);
+    nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+    nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
 
     const response = await request(app)
       .get('/api/hotels/search')
@@ -263,7 +222,6 @@ describe('Hotel Search API', () => {
 
     expect(response.status).to.equal(200);
     const prices = response.body.hotels.map((h: any) => h.price);
-    // Prices should be in ascending order
     for (let i = 1; i < prices.length; i++) {
       expect(prices[i]).to.be.at.least(prices[i - 1]);
     }
@@ -271,15 +229,8 @@ describe('Hotel Search API', () => {
 
   // Test 7: Price sorting (descending)
   it('should sort by price descending', async () => {
-    nock(API_BASE)
-      .get(PRICES_PATH)
-      .query(true)
-      .reply(200, mockPriceResponse);
-
-    nock(API_BASE)
-      .get(HOTELS_PATH)
-      .query(true)
-      .reply(200, mockHotelDetails);
+    nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+    nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
 
     const response = await request(app)
       .get('/api/hotels/search')
@@ -294,7 +245,6 @@ describe('Hotel Search API', () => {
 
     expect(response.status).to.equal(200);
     const prices = response.body.hotels.map((h: any) => h.price);
-    // Prices should be in descending order
     for (let i = 1; i < prices.length; i++) {
       expect(prices[i]).to.be.at.most(prices[i - 1]);
     }
@@ -302,15 +252,8 @@ describe('Hotel Search API', () => {
 
   // Test 8: Pagination
   it('should paginate results correctly', async () => {
-    nock(API_BASE)
-      .get(PRICES_PATH)
-      .query(true)
-      .reply(200, mockPriceResponse);
-
-    nock(API_BASE)
-      .get(HOTELS_PATH)
-      .query(true)
-      .reply(200, mockHotelDetails);
+    nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+    nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
 
     const response = await request(app)
       .get('/api/hotels/search')
@@ -334,15 +277,8 @@ describe('Hotel Search API', () => {
 
   // Test 9: Guest rating filter
   it('should filter by minimum guest rating', async () => {
-    nock(API_BASE)
-      .get(PRICES_PATH)
-      .query(true)
-      .reply(200, mockPriceResponse);
-
-    nock(API_BASE)
-      .get(HOTELS_PATH)
-      .query(true)
-      .reply(200, mockHotelDetails);
+    nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+    nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
 
     const response = await request(app)
       .get('/api/hotels/search')
@@ -356,8 +292,6 @@ describe('Hotel Search API', () => {
       });
 
     expect(response.status).to.equal(200);
-    expect(response.body.hotels).to.be.an('array');
-    // All returned hotels should have rating >= 4
     response.body.hotels.forEach((hotel: any) => {
       expect(hotel.rating).to.be.at.least(4);
     });
