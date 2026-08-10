@@ -20,8 +20,6 @@ const mockHotelDetail = {
   longitude: 103.8591,
   description: '<p>Iconic luxury hotel with infinity pool.</p><p>Rooms &amp; suites overlook the bay.</p>',
   categories: { luxury: { name: 'Luxury' } },
-  description: '<p>Iconic luxury hotel with infinity pool.</p>',
-  categories: { luxury: { name: 'Luxury' }, city: { name: 'City' } },
   amenities: { pool: true, spa: true },
   image_details: { prefix: 'https://example.com/', suffix: '.jpg', count: 2 },
 };
