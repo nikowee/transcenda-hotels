@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
 
 /**
@@ -99,8 +100,8 @@ const recordApiPosts = (page: Page): ApiPost[] => {
  * confirmed it, Elements refuses to mount against a terminal intent. Real
  * customers differ; the fixtures must too.
  */
-let bookingSeq = 0;
-const uniqueEmail = () => `jane+e2e${Date.now().toString(36)}${bookingSeq++}@example.com`;
+const uniqueEmail = () =>
+  `jane+e2e${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}@example.com`;
 
 const fillGuestDetails = async (page: Page, overrides: Partial<typeof GUEST> = {}) => {
   const guest = { email: uniqueEmail(), ...GUEST, ...overrides };
@@ -169,8 +170,12 @@ const fillCard = async (page: Page, ui: PaymentUI, number: string) => {
   const type = async (name: string, value: string) => {
     const field = f.locator(`[name="${name}"]`);
     await field.click();
-    await field.clear().catch(() => {});
+    // Keystrokes only — Stripe's controlled inputs ignore programmatic
+    // value-setting, so clearing must be typed too.
+    await field.press('ControlOrMeta+a');
+    await field.press('Backspace');
     await field.pressSequentially(value, { delay: 25 });
+    await expect(field).not.toHaveValue('');
   };
   await type('number', number);
   await type('expiry', '1234');
