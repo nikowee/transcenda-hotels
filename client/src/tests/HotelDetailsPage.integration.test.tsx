@@ -59,10 +59,10 @@ const roomsPayload = {
     ],
 };
 
-function useHotelHandlers(rooms: unknown = roomsPayload) {
+function useHotelHandlers(rooms: any = roomsPayload) {
     server.use(
         http.get(HOTEL_ROUTE, () => HttpResponse.json(hotelPayload)),
-        http.get(PRICE_ROUTE, () => HttpResponse.json(rooms))
+        http.get(PRICE_ROUTE, () => HttpResponse.json(rooms as any))
     );
 }
 
