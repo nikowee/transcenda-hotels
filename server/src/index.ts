@@ -44,6 +44,19 @@ const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+/**
+ * Safety guardrail: the email transport needs both vars, so exactly one set
+ * is always a misconfiguration — production provisions them through
+ * different channels, which is precisely how one goes missing.
+ */
+if (Boolean(process.env.RESEND_API_KEY) !== Boolean(process.env.EMAIL_FROM)) {
+  const missing = process.env.RESEND_API_KEY ? 'EMAIL_FROM' : 'RESEND_API_KEY';
+  console.warn(
+    `⚠️  ${missing} is not set but its counterpart is. Confirmation emails ` +
+      'need both RESEND_API_KEY and EMAIL_FROM; falling back to log-only delivery.'
+  );
+}
+
 /** Safety guardrail: warn loudly when production forgot CORS_ORIGINS. */
 if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
   console.warn(

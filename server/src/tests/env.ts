@@ -15,3 +15,12 @@ process.env.STRIPE_HTTP_CLIENT ??= 'fetch';
 /** The real price search takes several seconds to settle, and the defaults are tuned for that. */
 process.env.HOTEL_API_POLL_MS ??= '1';
 process.env.HOTEL_API_MAX_POLLS ??= '3';
+
+/**
+ * Forced to '', not deleted: this file runs before dotenv.config(), and dotenv
+ * refills deleted variables but never overrides existing ones. Assignment also
+ * kills a shell-inherited key. A real key here would flip every suite that
+ * observes the confirmation log line onto the socket-blocked network path.
+ */
+process.env.RESEND_API_KEY = '';
+process.env.EMAIL_FROM = '';
