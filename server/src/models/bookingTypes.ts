@@ -1,12 +1,12 @@
 /**
  * Canonical booking shapes, mirroring the deployed Supabase `bookings` table.
  *
- * Split out from bookingModel so the controller, the webhook handler and the
- * tests can share one definition of the row without importing the storage
- * layer. If a column changes in the database, it changes here first.
+ * Split out from bookingModel so the controller, webhook handler and tests
+ * share one row definition without importing the storage layer (a database
+ * column change lands here first).
  *
- * Naming: camelCase everywhere in TypeScript, snake_case only at the SQL
- * boundary. bookingModel's toRow/fromRow are the only places both appear.
+ * Naming rule: camelCase everywhere in TypeScript, snake_case only at the SQL
+ * boundary — bookingModel's toRow/fromRow are the only places both appear.
  */
 
 /** Row shape exactly as Postgres stores it. */
@@ -47,13 +47,10 @@ export interface BookingRow {
 /**
  * Billing address, as it appears on the card statement.
  *
- * Its primary job is not display — it is what Stripe runs the AVS check
- * against, which is one of the cheaper fraud signals available. It is sent as
- * `billing_details` on the PaymentIntent for that reason, and stored so the
- * booking record matches what was authorised.
- *
- * `line2` and `state` are optional because plenty of the world has neither.
- * `country` is an ISO 3166-1 alpha-2 code, which is what Stripe expects.
+ * Sent to Stripe as billing_details so AVS can run against it (one of the
+ * cheaper fraud signals available). line2 and state stay optional because
+ * plenty of the world has neither; country is ISO 3166-1 alpha-2, matching
+ * what Stripe expects.
  */
 export interface BillingAddress {
   line1: string;
@@ -88,11 +85,10 @@ export interface StayDetails {
 }
 
 /**
- * Card metadata, read back from Stripe after the charge.
- *
- * Brand, last four and expiry are the only card fields PCI-DSS permits storing,
- * and they are obtained by expanding payment_method on the completed session —
- * never collected by us. No PAN or CVC exists anywhere in this application.
+ * Card metadata, read back from Stripe after the charge — brand, last four
+ * and expiry are the only card fields PCI-DSS permits storing, and they come
+ * from expanding payment_method on the completed session, never from us. No
+ * PAN or CVC exists anywhere in this application.
  */
 export interface CardDetails {
   brand: string;
@@ -117,29 +113,20 @@ export interface BookingInput {
 }
 
 /**
- * The priced quote returned by GET /api/bookings/checkout.
+ * The priced quote returned by GET /api/bookings/checkout, kept in the shared
+ * contract so the client renders exactly the fields the server sends — a
+ * field-name drift between the two blanks the checkout page with no error.
  *
- * Lives in the shared contract rather than in the controller because the client
- * renders it field by field. When it was defined independently on both sides,
- * the server sent `nightlyRates`/`nightlyTotal` and the client read
- * `nightlyRate` — `undefined.toLocaleString()` threw during render, React
- * unmounted the tree, and the checkout page went blank with no error shown.
- *
- * Display only. No figure here is ever accepted back as an amount; the server
- * reprices from ROOM_RATES when it creates the session and again before it
- * writes the row.
+ * Display only: no figure here is ever accepted back as an amount. The server
+ * reprices when it mints the payment and again before it writes the row.
  */
 export interface CheckoutQuote extends StayDetails {
   nights: number;
   currency: string;
   /**
-   * Human names for the rooms, index-aligned with roomTypes.
-   *
-   * A supplier room id is an opaque UUID, so roomTypes is unreadable on screen
-   * the moment a booking comes from a real hotel rather than the demo
-   * catalogue. Carried separately because roomTypes is what the room_types
-   * column stores and what re-pricing keys on — the label is display only and
-   * must never be the thing a rate is looked up by.
+   * Human names for the rooms, index-aligned with roomTypes (a supplier room
+   * id is an opaque UUID, unreadable on screen). Display only — re-pricing
+   * keys on roomTypes, never on a label.
    */
   roomLabels: string[];
   /** Index-aligned with roomTypes so a multi-room stay can be itemised. */

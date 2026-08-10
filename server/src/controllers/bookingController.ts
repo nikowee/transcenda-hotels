@@ -30,7 +30,7 @@ import {
 } from '../services/hotelRoomService.js';
 
 /**
- * Booking controller — the «Express Router» box from the UC4 class diagram.
+ * Booking controller — the «Express Router» box from the class diagram.
  *
  *   get_checkout(req, res)         → getCheckout          GET  /api/bookings/checkout
  *   post_guest_details(req, res)   → postGuestDetails     POST /api/bookings/guest-details
@@ -39,23 +39,21 @@ import {
  *   get_booking(req, res)          → getBookingById       GET  /api/bookings/:id
  *   get_user_bookings(req, res)    → getBookingsByUser    GET  /api/bookings/user/:userId
  *
- * The flow runs the opposite way round from the first cut of this file. bookings
- * has payment_id and price_paid NOT NULL and no status column, so there is no
- * such thing as a PENDING booking to write up front: postPayment only mints a
- * Stripe session, and postConfirmBooking writes the row once Stripe says the
- * charge cleared. What the customer typed has to survive that redirect, so it
- * travels in the session metadata rather than in a database row.
+ * Flow rule: pay first, write second. bookings has payment_id and price_paid
+ * NOT NULL with no status column, so there is no PENDING row to create up
+ * front — payment is minted first and the row is written once Stripe says the
+ * charge cleared, with the customer's details riding the metadata across the
+ * redirect.
  *
- * Prices are never read from a request body. Every amount below comes from a
- * rate table built server-side by hotelRoomService — the supplier's own rates
- * for a real room, the demo catalogue for the four offline slugs — both when
+ * Pricing rule: never read an amount from a request body. Every figure comes
+ * from a rate table built server-side by hotelRoomService (supplier rates for
+ * real rooms, the demo catalogue for the four offline slugs), both when
  * quoting and when charging.
  */
 
 /**
- * Exported so tests can assert against the limits rather than restating them.
- * A test that hardcodes 31 silently stops testing the boundary the day someone
- * changes MAX_NIGHTS.
+ * Exported limits: tests assert against these rather than restating them, so
+ * changing a boundary changes the tests with it.
  */
 export const CURRENCY = 'SGD';
 export const MAX_NIGHTS = 30;

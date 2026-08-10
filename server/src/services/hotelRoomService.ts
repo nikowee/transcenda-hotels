@@ -5,24 +5,19 @@ import 'dotenv/config';
 import axios from 'axios';
 
 /**
- * Room rates — the supplier half of the «External API» box in the UC4 class
- * diagram, and the thing bookingController's ROOM_RATES was standing in for.
- *
- * Every amount the booking flow charges is built from a table produced here.
- * The browser sends which rooms it wants; it never sends what they cost.
+ * Room rates — the supplier half of the «External API» box in the class
+ * diagram. Every amount the booking flow charges comes from a table built
+ * here: the browser sends which rooms it wants, never what they cost.
  *
  * Two sources feed one table:
  *
- *   supplier — Ascenda's /hotels/{id}/price, keyed by the opaque room `key` the
- *              API returns. This is what a booking made from the real search
- *              results prices against.
- *   demo     — four fixed slugs that need no network. /checkout reached
- *              directly still has to price something, the e2e suite runs
- *              offline, and a graded demo cannot depend on a third party being
- *              up.
+ *   supplier — Ascenda's /hotels/{id}/price, keyed by the opaque room `key`
+ *              the API returns, pricing bookings made from real search.
+ *   demo     — four fixed slugs needing no network, keeping the flow
+ *              demoable offline and free of a third party being up.
  *
- * The two key spaces are disjoint (UUIDs versus slugs), so merging them cannot
- * shadow a real room with a cheaper fake one.
+ * Safety guardrail: the two key spaces are disjoint (UUIDs versus slugs), so
+ * merging them cannot shadow a real room with a cheaper fake one.
  */
 
 const HOTEL_API_BASE = 'https://hotelapi.loyalty.dev/api';

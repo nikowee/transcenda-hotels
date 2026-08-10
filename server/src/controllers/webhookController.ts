@@ -8,17 +8,14 @@ import { findByPaymentId } from '../models/bookingModel.js';
 import { recordPaidBooking } from './bookingController.js';
 
 /**
- * Stripe webhook — the «External API» callback into the «Express Router», and
- * the only thing standing between a captured charge and a missing booking.
+ * Stripe webhook — the «External API» callback into the «Express Router»,
+ * and the only thing standing between a captured charge and a missing
+ * booking: when the customer closes the tab on Stripe's success page, or a
+ * 3DS challenge completes hours later, the browser never calls /confirm, and
+ * this handler creates the row instead.
  *
- * The write now happens after the charge, not before it, which moves this
- * handler from "flip a flag" to "create the row". If the customer closes the tab
- * on Stripe's success page, or a 3DS challenge completes hours later, the
- * browser never calls /confirm and nothing has been persisted. This handler is
- * the recovery path for exactly that.
- *
- * Must be mounted with express.raw() BEFORE the global express.json(), because
- * signature verification needs the unparsed body.
+ * Mounting guardrail: express.raw() BEFORE the global express.json() —
+ * signature verification runs over the unparsed body.
  */
 export const handleStripeWebhook = async (req: Request, res: Response): Promise<void> => {
   const signature = req.headers['stripe-signature'];

@@ -1,12 +1,12 @@
 import type { BookingRecord } from '../models/bookingTypes.js';
 
 /**
- * EmailService — the «External API» box from the UC4 class diagram.
+ * EmailService — the «External API» box from the class diagram.
  *
- * Delivery is logged, not sent: no mail transport is configured, and the
- * lockfile mandate rules out adding one on a feature branch. The signature and
- * return shape are the real ones, so dropping in a provider later is a change
- * to this file only.
+ * Log-only delivery: no mail transport is configured (the lockfile mandate
+ * rules out adding one), so the confirmation is printed rather than sent. The
+ * signature and return shape are the real ones, making a future provider a
+ * change to this file only.
  */
 
 export interface DeliveryReceipt {
@@ -27,13 +27,12 @@ const formatGuestName = (booking: BookingRecord) =>
 /**
  * Sequence diagram step 9: sendConfirmation(email, bookingDetails) → step 10.
  *
- * Sent only after the booking row exists, which under this schema also means
- * after the charge cleared — there is no unpaid booking to send a confirmation
- * for. The booking id is the customer's only handle now that booking_reference
- * is gone, so it leads the message.
+ * Runs only after the booking row exists — meaning the charge already cleared,
+ * so there is never a confirmation for an unpaid stay. The booking id leads
+ * the message as the customer's only handle.
  *
- * This function must never reject. By the time it runs the card is charged and
- * the row is committed; a throw here would report a completed booking as a
+ * Safety guardrail: never reject. The card is charged and the row committed by
+ * the time this runs, so a throw here would report a completed booking as a
  * failed request and send the guest back to pay again.
  */
 export const sendConfirmation = async (
@@ -56,8 +55,8 @@ export const sendConfirmation = async (
 
     return { delivered: true, messageId: `log_${bookingDetails.id}` };
   } catch (error: any) {
-    // Confirmation email is not allowed to sink a paid booking — the money is
-    // already taken and the row is already committed by this point.
+    // Swallow, never throw: the money is taken and the row committed, so a
+    // failed email must not sink a paid booking.
     return { delivered: false, errorMessage: error?.message ?? 'Email delivery failed' };
   }
 };

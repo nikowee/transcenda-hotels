@@ -1,20 +1,16 @@
 import { type Request, type Response, type NextFunction } from 'express';
 
 /**
- * Minimal fixed-window rate limiter.
+ * Minimal fixed-window rate limiter, hand-written to keep the dependency
+ * lockfile untouched (no express-rate-limit).
  *
- * Written by hand rather than pulling in express-rate-limit because the README
- * forbids adding dependencies on a feature branch. Per-process and in-memory,
- * so it does not hold across replicas — swap for the real library (or a Redis
- * store) before this runs on more than one instance.
- *
- * Scaling past one instance is gated on exactly two things, and this map is
- * the lesser of them:
- *   1. A unique constraint on bookings.payment_id in the database — without
- *      it, duplicate-booking protection is bookingModel's in-process lock,
- *      which a second replica silently defeats. Money-correctness, fix first.
- *   2. This store — N replicas make every limit effectively N× its configured
- *      value. Degraded protection, not corruption; fix second.
+ * Scaling guardrail: the buckets live in-process, so limits do not hold across
+ * replicas. Two things gate running more than one instance:
+ *   1. A unique constraint on bookings.payment_id in the database — without it
+ *      a second replica silently defeats bookingModel's duplicate lock. Fix
+ *      first (money-correctness).
+ *   2. This store — N replicas make every limit N× its configured value. Fix
+ *      second (degraded protection, not corruption).
  */
 
 interface Bucket {
@@ -24,7 +20,7 @@ interface Bucket {
 
 const buckets = new Map<string, Bucket>();
 
-/** Keeps the map from growing without bound on a long-running process. */
+/** Sweep expired buckets, keeping the map bounded on a long-running process. */
 const sweep = (now: number) => {
   for (const [key, bucket] of buckets) {
     if (bucket.resetAt <= now) buckets.delete(key);
@@ -48,21 +44,14 @@ export const rateLimit = (options: { windowMs: number; max: number }) => {
     }
 
     /**
-     * Keyed on the route *pattern*, not the concrete path.
+     * Key on the route pattern, not the concrete path. req.path resolves
+     * `/api/bookings/:id` to the full URL, handing every distinct id a fresh
+     * bucket — a scanner walking ids would never be throttled on an endpoint
+     * that returns full booking records. Pattern-keying also bounds the map to
+     * one entry per (address, route).
      *
-     * req.path on `/api/bookings/:id` is the resolved URL — `/api/bookings/<a
-     * uuid>` — so keying on it gave every distinct id its own fresh bucket.
-     * A scanner walking ids was therefore never throttled, and the 30/min cap
-     * only ever applied to repeated hits on the *same* id, which is the one
-     * case that is harmless. That endpoint returns the full booking record, so
-     * the control standing between an anonymous caller and bulk PII harvesting
-     * was inert.
-     *
-     * req.route is undefined for a 404 (no route matched), so fall back to the
+     * Fallback: req.route is undefined on a 404 (no route matched), so use the
      * path there — nothing is enumerable through a route that does not exist.
-     *
-     * This also bounds the map: one entry per (address, route) rather than one
-     * per (address, URL), so a sustained scan can no longer grow it.
      */
     const routeKey =
       (req.route as { path?: string } | undefined)?.path ?? req.path;
