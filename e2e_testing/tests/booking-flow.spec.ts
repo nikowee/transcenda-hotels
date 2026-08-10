@@ -131,14 +131,27 @@ type PaymentUI = 'demo' | 'elements';
 
 const STRIPE_FRAME = 'iframe[title*="Secure payment input"]';
 
-/** Waits for either card UI and reports which one mounted. */
+/**
+ * Waits for either card UI and reports which one mounted. Set E2E_EXPECT_UI
+ * (demo | elements) to pin the mode: without it the suite follows whatever
+ * the server serves, and a key left in server/.env by stripe:secret --write
+ * silently flips every spec onto real Stripe.
+ */
 const detectPaymentUI = async (page: Page): Promise<PaymentUI> => {
   const demo = page.getByText('Demo mode.', { exact: true });
   const frame = page.locator(STRIPE_FRAME).first();
   // Generous: under parallel workers Stripe.js and its iframes contend for the
   // same CPU as three other browsers and a Vite dev server.
   await expect(demo.or(frame)).toBeVisible({ timeout: 60000 });
-  return (await demo.isVisible()) ? 'demo' : 'elements';
+  const ui: PaymentUI = (await demo.isVisible()) ? 'demo' : 'elements';
+  const expected = process.env.E2E_EXPECT_UI;
+  if (expected && expected !== ui) {
+    throw new Error(
+      `Server mounted the ${ui} payment UI but E2E_EXPECT_UI=${expected}. ` +
+        'The mode follows the server\'s Stripe keys — check server/.env.'
+    );
+  }
+  return ui;
 };
 
 /**
@@ -214,6 +227,15 @@ const clickPay = async (page: Page, ui: PaymentUI) => {
  */
 const reachPaymentPage = async (page: Page): Promise<PaymentUI> => {
   await page.goto(CHECKOUT_URL);
+  // Fail with a diagnosis, not a 60s locator timeout: the fixtures book the
+  // demo room deluxe-king, which a NODE_ENV=production server removes.
+  const gated = page.getByText('That room type is not available.');
+  if (await gated.isVisible().catch(() => false)) {
+    throw new Error(
+      'Server refused the demo room deluxe-king — NODE_ENV=production gates the ' +
+        'demo catalogue. Run the e2e stack with a non-production NODE_ENV.'
+    );
+  }
   await fillGuestDetails(page);
   await page.getByRole('button', { name: /continue to payment/i }).click();
   await page.getByRole('button', { name: /pay sgd/i }).click();

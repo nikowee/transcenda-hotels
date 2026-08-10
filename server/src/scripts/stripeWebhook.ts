@@ -32,6 +32,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import Stripe from 'stripe';
+import { STRIPE_API_VERSION } from '../services/paymentService.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = resolve(HERE, '../../.env');
@@ -72,10 +73,13 @@ const stripeClient = (): Stripe => {
         'cannot be resolved. Set the key, or use a sim_sess_/sim_pi_ id.'
     );
   }
-  return new Stripe(key, { apiVersion: '2026-06-24.dahlia' });
+  return new Stripe(key, { apiVersion: STRIPE_API_VERSION });
 };
 
 const isRealSession = (id: string): boolean => id.startsWith('cs_');
+
+/** The demo three-night deluxe-king total in minor units — matches the booking fixtures. */
+const DEFAULT_AMOUNT = 78480;
 
 /**
  * Turns a real `cs_…` into the payment intent the handler will verify, and
@@ -235,7 +239,11 @@ const createSession = async (): Promise<{ sessionId: string; paymentIntentId: st
   });
 
   if (!response.ok) {
-    throw new Error(`Could not create a checkout session: ${response.status} ${await response.text()}`);
+    const body = await response.text();
+    const hint = body.includes('not available')
+      ? '\nThe stay books the demo room deluxe-king, which NODE_ENV=production removes —\nrun against a non-production server, or pass --session with a real cs_… id.'
+      : '';
+    throw new Error(`Could not create a checkout session: ${response.status} ${body}${hint}`);
   }
 
   const { redirectUrl } = (await response.json()) as { redirectUrl: string };
@@ -333,7 +341,7 @@ const main = async (): Promise<void> => {
       return;
     }
     await deliver(
-      paymentIntentSucceeded(paymentIntentId, Number(flag('amount') ?? 78480)),
+      paymentIntentSucceeded(paymentIntentId, Number(flag('amount') ?? DEFAULT_AMOUNT)),
       secret,
       tamper
     );
@@ -342,7 +350,7 @@ const main = async (): Promise<void> => {
 
   if (type === 'charge.refunded') {
     const paymentIntentId = flag('payment-intent') ?? `sim_pi_${randomUUID()}`;
-    await deliver(chargeRefunded(paymentIntentId, Number(flag('amount') ?? 78480)), secret, tamper);
+    await deliver(chargeRefunded(paymentIntentId, Number(flag('amount') ?? DEFAULT_AMOUNT)), secret, tamper);
     return;
   }
 

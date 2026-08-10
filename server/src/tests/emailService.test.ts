@@ -155,7 +155,8 @@ describe('emailService', () => {
         })
         .reply(200, { id: 'email_abc123' });
 
-      const receipt = await sendConfirmation('jane@example.com', BOOKING);
+      // Not @example.com: reserved recipient domains deliberately take the log path.
+      const receipt = await sendConfirmation('jane@transcenda-hotels.dev', BOOKING);
 
       expect(scope.isDone()).to.equal(true);
       expect(receipt.delivered).to.equal(true);
@@ -163,7 +164,7 @@ describe('emailService', () => {
       expect(sent, 'request body was captured').to.not.equal(null);
       const body = sent as unknown as { from: string; to: string[]; subject: string; text: string };
       expect(body.from).to.equal('bookings@transcenda.example');
-      expect(body.to).to.deep.equal(['jane@example.com']);
+      expect(body.to).to.deep.equal(['jane@transcenda-hotels.dev']);
       expect(body.subject).to.contain(BOOKING.id);
       expect(body.text).to.contain('The Fullerton Hotel Singapore');
       expect(body.text).to.contain('SGD 1990.49');
@@ -172,10 +173,21 @@ describe('emailService', () => {
       expect(body.text).to.not.contain('📧');
     });
 
+    /** E2E books @example.com guests; a real send to one hard-bounces against the sending domain. */
+    it('logs instead of sending when the recipient domain is reserved', async () => {
+      const scope = nock('https://api.resend.com').post('/emails').reply(200, { id: 'nope' });
+
+      const receipt = await sendConfirmation('jane+e2e@example.com', BOOKING);
+
+      expect(receipt.delivered).to.equal(true);
+      expect(receipt.messageId).to.contain('log_');
+      expect(scope.isDone(), 'reserved recipients must never reach the API').to.equal(false);
+    });
+
     it('reports a provider failure without rejecting', async () => {
       nock('https://api.resend.com').post('/emails').reply(500, { message: 'internal error' });
 
-      const receipt = await sendConfirmation('jane@example.com', BOOKING).catch(() => null);
+      const receipt = await sendConfirmation('jane@transcenda-hotels.dev', BOOKING).catch(() => null);
 
       expect(receipt, 'must resolve, never reject').to.not.equal(null);
       expect(receipt?.delivered).to.equal(false);

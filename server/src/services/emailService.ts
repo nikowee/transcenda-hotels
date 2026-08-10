@@ -33,6 +33,27 @@ const formatGuestName = (booking: BookingRecord) =>
 const isConfigured = (): boolean =>
   Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
 
+/** Config state for boot-time reporting — the pairing rule lives here, not in index.ts. */
+export const emailConfigStatus = (): { mode: 'resend' | 'log-only'; missing?: string } => {
+  if (isConfigured()) return { mode: 'resend' };
+  if (process.env.RESEND_API_KEY) return { mode: 'log-only', missing: 'EMAIL_FROM' };
+  if (process.env.EMAIL_FROM) return { mode: 'log-only', missing: 'RESEND_API_KEY' };
+  return { mode: 'log-only' };
+};
+
+/** RFC 2606/6761 reserved domains: no real guest, guaranteed hard bounce. */
+const RESERVED_RECIPIENT = /@(?:[^@\s]+\.)?(?:example\.(?:com|org|net)|example|test|invalid|localhost)$/i;
+
+/**
+ * Sends in flight, so shutdown can outwait them: the caller fires and
+ * forgets, and an ECS drain that exits on server.close alone would kill a
+ * paid guest's confirmation mid-POST. Bounded by SEND_TIMEOUT_MS.
+ */
+const pendingSends = new Set<Promise<unknown>>();
+export const whenSendsSettled = async (): Promise<void> => {
+  await Promise.allSettled([...pendingSends]);
+};
+
 /** Guest-facing. The booking id leads — it is the guest's only support handle. */
 const renderCustomerMessage = (booking: BookingRecord) => ({
   subject: `Booking confirmed — ${booking.hotelName} (${booking.id})`,
@@ -75,9 +96,9 @@ export const sendConfirmation = async (
   bookingDetails: BookingRecord
 ): Promise<DeliveryReceipt> => {
   try {
-    if (isConfigured()) {
+    if (isConfigured() && !RESERVED_RECIPIENT.test(email)) {
       const message = renderCustomerMessage(bookingDetails);
-      const response = await axios.post<{ id: string }>(
+      const send = axios.post<{ id: string }>(
         RESEND_URL,
         {
           from: process.env.EMAIL_FROM,
@@ -90,6 +111,8 @@ export const sendConfirmation = async (
           timeout: SEND_TIMEOUT_MS,
         }
       );
+      pendingSends.add(send);
+      const response = await send.finally(() => pendingSends.delete(send));
       // The Resend id is the only handle for tracing a delivery; the caller
       // discards the receipt on success, so the log is the record.
       console.log(

@@ -115,8 +115,12 @@ encoded in the repo:
 - `GET /api/health` → 200 through the ALB
 - A search from the deployed frontend (CORS proves `CORS_ORIGINS`; results
   prove outbound to Ascenda; a repeat proves Redis if configured)
-- A full test-mode booking → confirmation page shows a booking id, exactly one
-  row in `bookings`, one confirmation log line in the task logs
+- A full test-mode booking **with your own email as the guest address** —
+  with Resend configured this sends a real confirmation, and a throwaway
+  address hard-bounces against the freshly verified domain. Expect: a booking
+  id on the confirmation page, exactly one row in `bookings`, one
+  `Confirmation sent` line (with the Resend id) in the task logs, and the
+  email in your inbox
 - `stripe listen`/dashboard: webhook deliveries answering 200
 - Kill a task: draining, not 502s (SIGTERM handler)
 

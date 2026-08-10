@@ -17,7 +17,7 @@ const SIMULATED_CARD: CardDetails = {
 /** PaymentService — the «External API» box from the class diagram. */
 
 /** Pinned: the ^22 caret range would let the wire version drift on any lockfile refresh. */
-const STRIPE_API_VERSION = '2026-06-24.dahlia';
+export const STRIPE_API_VERSION = '2026-06-24.dahlia';
 
 const secretKey = process.env.STRIPE_SECRET_KEY;
 const isProduction = process.env.NODE_ENV === 'production';

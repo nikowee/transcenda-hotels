@@ -68,13 +68,13 @@ report, which excludes `src/tests/`.
 | `stripePaymentIntents.test.ts` | 25 | Mocha + Chai + **nock** | `server/src/tests/` |
 | `stripeRefunds.test.ts` | 11 | Mocha + Chai + **nock** | `server/src/tests/` |
 | `stripeWebhook.test.ts` | 21 | Mocha + Chai + Supertest | `server/src/tests/` |
-| `hotelRoomService.test.ts` | 17 | Mocha + Chai + **nock** | `server/src/tests/` |
+| `hotelRoomService.test.ts` | 19 | Mocha + Chai + **nock** | `server/src/tests/` |
 | `hotelName.test.ts` | 7 | Mocha + Chai + Supertest + **nock** | `server/src/tests/` |
-| `emailService.test.ts` | 6 | Mocha + Chai | `server/src/tests/` |
+| `emailService.test.ts` | 9 | Mocha + Chai | `server/src/tests/` |
 | `supplierPricing.test.ts` | 8 | Mocha + Chai + Supertest + **nock** | `server/src/tests/` |
 | `booking-flow.spec.ts` | 11 | Playwright | `e2e_testing/tests/` |
 | `search-*.spec.ts` | 5 | Playwright | `e2e_testing/tests/` |
-| **Total** | **462** | — | — |
+| **Total** | **467** | — | — |
 
 ---
 

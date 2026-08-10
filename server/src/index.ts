@@ -26,6 +26,7 @@ import { isSupabaseConfigured } from './models/bookingModel.js';
 // Already loaded transitively via hotelController; imported here only so
 // shutdown can release the connection after the HTTP listener drains.
 import { redis } from './lib/redisClient.js';
+import { emailConfigStatus, whenSendsSettled } from './services/emailService.js';
 
 dotenv.config();
 
@@ -45,16 +46,19 @@ const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
   .filter(Boolean);
 
 /**
- * Safety guardrail: the email transport needs both vars, so exactly one set
- * is always a misconfiguration — production provisions them through
- * different channels, which is precisely how one goes missing.
+ * Safety guardrail: exactly one email var set is always a misconfiguration —
+ * production provisions the two through different channels, which is
+ * precisely how one goes missing. The pairing rule itself lives in
+ * emailService; this only reports it.
  */
-if (Boolean(process.env.RESEND_API_KEY) !== Boolean(process.env.EMAIL_FROM)) {
-  const missing = process.env.RESEND_API_KEY ? 'EMAIL_FROM' : 'RESEND_API_KEY';
-  console.warn(
-    `⚠️  ${missing} is not set but its counterpart is. Confirmation emails ` +
-      'need both RESEND_API_KEY and EMAIL_FROM; falling back to log-only delivery.'
-  );
+{
+  const email = emailConfigStatus();
+  if (email.missing) {
+    console.warn(
+      `⚠️  ${email.missing} is not set but its counterpart is. Confirmation emails ` +
+        'need both RESEND_API_KEY and EMAIL_FROM; falling back to log-only delivery.'
+    );
+  }
 }
 
 /** Safety guardrail: warn loudly when production forgot CORS_ORIGINS. */
@@ -222,6 +226,9 @@ if (isDirectRun) {
     force.unref();
 
     server.close(async () => {
+      // Confirmation emails are fired without awaiting the request; outwait
+      // them (bounded by their own timeout) or a deploy eats them silently.
+      await whenSendsSettled();
       try {
         await redis.destroy();
         console.log('🔌 Redis disconnected');
