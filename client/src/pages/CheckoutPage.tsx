@@ -40,17 +40,17 @@ const API_URL = import.meta.env.VITE_API_URL;
  * drawn against a server-rendered EJS monolith, while this codebase is a
  * decoupled SPA, so `render(page, data, errorMessage)` becomes local state.
  *
- * This page never collects card details. Payment happens on a Stripe-hosted
- * checkout page, so no PAN, expiry or CVC is ever entered into, stored by, or
- * transmitted through our client or server.
+ * This page never collects card details. The card is entered on the next page
+ * (/payment) inside Stripe's own hosted fields, so no PAN, expiry or CVC is
+ * ever entered into, stored by, or transmitted through our client or server.
  *
  * Sequence steps map to:
  *   1-2  mount + GET /api/bookings/checkout   → priced quote (display only)
  *   3    submit guest details                 → POST /api/bookings/guest-details
  *   1a-3a invalid details                     → fieldErrors, stay on step 1
- *   4-5  confirm and pay                      → POST /api/bookings/payment
- *                                             → redirect to Stripe
- *   6-11 handled on return in ConfirmationPage, and by the webhook
+ *   4    continue to payment                  → write handoff, go to /payment
+ *   5    the payment page mints the intent    → POST /api/bookings/payment-intent
+ *   6-11 handled there and in ConfirmationPage, and by the webhook
  */
 
 type Step = 'guest' | 'review';
@@ -303,8 +303,9 @@ export default function CheckoutPage() {
   };
 
   /**
-   * Sequence steps 4-5. The server prices the stay itself and returns a
-   * Stripe-hosted URL; nothing about the amount is sent from here.
+   * Sequence step 4. Nothing priced is sent from here — the guest and the stay
+   * are handed off to /payment, which asks the server to mint the payment
+   * intent against its own prices.
    */
   const handlePay = async () => {
     if (!quote) return;
