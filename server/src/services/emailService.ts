@@ -4,21 +4,10 @@ import type { BookingRecord } from '../models/bookingTypes.js';
 /**
  * EmailService — the «External API» box from the UC4 class diagram.
  *
- * Two transports, chosen per call:
- *
- *   RESEND_API_KEY + EMAIL_FROM set → a real delivery via Resend's HTTP API.
- *     Plain axios rather than the resend SDK on purpose: the lockfile mandate
- *     rules out new dependencies, and the API is one POST.
- *   either absent → the message is logged, which is what dev, docker-compose
- *     and the entire test suite run on. Same receipt shape either way.
- *
- * Keep both vars unset outside production: the E2E suite books with
- * throwaway @example.com addresses, and example.com accepts no mail — every
- * send would hard-bounce against the sending domain's reputation.
- *
- * Env is read per call, not at module scope, so a test can flip transports
- * without an import-order dance — the same pattern paymentService uses for
- * isSimulated().
+ * Both env vars set → Resend delivery; either absent → log-only (dev, compose
+ * and the test suite). Plain axios, not the resend SDK — one POST, no new
+ * dependency. Env read per call like isSimulated(). Keep the vars unset
+ * outside production: E2E books @example.com addresses, which hard-bounce.
  */
 
 export interface DeliveryReceipt {
@@ -32,12 +21,7 @@ const CURRENCY = 'SGD';
 
 const RESEND_URL = 'https://api.resend.com/emails';
 
-/**
- * How long a confirmation may block the booking response for. Half the
- * shutdown drain window in index.ts, never equal to it: a send racing SIGTERM
- * must lose to the drain, not tie it, or a stalled provider during a deploy
- * kills a paid booking's response mid-flight.
- */
+/** Half the SIGTERM drain window, never equal: a send racing shutdown must lose to the drain. */
 const SEND_TIMEOUT_MS = 5_000;
 
 const formatStayDates = (startDate: string, endDate: string, nights: number) =>
@@ -49,11 +33,7 @@ const formatGuestName = (booking: BookingRecord) =>
 const isConfigured = (): boolean =>
   Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
 
-/**
- * What the guest receives. The booking id leads because it is the guest's
- * only handle — booking_reference does not exist in this schema, so a
- * confirmation without the id is unusable for support.
- */
+/** Guest-facing. The booking id leads — it is the guest's only support handle. */
 const renderCustomerMessage = (booking: BookingRecord) => ({
   subject: `Booking confirmed — ${booking.hotelName} (${booking.id})`,
   text: [
@@ -86,16 +66,9 @@ const renderLogLine = (email: string, booking: BookingRecord) =>
   ].join('\n');
 
 /**
- * Sequence diagram step 9: sendConfirmation(email, bookingDetails) → step 10.
- *
- * Sent only after the booking row exists, which under this schema also means
- * after the charge cleared — there is no unpaid booking to send a confirmation
- * for.
- *
- * This function must never reject. By the time it runs the card is charged and
- * the row is committed; a throw here would report a completed booking as a
- * failed request and send the guest back to pay again. A failed email is a
- * `delivered: false` receipt, not an error.
+ * Sequence diagram steps 9→10. Runs only after the row exists, hence after the
+ * charge cleared. Never rejects — a throw would report a paid booking as a
+ * failed request; failure is a delivered:false receipt.
  */
 export const sendConfirmation = async (
   email: string,
@@ -117,9 +90,8 @@ export const sendConfirmation = async (
           timeout: SEND_TIMEOUT_MS,
         }
       );
-      // The provider id is the only handle for tracing this delivery in
-      // Resend's dashboard, so it goes to the log — the caller discards the
-      // receipt on success.
+      // The Resend id is the only handle for tracing a delivery; the caller
+      // discards the receipt on success, so the log is the record.
       console.log(
         `📧 Confirmation sent — booking ${bookingDetails.id} → ${email} (resend ${response.data.id})`
       );
@@ -129,11 +101,8 @@ export const sendConfirmation = async (
     console.log(renderLogLine(email, bookingDetails));
     return { delivered: true, messageId: `log_${bookingDetails.id}` };
   } catch (error: any) {
-    // Confirmation email is not allowed to sink a paid booking — the money is
-    // already taken and the row is already committed by this point.
-    //
-    // Resend puts the actionable cause ("The domain is not verified") in the
-    // response body; axios's own message is just the status code.
+    // Resend puts the actionable cause in the response body; axios's own
+    // message is just the status code.
     const providerDetail = error?.response?.data?.message;
     const errorMessage =
       (providerDetail ? `${error.message}: ${providerDetail}` : error?.message) ??

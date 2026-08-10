@@ -519,11 +519,9 @@ export const recordPaidBooking = async (
 
   try {
     /**
-     * Sequence steps 9-10, wired as insertOne's onCreated hook rather than a
-     * line after it. Deliberately not awaited: the guest has already paid, so
-     * their response must not wait on a mail provider — a slow Resend day
-     * would otherwise add up to 5s to every paid booking. The outcome is
-     * logged when it arrives instead.
+     * Sequence steps 9-10, wired as insertOne's onCreated hook. Not awaited:
+     * the paid guest's response must not wait on a mail provider — the
+     * outcome is logged when it arrives.
      */
     const emailOnce = (written: BookingRecord): void => {
       sendConfirmation(written.guest.email, written)

@@ -46,10 +46,8 @@ const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
 
 /**
  * Safety guardrail: the email transport needs both vars, so exactly one set
- * is always a misconfiguration — the service silently falls back to log-only
- * and every paid guest gets no confirmation. The two are provisioned through
- * different channels in production (Secrets Manager vs plain env), which is
- * precisely how one goes missing.
+ * is always a misconfiguration — production provisions them through
+ * different channels, which is precisely how one goes missing.
  */
 if (Boolean(process.env.RESEND_API_KEY) !== Boolean(process.env.EMAIL_FROM)) {
   const missing = process.env.RESEND_API_KEY ? 'EMAIL_FROM' : 'RESEND_API_KEY';

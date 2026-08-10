@@ -54,22 +54,13 @@ const capture = async (
 };
 
 describe('emailService', () => {
-  /**
-   * The transport is chosen per call from env, so a developer's populated
-   * .env would silently flip every log-path test below onto the network
-   * path. Cleared here rather than trusted absent.
-   */
+  /** A populated .env would flip the log-path tests onto the network path. */
   beforeEach(() => {
     delete process.env.RESEND_API_KEY;
     delete process.env.EMAIL_FROM;
   });
 
-  /**
-   * The no-HTTP test below registers an interceptor precisely so it stays
-   * unconsumed; without this cleanup nock hands that stale interceptor to the
-   * nested suite's first request (oldest match wins) and its own scope never
-   * completes.
-   */
+  /** The no-HTTP test leaves its interceptor pending by design; nock hands stale interceptors to later requests (oldest match wins). */
   afterEach(() => {
     nock.cleanAll();
   });
@@ -140,23 +131,14 @@ describe('emailService', () => {
     expect(scope.isDone(), 'no request may leave the process').to.equal(false);
   });
 
-  /**
-   * The live transport. Everything above ran with the env cleared and proved
-   * the log path; these prove the Resend path — including that a provider
-   * outage still cannot sink a paid booking.
-   *
-   * globalSetup blocks all outbound sockets, so a request that escapes these
-   * interceptors fails the test rather than reaching api.resend.com.
-   */
+  /** The Resend path. globalSetup blocks outbound sockets, so a request that escapes these interceptors fails the test. */
   describe('with a Resend key configured', () => {
     beforeEach(() => {
       process.env.RESEND_API_KEY = 're_test_key';
       process.env.EMAIL_FROM = 'bookings@transcenda.example';
     });
     afterEach(() => {
-      // Unset immediately, not just in the suite's beforeEach: later suites
-      // observe emails through the log line, and a leaked key would silently
-      // flip them onto the (socket-blocked) network path.
+      // A leaked key would flip later suites onto the network path.
       delete process.env.RESEND_API_KEY;
       delete process.env.EMAIL_FROM;
       nock.cleanAll();
