@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useParams, useSearchParams, useNavigate, Link } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 import axios from 'axios';
-import { Star, MapPin, ChevronLeft, ChevronRight, ArrowLeft, ExternalLink } from 'lucide-react';
+import { Star, MapPin, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
+import Navbar from '../components/Navbar';
 import LoadingPage from './LoadingPage';
 import RoomList from '../components/RoomList';
 import { amenityLabels } from '../lib/amenityLabels';
@@ -13,7 +14,6 @@ const API_URL = import.meta.env.VITE_API_URL;
 
 export default function HotelDetailPage() {
     const { id } = useParams();
-    const navigate = useNavigate();
     const [hotel, setHotel] = useState<HotelDetail | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -98,19 +98,8 @@ export default function HotelDetailPage() {
                 {/* Dark gradient for legible white text — echoes the landing hero */}
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-slate-900/70" />
 
-                {/* Nav — same brand mark as the landing page */}
-                <nav className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between p-6">
-                    <Link to="/" className="text-2xl font-extrabold tracking-tight text-white">
-                        Transcenda<span className="text-blue-500">.</span>
-                    </Link>
-                    <button
-                        onClick={() => navigate(-1)}
-                        className="flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20"
-                    >
-                        <ArrowLeft className="h-4 w-4" />
-                        Back to results
-                    </button>
-                </nav>
+                {/* Shared Navbar with back button + search bar */}
+                <Navbar showBackButton showSearchBar />
 
                 {/* Gallery arrows */}
                 {hasImages && galleryImages.length > 1 && (

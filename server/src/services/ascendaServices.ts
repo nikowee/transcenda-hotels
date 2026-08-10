@@ -1,7 +1,39 @@
 import axios from 'axios';
+import dotenv from 'dotenv';
 
-// For the following interfaces, refer to the Ascendas API documentation for details on the request and response structures.
-// The fields that we will not require are omitted for brevity.
+dotenv.config();
+
+// ── Generic polling utility ──
+
+interface PollOptions {
+    intervalMs?: number;
+    maxAttempts?: number;
+}
+
+/**
+ * Polls an API endpoint until `completed` is true or max attempts are reached.
+ * The `fetcher` callback should return a response object containing a `completed` boolean.
+ * Use this when you only need the final completed response (not accumulation across partial results).
+ */
+async function pollUntilComplete<T extends { completed: boolean }>(
+    fetcher: () => Promise<T>,
+    options?: PollOptions
+): Promise<T> {
+    const intervalMs = options?.intervalMs ?? 4000;
+    const maxAttempts = options?.maxAttempts ?? 10;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const response = await fetcher();
+        if (response.completed) return response;
+        if (attempt < maxAttempts) {
+            await sleep(intervalMs);
+        }
+    }
+
+    throw new Error('Polling timed out');
+}
+
+// ── Types ──
 
 // Request structure for Ascendas /api/hotels/prices endpoint.
 // Some fields are hardcoded according to the API specifications and are not included here.
@@ -30,7 +62,7 @@ interface PriceItem {
 // Note: amenities and categories are typed as 'any' because the API returns
 // them as objects (e.g. {"wifi":true,"pool":true}) rather than arrays.
 // We transform them into arrays in the helper functions below.
-interface HotelDetails {
+export interface HotelDetails {
     id: string;
     name: string;
     rating: number;
@@ -45,6 +77,12 @@ interface HotelDetails {
         suffix: string;
         count: number;
     };
+    trustyou?: {
+        score: {
+            overall: number;
+        };
+    };
+    number_reviews?: number;
 }
 
 // Combined data structure for both the hotel and price endpoints.
@@ -63,7 +101,29 @@ export interface MergedHotel {
     images: string[];
 }
 
-// ── Helper: Transform categories object to array of names ──
+// Room-level types (used by fetchRoomPrices)
+export interface RoomOption {
+    key: string;
+    roomDescription: string;
+    long_description: string;
+    free_cancellation: boolean;
+    rooms_available: number;
+    images: Array<{ url: string; high_resolution_url: string; hero_image: boolean }>;
+    amenities: string[];
+    price: number;
+    converted_price: number;
+    points: number;
+}
+
+export interface RoomPricesResponse {
+    completed: boolean;
+    currency: string | null;
+    rooms: RoomOption[];
+}
+
+// ── Helpers ──
+
+// Helper: Transform categories object to array of names
 const transformCategories = (categories: any): string[] => {
     if (!categories) return [];
     if (Array.isArray(categories)) return categories;
@@ -73,10 +133,24 @@ const transformCategories = (categories: any): string[] => {
         .map((c: { name: string }) => c.name);
 };
 
-// ── Helper: Strip HTML tags from description ──
+// Helper: Strip HTML tags from description.
+// Block-level tags become newlines first so paragraph breaks survive for
+// the frontend's whitespace-pre-line rendering, then entities are decoded.
 const cleanDescription = (description: string): string => {
     if (!description) return '';
-    return description.replace(/<[^>]*>/g, '').trim();
+    return description
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;|&apos;/gi, "'")
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/[ \t]+/g, ' ')
+        .trim();
 };
 
 // Helper function to simulate delay.
@@ -93,11 +167,71 @@ const constructImageUrls = (imageDetails: HotelDetails['image_details']): string
   return urls;
 };
 
-// Calls the Ascendas API (hotels and prices) to search for hotels based off the provided search parameters,
-// and returns a list of hotels in the MergedHotel format, sorted by searchRank.
-export const searchHotels = async (params: SearchParams): Promise<MergedHotel[]> => {
-    const BASE_URL = 'https://hotelapi.loyalty.dev/api';
+// ── Public API functions ──
 
+const BASE_URL = process.env.ASC_BASE_API_URL || 'https://hotelapi.loyalty.dev/api';
+
+/**
+ * Fetches room prices for a specific hotel, polling until the API returns completed.
+ * Used by GET /api/hotels/:id/price
+ */
+export async function fetchRoomPrices(
+    hotelId: string,
+    params: {
+        destination_id: string;
+        checkin: string;
+        checkout: string;
+        guests: string;
+        country_code?: string;
+        currency?: string;
+        lang?: string;
+    }
+): Promise<RoomPricesResponse> {
+    return pollUntilComplete<RoomPricesResponse>(
+        () =>
+            axios
+                .get<RoomPricesResponse>(`${BASE_URL}/hotels/${hotelId}/price`, {
+                    params: {
+                        destination_id: params.destination_id,
+                        checkin: params.checkin,
+                        checkout: params.checkout,
+                        guests: params.guests,
+                        lang: params.lang ?? 'en_US',
+                        currency: params.currency ?? 'SGD',
+                        country_code: params.country_code ?? 'SG',
+                        partner_id: 1089,
+                        landing_page: 'wl-acme-earn',
+                        product_type: 'earn',
+                    },
+                })
+                .then((r) => r.data),
+        { intervalMs: 1500, maxAttempts: 15 }
+    );
+}
+
+/**
+ * Fetches details for a single hotel by its ID.
+ * Used by GET /api/hotels/:id
+ */
+export async function fetchHotelById(id: string): Promise<HotelDetails> {
+    try {
+        const response = await axios.get<HotelDetails>(`${BASE_URL}/hotels/${id}`);
+        return {
+            ...response.data,
+            description: cleanDescription(response.data.description || ''),
+        };
+    } catch (err) {
+        console.error('Hotel detail API error:', err);
+        throw new Error('Failed to fetch hotel details');
+    }
+}
+
+/**
+ * Calls the Ascendas API (hotels and prices) to search for hotels based off the provided search parameters,
+ * and returns a list of hotels in the MergedHotel format, sorted by searchRank.
+ * Used by GET /api/hotels/search
+ */
+export const searchHotels = async (params: SearchParams): Promise<MergedHotel[]> => {
     // Request params for Ascendas /api/hotels/prices endpoint.
     const requestParams = {
         destination_id: params.destination_id,
@@ -199,4 +333,4 @@ export const searchHotels = async (params: SearchParams): Promise<MergedHotel[]>
     console.log(`✅ Merged ${mergedHotels.length} valid hotels out of ${allHotelPrices.length} price entries`);
 
     return mergedHotels;
-}
+};
