@@ -1,14 +1,6 @@
-/**
- * Shared shapes for UC4 — Book & Make Payment.  Mirrors
- * server/src/models/bookingTypes.ts, which itself mirrors the deployed
- * Supabase schema.
- */
+/** Shared shapes for UC4 — Book & Make Payment. */
 
-/**
- * Billing address, as it appears on the card statement.  Collected primarily
- * so Stripe can run an AVS check against it — one of the cheaper fraud signals
- * available — and stored so the record matches what was authorised.
- */
+/** Billing address, as it appears on the card statement. */
 export interface BillingAddress {
   line1: string;
   line2?: string | null;
@@ -43,12 +35,7 @@ export interface StayDetails {
   children: number;
 }
 
-/**
- * There is deliberately no card *entry* type here.  Payment is taken on a
- * Stripe-hosted checkout page, so no card data is ever collected, typed, or
- * transmitted by this app — that is what keeps the platform out of PCI SAQ D
- * scope.
- */
+/** There is deliberately no card *entry* type here. */
 export interface CardDetails {
   brand: string;
   last4: string;
@@ -56,19 +43,11 @@ export interface CardDetails {
   expYear: number;
 }
 
-/**
- * Priced quote returned by GET /api/bookings/checkout. Display only — the
- * server reprices the stay when the payment session is created, so nothing
- * here is ever sent back as an amount.
- */
+/** Priced quote returned by GET /api/bookings/checkout. */
 export interface CheckoutQuote extends StayDetails {
   nights: number;
   currency: string;
-  /**
-   * Human names for the rooms, index-aligned with roomTypes.  A supplier room
-   * id is an opaque UUID, so roomTypes is unreadable on screen the moment a
-   * booking comes from a real hotel rather than the demo catalogue.
-   */
+  /** Human names for the rooms, index-aligned with roomTypes. */
   roomLabels: string[];
   /** Index-aligned with roomTypes so a multi-room stay can be itemised. */
   nightlyRates: number[];
@@ -79,11 +58,7 @@ export interface CheckoutQuote extends StayDetails {
   totalPrice: number;
 }
 
-/**
- * A persisted booking, as the API returns it.  The row has price_paid and
- * payment_id NOT NULL and no status column, so the existence of one of these
- * is itself the proof that payment cleared.
- */
+/** A persisted booking, as the API returns it. */
 export interface BookingRecord {
   id: string;
   userId: string | null;

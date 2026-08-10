@@ -4,20 +4,11 @@
 import 'dotenv/config';
 import axios from 'axios';
 
-/**
- * Room rates — the supplier half of the «External API» box in the class
- * diagram.  Every amount the booking flow charges comes from a table built
- * here: the browser sends which rooms it wants, never what they cost.
- */
+/** Room rates — the supplier half of the «External API» box in the class diagram. */
 
 const HOTEL_API_BASE = 'https://hotelapi.loyalty.dev/api';
 
-/**
- * Required on every priced Ascenda request — they select the white-label
- * partner whose rates come back.  Omitting them returns an empty room list
- * rather than an error, which reads as "no availability" and is very hard to
- * tell from a genuinely full hotel.
- */
+/** Required on every priced Ascenda request. */
 const PARTNER_PARAMS = {
   partner_id: '1089',
   landing_page: 'wl-acme-earn',
@@ -25,23 +16,12 @@ const PARTNER_PARAMS = {
   lang: 'en_US',
 } as const;
 
-/**
- * The price endpoint answers immediately with `completed: false` and an empty
- * room list while it fans out to suppliers, so the first response is almost
- * never the answer.  Poll until it settles.
- */
+/** The price endpoint answers immediately with `completed: false` and an empty room list while it fans out to suppliers, so the first response is almost never the answer. */
 const POLL_INTERVAL_MS = Number(process.env.HOTEL_API_POLL_MS ?? 1200);
 const MAX_POLLS = Number(process.env.HOTEL_API_MAX_POLLS ?? 8);
 const REQUEST_TIMEOUT_MS = 8_000;
 
-/**
- * A quote is priced three times over one checkout — once for display, once
- * when the PaymentIntent is minted, once when the charge is confirmed — and
- * all three amounts have to agree or the confirm-time cross-check rejects a
- * payment that already went through.  Supplier rates move on their own
- * schedule, so this cache is what makes those three reads return the same
- * number.
- */
+/** A quote is priced three times over one checkout. */
 const CACHE_TTL_MS = 30 * 60 * 1000;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -77,11 +57,7 @@ const DEMO_NIGHTLY_RATES: Record<string, { label: string; nightlyRate: number }>
   'family-room': { label: 'Family Room', nightlyRate: 310 },
 };
 
-/**
- * Object.hasOwn, not a plain lookup: DEMO_NIGHTLY_RATES['constructor'] resolves
- * to a function off Object.prototype rather than undefined, so a `!== undefined`
- * test waves every inherited key straight through.
- */
+/** Object.hasOwn, not a plain lookup: DEMO_NIGHTLY_RATES['constructor'] resolves to a function off Object.prototype rather than undefined, so a `!== undefined` test waves every inherited key straight through. */
 export const isDemoRoom = (roomId: string): boolean => Object.hasOwn(DEMO_NIGHTLY_RATES, roomId);
 
 export const demoRateTable = (nights: number): RateTable => {
@@ -107,11 +83,7 @@ export const demoRateTable = (nights: number): RateTable => {
 
 // ── Supplier lookup ─────────────────────────────────────────────────────────
 
-/**
- * The subset of Ascenda's room object this service reads. Everything else the
- * endpoint returns — images, amenities, market rates, long descriptions — is
- * presentation for the hotel page and has no business influencing a charge.
- */
+/** The subset of Ascenda's room object this service reads. */
 interface AscendaRoom {
   key?: string;
   roomNormalizedDescription?: string;
@@ -164,13 +136,7 @@ export const __clearRateCache = (): void => {
   supplierCache.clear();
 };
 
-/**
- * `converted_price` is the tax-inclusive stay total, and the tax component is
- * reported separately.  Deriving the subtotal by subtraction rather than
- * reading `base_rate_in_currency` guarantees subtotal + taxes === total
- * exactly; the two supplier fields disagree by a cent often enough that
- * trusting both produces a breakdown that does not add up on screen.
- */
+/** `converted_price` is the tax-inclusive stay total, and the tax component is reported separately. */
 const toPricedRoom = (room: AscendaRoom, nights: number): PricedRoom | null => {
   const key = typeof room.key === 'string' ? room.key.trim() : '';
   if (!key) return null;
@@ -207,10 +173,7 @@ const toPricedRoom = (room: AscendaRoom, nights: number): PricedRoom | null => {
   };
 };
 
-/**
- * Polls Ascenda until the price search settles, then maps the rooms.  Returns
- * a failure rather than falling back to the demo catalogue.
- */
+/** Polls Ascenda until the price search settles, then maps the rooms. */
 export const listSupplierRooms = async (request: RoomRateRequest): Promise<RateLookup> => {
   const key = cacheKey(request);
   const cached = supplierCache.get(key);
@@ -243,12 +206,7 @@ export const listSupplierRooms = async (request: RoomRateRequest): Promise<RateL
         validateStatus: (status) => status < 500,
       });
 
-      /**
-       * The supplier rejected the query — but "rejected" covers two different
-       * things, and caching them alike made a transient fault permanent.  A
-       * 422 for an unknown hotel is a settled answer: the id will be just as
-       * unknown in four seconds, so caching it saves eight pointless polls.
-       */
+      /** The supplier rejected the query. */
       const RETRYABLE_REJECTIONS = new Set([401, 403, 408, 425, 429]);
 
       if (response.status >= 400) {
@@ -301,20 +259,10 @@ export const listSupplierRooms = async (request: RoomRateRequest): Promise<RateL
   }
 };
 
-/**
- * Hotel names, resolved from the supplier and held for the process lifetime.
- * A name does not change between requests the way a rate does, so unlike the
- * rate cache this one has no TTL — re-fetching it would only add a round trip
- * to every quote for a value that is already correct.
- */
+/** Hotel names, resolved from the supplier and held for the process lifetime. */
 const hotelNameCache = new Map<string, string>();
 
-/**
- * The display name for a hotel, or null if the supplier will not say.  Needed
- * because RoomList — the component that actually starts a booking — has no
- * hotel name to forward: it navigates with the hotel *id* and the room key,
- * and the name lives on the hotel page it came from.
- */
+/** The display name for a hotel, or null if the supplier will not say. */
 export const fetchHotelName = async (hotelId: string): Promise<string | null> => {
   const cached = hotelNameCache.get(hotelId);
   if (cached !== undefined) return cached;
@@ -343,12 +291,7 @@ export const __clearHotelNameCache = (): void => {
   hotelNameCache.clear();
 };
 
-/**
- * The table bookingController prices a stay against.  The supplier is only
- * called when a requested room is not one of the demo slugs, which keeps the
- * offline demo flow — and every test that uses it — off the network without
- * needing a mode flag to say so.
- */
+/** The table bookingController prices a stay against. */
 export const resolveRateTable = async (
   request: RoomRateRequest,
   requestedRoomIds: readonly string[]

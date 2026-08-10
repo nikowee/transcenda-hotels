@@ -33,19 +33,10 @@ const WEBHOOK_PATH = '/api/webhooks/stripe';
 
 // ── Secret generation ───────────────────────────────────────────────────────
 
-/**
- * Stripe's own secrets are `whsec_` followed by 32 random bytes in base64.
- * The prefix carries no meaning to the verifier — the secret is used as raw
- * key material — but matching the format means the value can be swapped for a
- * real one later without anything else changing.
- */
+/** Stripe's own secrets are `whsec_` followed by 32 random bytes in base64. */
 const generateSecret = (): string => `whsec_${randomBytes(32).toString('base64url')}`;
 
-/**
- * Rewrites STRIPE_WEBHOOK_SECRET in place, preserving the rest of the file.
- * A blind append would leave two assignments and dotenv silently keeps the
- * first, so the new secret would look written and have no effect.
- */
+/** Rewrites STRIPE_WEBHOOK_SECRET in place, preserving the rest of the file. */
 const writeSecretToEnv = (secret: string): void => {
   if (!existsSync(ENV_PATH)) {
     throw new Error(`No .env at ${ENV_PATH}. Copy .env.example to .env first.`);
@@ -76,11 +67,7 @@ const envelope = (type: string, object: Record<string, unknown>) => ({
   data: { object },
 });
 
-/**
- * The handler re-reads the session from the payment service rather than
- * trusting this payload, so only `id` and `payment_status` have to be right —
- * which is itself the property worth demonstrating.
- */
+/** The handler re-reads the session from the payment service rather than trusting this payload, so only `id` and `payment_status` have to be right. */
 const sessionCompleted = (sessionId: string, paymentIntentId: string) =>
   envelope('checkout.session.completed', {
     id: sessionId,
@@ -149,12 +136,7 @@ const deliver = async (event: unknown, secret: string, tamper: boolean): Promise
   return response.status;
 };
 
-/**
- * Mints a real checkout session through the API so the event refers to one the
- * server actually knows about.  Simulate mode holds sessions in a process-
- * local Map, so an invented id verifies as paid but carries no metadata, and
- * the handler correctly refuses to build a booking from it.
- */
+/** Mints a real checkout session through the API so the event refers to one the server actually knows about. */
 const createSession = async (): Promise<{ sessionId: string; paymentIntentId: string }> => {
   const today = new Date();
   const start = new Date(today.getTime() + 30 * 86_400_000).toISOString().slice(0, 10);

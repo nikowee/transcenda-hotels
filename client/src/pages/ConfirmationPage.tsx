@@ -22,24 +22,14 @@ import { clearHandoff } from '../lib/checkoutHandoff';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
-/**
- * «React Page» ConfirmationPage — sequence step 11, the "Display Booking
- * Confirmation" use case.  Reached by redirect back from Stripe, so router
- * state does not survive the trip and everything is re-fetched from the query
- * string.
- */
+/** «React Page» ConfirmationPage — sequence step 11, the "Display Booking Confirmation" use case. */
 
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLLS = 5;
 
 /** The schema stores no currency column: the platform prices everything in SGD. */
 
-/**
- * Error split: a 404 is an answer (that booking does not exist); every other
- * failure means the lookup failed, not the booking — and telling someone who
- * just paid that their booking cannot be found, when the API is merely down,
- * is the worst wrong answer this page can give.
- */
+/** Error split: a 404 is an answer (that booking does not exist); every other failure means the lookup failed, not the booking. */
 type PageError = { title: string; detail: string };
 
 const NOT_FOUND: PageError = {
@@ -75,19 +65,11 @@ export default function ConfirmationPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const sessionId = searchParams.get('session_id');
-  /**
-   * The Elements flow returns here with payment_intent instead of session_id.
-   * Both are verified server-side against Stripe and both produce the same
-   * booking, so the page only needs to know which key to forward.
-   */
+  /** The Elements flow returns here with payment_intent instead of session_id. */
   const paymentIntentId = searchParams.get('payment_intent');
   const bookingId = searchParams.get('id');
 
-  /**
-   * Holds the in-flight confirmation, not a "have I run" boolean.  This used
-   * to deliberately allow the effect to run twice, on the grounds that
-   * confirming is idempotent server-side.
-   */
+  /** Holds the in-flight confirmation, not a "have I run" boolean. */
   const confirmRequest = useRef<Promise<unknown> | null>(null);
 
   useEffect(() => {
@@ -151,13 +133,7 @@ export default function ConfirmationPage() {
           const record = readBooking(response.data);
           if (record) {
             setBooking(record);
-            /**
-             * Clear the handoff here, not only in PaymentPage's success
-             * handler — a 3DS challenge takes the whole page away and returns
-             * the browser straight to this URL, so nothing on the payment page
-             * runs.  A confirmed booking record is the one signal both paths
-             * share, and it defines "this handoff is spent".
-             */
+            /** Clear the handoff here, not only in PaymentPage's success handler. */
             clearHandoff();
             setError(null);
             setIsLoading(false);

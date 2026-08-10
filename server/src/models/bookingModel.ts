@@ -14,12 +14,7 @@ export type {
   StayDetails,
 } from './bookingTypes.js';
 
-/**
- * BookingModel — the «Database Model» box from the class diagram, written
- * against the deployed Supabase `bookings` table.  Schema rule: payment_id and
- * price_paid are NOT NULL with no status column, so a row cannot describe an
- * unpaid booking.
- */
+/** BookingModel — the «Database Model» box from the class diagram, written against the deployed Supabase `bookings` table. */
 
 const TABLE = 'bookings';
 
@@ -56,12 +51,7 @@ const toRow = (input: BookingInput) => ({
   guest_last_name: input.guest.lastName,
   guest_email: input.guest.email,
   guest_phone: input.guest.phone,
-  /**
-   * Safety guardrail: write no billing_* columns — the deployed table does not
-   * have them, and PostgREST rejects the whole insert on any unknown column,
-   * failing the booking after the charge is already captured.  The address
-   * still reaches Stripe in the PaymentIntent's billing_details for AVS.
-   */
+  /** Safety guardrail: write no billing_* columns. */
   price_paid: input.pricePaid,
   payment_id: input.paymentId,
   payee_id: input.payeeId,
@@ -93,11 +83,7 @@ const fromRow = (row: BookingRow): BookingRecord => ({
     phone: row.guest_phone,
     specialRequests: row.special_requests,
   },
-  /**
-   * Tolerant read: a column that does not exist is simply absent from the
-   * select('*') response, so billing resolves to null — covering the deployed
-   * table (no billing_* columns) and any older rows alike.
-   */
+  /** Tolerant read: a column that does not exist is simply absent from the select('*') response, so billing resolves to null. */
   billing: row.billing_line1
     ? {
         line1: row.billing_line1,
@@ -121,38 +107,18 @@ const fromRow = (row: BookingRow): BookingRecord => ({
   createdAt: row.created_at,
 });
 
-/**
- * Duplicate-write lock: writes in progress, keyed by payment_id.  Three
- * writers reach insertOne for one charge — the browser's /confirm, the Stripe
- * webhook, and Stripe's redelivery of it.
- */
+/** Duplicate-write lock: writes in progress, keyed by payment_id. */
 const writesInFlight = new Map<string, Promise<BookingRecord>>();
 
 /**
- * Write a paid booking, idempotent by payment_id at three layers:
- *
- *   1. writesInFlight serialises concurrent writers inside this process —
- *      the layer doing the real work today.
- *   2. findByPaymentId answers cheaply for a confirmation arriving after an
- *      earlier one already completed and left the map.
- *   3. A 23505 from Postgres catches a writer in another process, once a
- *      unique constraint on payment_id exists in the database; until then
- *      layers 1 and 2 are load-bearing.
- *
- * onCreated fires only for the caller that actually wrote the row, keeping
- * once-per-booking work (the confirmation email) from running once per
- * caller — concurrent confirmers all receive the same record and cannot tell
- * from the return value who produced it.
+ * Idempotent by payment_id: the in-flight lock, then findByPaymentId, then
+ * Postgres 23505. onCreated fires only for the caller that wrote the row.
  */
 export const insertOne = async (
   input: BookingInput,
   onCreated?: (record: BookingRecord) => void | Promise<void>
 ): Promise<BookingRecord> => {
-  /**
-   * Ordering guardrail: no await between the lookup and the set, so a second
-   * caller cannot slip past before the first registers its write. An await
-   * added above the set would silently restore the duplicate race.
-   */
+  /** Ordering guardrail: no await between the lookup and the set, so a second caller cannot slip past before the first registers its write. */
   const inFlight = writesInFlight.get(input.paymentId);
   if (inFlight) return inFlight;
 
@@ -164,11 +130,7 @@ export const insertOne = async (
   return write;
 };
 
-/**
- * Run onCreated without letting it affect the write — it executes inside the
- * shared promise, so a throw here would reject the booking for every waiting
- * caller after the money is captured. Swallow and log instead.
- */
+/** Run onCreated without letting it affect the write. */
 const announceCreated = async (
   record: BookingRecord,
   onCreated?: (record: BookingRecord) => void | Promise<void>
@@ -209,12 +171,7 @@ const performWrite = async (
     .select()
     .single();
 
-  /**
-   * Race handler: 23505 is Postgres' unique_violation — another request
-   * inserted this payment_id between the lookup above and this insert (the
-   * browser confirms while the webhook recovers).  Losing that race is the
-   * correct outcome, not an error: return whatever the winner wrote.
-   */
+  /** Race handler: 23505 is Postgres' unique_violation. */
   if (error) {
     if (error.code === '23505') {
       // Lost the race in another process: that writer created the row, and

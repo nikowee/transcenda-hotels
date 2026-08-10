@@ -9,15 +9,7 @@ const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 /** Search-result cache lifetime, seconds. */
 export const CACHE_TTL = 300;
 
-/**
- * Two different reconnection problems, two different answers: bounded retries
- * while starting up (so connect() cannot hang forever against a Redis that is
- * not there), unbounded-but-backed-off retries afterwards (so a Redis that
- * restarted — a deploy, an OOM kill, coming up a second after the API in
- * compose — is reconnected to rather than abandoned).  `retries` counts from
- * zero on each fresh disconnect, and `hasConnected` distinguishes "never came
- * up" from "came up and dropped".
- */
+/** Two different reconnection problems, two different answers: bounded retries while starting up (so connect() cannot hang forever against a Redis that is not there), unbounded-but-backed-off retries afterwards (so a Redis that restarted. */
 const STARTUP_RETRY_LIMIT = 5;
 let hasConnected = false;
 
@@ -43,11 +35,7 @@ redis.on('connect', () => {
     console.log('🔗 Redis connected successfully');
 });
 
-/**
- * Errors arrive on every failed reconnect attempt, so logging each one turns a
- * Redis outage into an unbounded log flood. Log the first, then stay quiet
- * until the connection comes back.
- */
+/** Errors arrive on every failed reconnect attempt, so logging each one turns a Redis outage into an unbounded log flood. */
 let errorLogged = false;
 
 redis.on('error', (err) => {
@@ -61,10 +49,7 @@ redis.on('ready', () => {
     errorLogged = false;
 });
 
-/**
- * Connect without blocking the module.  This was a top-level `await
- * redis.connect()`.
- */
+/** Connect without blocking the module. */
 void redis.connect().catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     console.warn('⚠️ Redis unavailable, running without cache:', message);

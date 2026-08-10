@@ -43,12 +43,7 @@ export const rateLimit = (options: { windowMs: number; max: number }) => {
       lastSweep = now;
     }
 
-    /**
-     * Key on the route pattern, not the concrete path.  req.path resolves
-     * `/api/bookings/:id` to the full URL, handing every distinct id a fresh
-     * bucket — a scanner walking ids would never be throttled on an endpoint
-     * that returns full booking records.
-     */
+    /** Key on the route pattern, not the concrete path. */
     const routeKey =
       (req.route as { path?: string } | undefined)?.path ?? req.path;
 

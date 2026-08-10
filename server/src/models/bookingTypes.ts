@@ -1,9 +1,4 @@
-/**
- * Canonical booking shapes, mirroring the deployed Supabase `bookings` table.
- * Split out from bookingModel so the controller, webhook handler and tests
- * share one row definition without importing the storage layer (a database
- * column change lands here first).
- */
+/** Canonical booking shapes, mirroring the deployed Supabase `bookings` table. */
 
 /** Row shape exactly as Postgres stores it. */
 export interface BookingRow {
@@ -40,11 +35,7 @@ export interface BookingRow {
   created_at: string;
 }
 
-/**
- * Billing address, as it appears on the card statement.  Sent to Stripe as
- * billing_details so AVS can run against it (one of the cheaper fraud signals
- * available).
- */
+/** Billing address, as it appears on the card statement. */
 export interface BillingAddress {
   line1: string;
   line2?: string | null;
@@ -77,12 +68,7 @@ export interface StayDetails {
   children: number;
 }
 
-/**
- * Card metadata, read back from Stripe after the charge — brand, last four and
- * expiry are the only card fields PCI-DSS permits storing, and they come from
- * expanding payment_method on the completed session, never from us.  No PAN or
- * CVC exists anywhere in this application.
- */
+/** Card metadata, read back from Stripe after the charge. */
 export interface CardDetails {
   brand: string;
   last4: string;
@@ -105,20 +91,11 @@ export interface BookingInput {
   card: CardDetails;
 }
 
-/**
- * The priced quote returned by GET /api/bookings/checkout, kept in the shared
- * contract so the client renders exactly the fields the server sends — a
- * field-name drift between the two blanks the checkout page with no error.
- * Display only: no figure here is ever accepted back as an amount.
- */
+/** The priced quote returned by GET /api/bookings/checkout, kept in the shared contract so the client renders exactly the fields the server sends. */
 export interface CheckoutQuote extends StayDetails {
   nights: number;
   currency: string;
-  /**
-   * Human names for the rooms, index-aligned with roomTypes (a supplier room
-   * id is an opaque UUID, unreadable on screen). Display only — re-pricing
-   * keys on roomTypes, never on a label.
-   */
+  /** Human names for the rooms, index-aligned with roomTypes (a supplier room id is an opaque UUID, unreadable on screen). */
   roomLabels: string[];
   /** Index-aligned with roomTypes so a multi-room stay can be itemised. */
   nightlyRates: number[];

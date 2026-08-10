@@ -30,19 +30,9 @@ const API_URL = import.meta.env.VITE_API_URL;
 const PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 
 /**
- * «React Page» PaymentPage — sequence step 4, "Submit Payment".
- *
- * The page is ours and the inputs are Stripe's: PaymentElement mounts
- * cross-origin iframes and the card is confirmed browser→Stripe, so no card
- * number ever reaches this bundle or our API (PCI SAQ A — our own inputs
- * posting a PAN to our own server would be SAQ D).
- *
- * Two card UIs, and the server picks:
- *   - Stripe configured  → PaymentElement, a real charge
- *   - PAYMENTS_MODE=simulate → the demo form below, because Elements needs a
- *     real client secret from a real intent and there is none to mount against
- *
- * Sequence steps 4-5 land here; 6-11 continue in ConfirmationPage.
+ * «React Page» PaymentPage — sequence step 4. The inputs are Stripe's iframes,
+ * so no card number reaches this bundle (SAQ A). The server picks the card
+ * UI: real Elements, or the demo form under PAYMENTS_MODE=simulate.
  */
 
 /** Loaded once. Null when unset, which is the normal case while simulating. */
@@ -54,12 +44,7 @@ interface IntentResponse {
   amount: number;
   currency: string;
   simulated: boolean;
-  /**
-   * The priced stay behind the amount, read from the intent response rather
-   * than the handoff on purpose — the browser must never carry the price, and
-   * reading the summary from the same response the PaymentIntent was minted
-   * from guarantees the figures on screen are the figures being charged.
-   */
+  /** The priced stay behind the amount, read from the intent response rather than the handoff on purpose. */
   quote: CheckoutQuote;
 }
 
@@ -73,18 +58,10 @@ export default function PaymentPage() {
   const [intent, setIntent] = useState<IntentResponse | null>(null);
   const [error, setError] = useState('');
 
-  /**
-   * Read the handoff once — sessionStorage rather than router state, so a
-   * refresh keeps the booking to pay for. Cleared once the booking confirms.
-   */
+  /** Read the handoff once — sessionStorage rather than router state, so a refresh keeps the booking to pay for. */
   const handoff = useMemo<CheckoutHandoff | null>(() => readHandoff(), []);
 
-  /**
-   * Build the back link with the stay in its query — /checkout reads its stay
-   * from the URL, so a bare link dead-ends on "this checkout link is missing
-   * …" with no route back to payment.  With the handoff still in storage the
-   * page resumes at the review step, details intact.
-   */
+  /** Build the back link with the stay in its query. */
   const back = useMemo(
     () =>
       handoff
@@ -93,12 +70,7 @@ export default function PaymentPage() {
     [handoff]
   );
 
-  /**
-   * Hold the in-flight request, not a "have I run" boolean.  StrictMode mounts
-   * the effect twice: a plain flag fires two POSTs and orphans a PaymentIntent
-   * in the Stripe dashboard, while a run-once ref strands the page loading
-   * forever (the first mount's cleanup already tripped its cancelled flag).
-   */
+  /** Hold the in-flight request, not a "have I run" boolean. */
   const intentRequest = useRef<Promise<IntentResponse> | null>(null);
 
   useEffect(() => {
@@ -110,12 +82,7 @@ export default function PaymentPage() {
     let active = true;
 
     if (!intentRequest.current) {
-      /**
-       * The access token is what attaches this booking to an account.  It is
-       * not accompanied by a userId in the body: the server reads the account
-       * from the token it verifies and rejects a body that claims a different
-       * one, so sending both could only ever disagree.
-       */
+      /** The access token is what attaches this booking to an account. */
       intentRequest.current = authHeader()
         .then((headers) =>
           axios.post<IntentResponse>(
@@ -266,12 +233,7 @@ export default function PaymentPage() {
   );
 }
 
-/**
- * The booking summary beside the card form — the last screen before money
- * moves, and so the last chance to notice a wrong-dates booking.  Every figure
- * comes from the quote the intent was minted from; the guest name comes from
- * the handoff as the one thing here that is not priced.
- */
+/** The booking summary beside the card form. */
 function BookingSummary({
   quote,
   guest,
@@ -343,14 +305,7 @@ function BookingSummary({
   );
 }
 
-/**
- * The server is taking a real payment and this build cannot render card fields
- * for it.  Both ways out are configuration, so both are named rather than
- * guessed at — and neither is the page's call to make: Elements needs a
- * publishable key at build time, and the simulator is the server's choice (a
- * client that could choose it could ask for the demo form against live
- * Stripe).
- */
+/** The server is taking a real payment and this build cannot render card fields for it. */
 function MissingStripeKey() {
   return (
     <div className="text-center">
@@ -385,11 +340,7 @@ interface FormProps {
   onPaid: (paymentIntentId: string) => void;
 }
 
-/**
- * The real thing. PaymentElement renders Stripe-hosted iframes, and
- * confirmPayment sends the card straight to Stripe — this component never sees
- * a card number, which is what keeps the page out of PCI scope.
- */
+/** The real thing. */
 function StripeCardForm({ intent, onPaid }: FormProps) {
   const stripe = useStripe();
   const elements = useElements();
@@ -401,11 +352,7 @@ function StripeCardForm({ intent, onPaid }: FormProps) {
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault();
 
-    /**
-     * Never a silent return: before Stripe.js finishes initialising, a bare
-     * return makes the Pay button do literally nothing — indistinguishable
-     * from a broken page.
-     */
+    /** Never a silent return: before Stripe.js finishes initialising, a bare return makes the Pay button do literally nothing. */
     if (!stripe || !elements) {
       setMessage('The payment form is still loading. Give it a moment and try again.');
       return;
@@ -462,13 +409,7 @@ function StripeCardForm({ intent, onPaid }: FormProps) {
        */}
       <PaymentElement
         options={{
-          /**
-           * Card first, expanded on arrival: automatic_payment_methods offers
-           * PayNow and Link alongside card for SGD, and left to itself the
-           * Element opens on a method chooser with no typeable fields — a
-           * payment page you cannot type into is indistinguishable from one
-           * that is stuck.  `tabs` keeps the other methods one click away.
-           */
+          /** Card first, expanded on arrival: automatic_payment_methods offers PayNow and Link alongside card for SGD, and left to itself the Element opens on a method chooser with no typeable fields. */
           layout: 'tabs',
           paymentMethodOrder: ['card'],
         }}
@@ -523,12 +464,7 @@ const brandOf = (digits: string): string => {
 const groupDigits = (value: string) =>
   value.replace(/\D/g, '').slice(0, 19).replace(/(.{4})/g, '$1 ').trim();
 
-/**
- * Demo-only card entry, shown when the server reports it is simulating —
- * Elements cannot mount without a real client secret, so a credential-free
- * demo needs its own payment step.  Safety guardrail: the number typed here
- * never leaves the browser.
- */
+/** Demo-only card entry, shown when the server reports it is simulating. */
 function DemoCardForm({ intent, onPaid }: FormProps) {
   const [number, setNumber] = useState(DEMO_CARDS[0].number);
   const [expiry, setExpiry] = useState('12/30');
