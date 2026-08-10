@@ -2,7 +2,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { Users, ShieldCheck, Award } from 'lucide-react';
 import type { RoomOption } from '../types/room';
 
-export default function RoomList({ rooms }: { rooms: RoomOption[] }) {
+export default function RoomList({ rooms, hotelName }: { rooms: RoomOption[]; hotelName?: string }) {
     const navigate = useNavigate();
     const { id } = useParams();
     const [searchParams] = useSearchParams();
@@ -32,6 +32,7 @@ export default function RoomList({ rooms }: { rooms: RoomOption[] }) {
             guests: searchParams.get('guests') ?? '',
             key: room.key,
         });
+        if (hotelName) params.set('name', hotelName);
         navigate(`/booking?${params.toString()}`);
     };
 

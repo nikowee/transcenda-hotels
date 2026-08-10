@@ -1,0 +1,65 @@
+# Both suites, the type gates, the builds, and a high-severity audit — on every
+# push and PR. E2E is not here: it needs Docker-in-Docker and multiplies the
+# runtime; trigger it manually via workflow_dispatch when it matters.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the Dockerfiles' pinned base and react-router's engines
+          # floor. A floating "22" here would re-introduce the drift the pin
+          # exists to prevent.
+          node-version: '22.22'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      # npm ci, never npm install — the README's lockfile mandate. CI is the
+      # one place that must never quietly rewrite a lockfile.
+      - run: npm ci
+      - run: npm run type-check
+      # The suite needs no .env: tests/env.ts supplies placeholder values and
+      # globalSetup blocks every outbound socket.
+      - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
+
+  client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    env:
+      # The suite and the build both fail without these — supabaseClient.ts
+      # throws at module scope on missing values, and a build without them
+      # silently tree-shakes the Supabase client out and ships a bundle that
+      # throws on first load. Placeholders are sufficient: MSW intercepts every
+      # request and createClient() does no I/O at construction.
+      VITE_API_URL: http://localhost:5000
+      VITE_SUPABASE_URL: https://placeholder.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: placeholder-anon-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22'
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npx tsc -b
+      - run: npx oxlint src/
+      - run: npx vitest run
+      - run: npx vite build
+      # The same discriminator the Dockerfile uses: "auth/v1" exists in the
+      # bundle only when the working Supabase client is in it.
+      - run: grep -rq "auth/v1" dist/assets/ || (echo "Supabase client missing from bundle" && exit 1)
+      - run: npm audit --omit=dev --audit-level=high
