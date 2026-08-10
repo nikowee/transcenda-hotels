@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter} from 'react-router';
 import axios from 'axios';
-import ResultsPage from './ResultsPage';
+import ResultsPage from '../pages/ResultsPage';
 
 // Mock axios to prevent real API calls during tests
 vi.mock('axios');
@@ -201,8 +201,8 @@ describe('ResultsPage Component', () => {
       expect(screen.getByText('Marina Bay Sands')).toBeInTheDocument();
     });
 
-    // Find the first star rating button (5★+) by its text
-    const starButtons = screen.getAllByRole('button', { name: /5★\+/ });
+    // Find the 5-star button
+    const starButtons = screen.getAllByRole('button', { name: '5★' });
     await userEvent.click(starButtons[0]);
 
     // Click Apply Filters
@@ -230,8 +230,8 @@ describe('ResultsPage Component', () => {
       expect(screen.getByText('Marina Bay Sands')).toBeInTheDocument();
     });
 
-    // Apply a filter first by clicking the first star button
-    const starButtons = screen.getAllByRole('button', { name: /5★\+/ });
+    // Apply a filter first by clicking the 5-star button
+    const starButtons = screen.getAllByRole('button', { name: '5★' });
     await userEvent.click(starButtons[0]);
 
     const applyButton = screen.getByText('Apply Filters');

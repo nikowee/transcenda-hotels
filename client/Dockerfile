@@ -1,5 +1,6 @@
-# Fetch a minimal Linux OS prepackaged with Node.js runtime environment
-FROM node:22-alpine
+# Exact tag, not a floating one: react-router 8.3 requires node >=22.22, and a
+# floating node:22 tag makes the build depend on whatever 22.x it points at today.
+FROM node:22.22-alpine
 
 # Establish our operational workspace path inside the container environment
 WORKDIR /app

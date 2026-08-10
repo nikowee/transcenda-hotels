@@ -37,7 +37,7 @@ The backend requires a `.env` file located at `server/.env`. Below is the comple
 
 - **What it is:** The Supabase **service role** key for server-side admin operations. This key bypasses Row-Level Security (RLS) and has full access to your database. It must **never** be exposed to the client side.
 - **Where to find it:** Supabase Dashboard → Your Project → **Settings** → **API** → **service_role** key.
-- **How it's used:** The server-side Supabase admin client uses this key for privileged operations like user management (e.g., `deleteUser`), database migrations, and admin-level queries.
+- **How it's used:** The server-side Supabase admin client uses this key for privileged operations like user management (e.g., `deleteUser`), token verification, and admin-level queries.
 - **⚠️ Security:** Never commit this key to version control. Only use it in the backend, never in client-side code.
 
 ### `STRIPE_SECRET_KEY`

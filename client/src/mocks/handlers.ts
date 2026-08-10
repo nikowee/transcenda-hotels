@@ -1,6 +1,5 @@
 import { http, HttpResponse } from 'msw';
 
-// Mock destination data
 const destinations = [
   { uid: 'dest-1', term: 'Singapore, Singapore' },
   { uid: 'dest-2', term: 'Singapore, Malaysia' },
@@ -84,17 +83,16 @@ const mockHotels = [
 ];
 
 export const handlers = [
-  // Intercept GET requests to the destination search endpoint
+  // Substring match rather than Fuse: enough to drive the UI, and the real
+  // fuzzy behaviour is covered against the live index in the server suite.
   http.get('http://localhost:5000/api/destinations/search', ({ request }) => {
     const url = new URL(request.url);
     const query = url.searchParams.get('q')?.toLowerCase() || '';
 
-    // Simulate API behavior: filter destinations based on query
     const results = destinations.filter((dest) =>
       dest.term.toLowerCase().includes(query)
     );
 
-    // Return first 5 results (matching backend behavior)
     return HttpResponse.json(results.slice(0, 5));
   }),
 
@@ -113,7 +111,9 @@ export const handlers = [
     let filtered = [...mockHotels];
 
     if (starRating) {
-      filtered = filtered.filter((h) => h.rating >= parseInt(starRating));
+      // Exact match, mirroring hotelController.ts — a "4★" button that shows
+      // 5-star hotels in mock-driven dev would read as a bug in the label.
+      filtered = filtered.filter((h) => Math.round(h.rating) === parseInt(starRating));
     }
     if (minGuestRating) {
       filtered = filtered.filter((h) => h.rating >= parseFloat(minGuestRating));
