@@ -1,4 +1,4 @@
-import { describe, it } from 'mocha';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import nock from 'nock';
 import { sendConfirmation } from '../services/emailService.js';
@@ -54,6 +54,16 @@ const capture = async (
 };
 
 describe('emailService', () => {
+  /**
+   * The transport is chosen per call from env, so a developer's populated
+   * .env would silently flip every log-path test below onto the network
+   * path. Cleared here rather than trusted absent.
+   */
+  beforeEach(() => {
+    delete process.env.RESEND_API_KEY;
+    delete process.env.EMAIL_FROM;
+  });
+
   it('reports delivery with a message id tied to the booking', async () => {
     const { receipt } = await capture();
 
@@ -118,5 +128,66 @@ describe('emailService', () => {
     expect(receipt.delivered).to.equal(true);
     expect(receipt.messageId).to.contain('log_');
     expect(scope.isDone(), 'no request may leave the process').to.equal(false);
+  });
+
+  /**
+   * The live transport. Everything above ran with the env cleared and proved
+   * the log path; these prove the Resend path — including that a provider
+   * outage still cannot sink a paid booking.
+   *
+   * globalSetup blocks all outbound sockets, so a request that escapes these
+   * interceptors fails the test rather than reaching api.resend.com.
+   */
+  describe('with a Resend key configured', () => {
+    beforeEach(() => {
+      process.env.RESEND_API_KEY = 're_test_key';
+      process.env.EMAIL_FROM = 'bookings@transcenda.example';
+    });
+    afterEach(() => {
+      // Unset immediately, not just in the suite's beforeEach: later suites
+      // observe emails through the log line, and a leaked key would silently
+      // flip them onto the (socket-blocked) network path.
+      delete process.env.RESEND_API_KEY;
+      delete process.env.EMAIL_FROM;
+      nock.cleanAll();
+    });
+
+    it('delivers through the API and returns the provider message id', async () => {
+      let sent: Record<string, unknown> | null = null;
+      const scope = nock('https://api.resend.com', {
+        reqheaders: { authorization: 'Bearer re_test_key' },
+      })
+        .post('/emails', (body) => {
+          sent = body;
+          return true;
+        })
+        .reply(200, { id: 'email_abc123' });
+
+      const receipt = await sendConfirmation('jane@example.com', BOOKING);
+
+      expect(scope.isDone()).to.equal(true);
+      expect(receipt.delivered).to.equal(true);
+      expect(receipt.messageId).to.equal('email_abc123');
+      expect(sent, 'request body was captured').to.not.equal(null);
+      const body = sent as unknown as { from: string; to: string[]; subject: string; text: string };
+      expect(body.from).to.equal('bookings@transcenda.example');
+      expect(body.to).to.deep.equal(['jane@example.com']);
+      expect(body.subject).to.contain(BOOKING.id);
+      expect(body.text).to.contain('The Fullerton Hotel Singapore');
+      expect(body.text).to.contain('SGD 1990.49');
+      // The guest gets a letter, not the server's debug log.
+      expect(body.text).to.contain('Dear Dr Jane Tan');
+      expect(body.text).to.not.contain('📧');
+    });
+
+    it('reports a provider failure without rejecting', async () => {
+      nock('https://api.resend.com').post('/emails').reply(500, { message: 'internal error' });
+
+      const receipt = await sendConfirmation('jane@example.com', BOOKING).catch(() => null);
+
+      expect(receipt, 'must resolve, never reject').to.not.equal(null);
+      expect(receipt?.delivered).to.equal(false);
+      expect(receipt?.errorMessage).to.be.a('string');
+    });
   });
 });
