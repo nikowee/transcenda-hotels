@@ -2,13 +2,8 @@ import type { BillingAddress, GuestDetails, StayDetails } from '../types/booking
 
 /**
  * What travels from the checkout page to the payment page, and back again if
- * the payment does not go through. Held in sessionStorage rather than router
+ * the payment does not go through.  Held in sessionStorage rather than router
  * state so a refresh on /payment keeps the booking to pay for.
- *
- * Safety guardrail: no price rides in the handoff. The browser carries the
- * guest and the stay, never an amount — the server prices the stay again when
- * minting the payment intent and again at confirm time, so a total here would
- * be a figure a client could edit.
  */
 export interface CheckoutHandoff {
   guestDetails: GuestDetails;
@@ -19,17 +14,11 @@ export interface CheckoutHandoff {
 const KEY = 'transcenda:checkout';
 
 /**
- * Shape check — sessionStorage is user-writable and may hold anything.
- *
- * The stay is checked field by field, not just for presence: every consumer
- * dereferences it structurally (stayToParams calls roomTypes.join, the
- * payment page posts the whole object), and a throw during render blanks the
- * page outright — no ErrorBoundary exists in this bundle.
- *
- * billingAddress stays unchecked on purpose: nothing here reads it
- * structurally, the server-side validator is the authority on it, and
- * refusing the whole handoff over it would discard a guest's name, email and
- * phone to avoid an error the server states precisely.
+ * Shape check — sessionStorage is user-writable and may hold anything.  The
+ * stay is checked field by field, not just for presence: every consumer
+ * dereferences it structurally (stayToParams calls roomTypes.join, the payment
+ * page posts the whole object), and a throw during render blanks the page
+ * outright — no ErrorBoundary exists in this bundle.
  */
 const isStay = (value: unknown): value is StayDetails => {
   if (!value || typeof value !== 'object') return false;
@@ -53,7 +42,7 @@ const isHandoff = (value: unknown): value is CheckoutHandoff => {
 };
 
 /**
- * Read the handoff, or null when there is none or it is unusable. Never
+ * Read the handoff, or null when there is none or it is unusable.  Never
  * throws — sessionStorage is unavailable in private-mode Safari and with site
  * storage disabled, and stored JSON can be malformed, none of which should
  * take down the page reading it.
@@ -89,9 +78,9 @@ export const clearHandoff = (): void => {
 
 /**
  * Convert a stay to the string form /checkout deals in (URL parameters are
- * strings; the handoff holds a typed object). One conversion shared by the
- * back link and the comparison below, keeping the query contract spelled in
- * a single place.
+ * strings; the handoff holds a typed object).  One conversion shared by the
+ * back link and the comparison below, keeping the query contract spelled in a
+ * single place.
  */
 type StayParams = Record<keyof StayDetails & string, string>;
 
@@ -110,7 +99,7 @@ export const stayToParams = (stay: StayDetails): StayParams => ({
 
 /**
  * The query string /checkout needs in order to price the stay again — a bare
- * /checkout link lands on "this checkout link is missing …". hotelName rides
+ * /checkout link lands on "this checkout link is missing …".  hotelName rides
  * along when known so the server need not re-resolve it, omitted rather than
  * sent empty when it is not.
  */
@@ -122,13 +111,10 @@ export const stayToCheckoutQuery = (stay: StayDetails): string => {
 };
 
 /**
- * Match check: is this stored stay the same stay the URL is pricing? The
+ * Match check: is this stored stay the same stay the URL is pricing?  The
  * handoff outlives its booking, so resuming hotel A's handoff onto hotel B's
  * checkout would seat the previous guest on the wrong review step — one click
  * from a booking confirmed and emailed to the wrong person.
- *
- * hotelName is excluded on purpose: a display label the URL may omit does not
- * make it a different stay.
  */
 const IDENTIFYING_PARAMS = [
   'destinationId',

@@ -4,13 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import RoomList from '../components/RoomList';
 import type { RoomOption } from '../types/room';
 
-/**
- * RoomList calls useNavigate, useParams and useSearchParams — it is the
- * component that starts a booking — so it cannot render outside a Router.
- * Rendered bare, every case here failed on the invariant before reaching its
- * assertion. The route and query mirror what HotelDetailsPage actually mounts
- * it under, so the /booking hand-off it builds is the real one.
- */
+/** RoomList calls useNavigate, useParams and useSearchParams — it is the component that starts a booking — so it cannot render outside a Router. */
 const renderRoomList = (rooms: RoomOption[]) =>
     render(
         <MemoryRouter initialEntries={['/hotel/diH7?dest=WD0M&in=2026-10-01&out=2026-10-04&guests=2']}>

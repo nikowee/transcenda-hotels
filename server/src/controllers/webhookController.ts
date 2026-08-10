@@ -8,14 +8,13 @@ import { findByPaymentId } from '../models/bookingModel.js';
 import { recordPaidBooking } from './bookingController.js';
 
 /**
- * Stripe webhook — the «External API» callback into the «Express Router»,
- * and the only thing standing between a captured charge and a missing
- * booking: when the customer closes the tab on Stripe's success page, or a
- * 3DS challenge completes hours later, the browser never calls /confirm, and
- * this handler creates the row instead.
- *
- * Mounting guardrail: express.raw() BEFORE the global express.json() —
- * signature verification runs over the unparsed body.
+ * Stripe webhook — the «External API» callback into the «Express Router», and
+ * the only thing standing between a captured charge and a missing booking:
+ * when the customer closes the tab on Stripe's success page, or a 3DS
+ * challenge completes hours later, the browser never calls /confirm, and this
+ * handler creates the row instead.  Mounting guardrail: express.raw() BEFORE
+ * the global express.json() — signature verification runs over the unparsed
+ * body.
  */
 export const handleStripeWebhook = async (req: Request, res: Response): Promise<void> => {
   const signature = req.headers['stripe-signature'];
@@ -48,10 +47,8 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
   try {
     switch (event.type) {
       /**
-       * The recovery path. If the browser came back, /confirm already wrote the
-       * row and findByPaymentId short-circuits this. If it did not, this is the
-       * only thing that turns a captured charge into a booking — without it the
-       * money is taken and no record of the stay exists anywhere but Stripe.
+       * The recovery path.  If the browser came back, /confirm already wrote
+       * the row and findByPaymentId short-circuits this.
        */
       case 'checkout.session.completed':
       case 'checkout.session.async_payment_succeeded': {
@@ -97,16 +94,11 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
       /**
        * The recovery path for the Elements flow, which is the one the client
        * actually uses — /payment mints a PaymentIntent and confirms it in the
-       * browser, so no checkout.session event is ever emitted for it.
-       *
-       * Without this case the handler above recovered only the hosted-Checkout
-       * flow, and a 3-D Secure challenge finished on a phone, or a tab closed
-       * before the redirect back, left a captured charge with no booking row
-       * and nothing retrying. The docblock at the top of this file claimed to
-       * cover exactly that; it did not.
-       *
-       * Mirrors the session case deliberately: same short-circuit, same
-       * re-read for the card columns, same 5xx-throws / 4xx-escalates split.
+       * browser, so no checkout.session event is ever emitted for it.  Without
+       * this case the handler above recovered only the hosted-Checkout flow,
+       * and a 3-D Secure challenge finished on a phone, or a tab closed before
+       * the redirect back, left a captured charge with no booking row and
+       * nothing retrying.
        */
       case 'payment_intent.succeeded': {
         const intent = event.data.object;
@@ -155,11 +147,10 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
       }
 
       /**
-       * RECONCILIATION GAP. The schema has no refund_id, no refunded_at and no
-       * status, so there is nowhere to put this: the booking row will go on
-       * reading as fully paid however much money went back, and Stripe stays the
-       * only system that knows. Logged loudly because this log line is currently
-       * the entire audit trail.
+       * RECONCILIATION GAP.  The schema has no refund_id, no refunded_at and
+       * no status, so there is nowhere to put this: the booking row will go on
+       * reading as fully paid however much money went back, and Stripe stays
+       * the only system that knows.
        */
       case 'charge.refunded': {
         const charge = event.data.object;

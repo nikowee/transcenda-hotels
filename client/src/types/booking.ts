@@ -1,17 +1,13 @@
 /**
- * Shared shapes for UC4 — Book & Make Payment.
- *
- * Mirrors server/src/models/bookingTypes.ts, which itself mirrors the
- * deployed Supabase schema. If a column moves there, it moves here.
+ * Shared shapes for UC4 — Book & Make Payment.  Mirrors
+ * server/src/models/bookingTypes.ts, which itself mirrors the deployed
+ * Supabase schema.
  */
 
 /**
- * Billing address, as it appears on the card statement.
- *
- * Collected primarily so Stripe can run an AVS check against it — one of the
- * cheaper fraud signals available — and stored so the record matches what was
- * authorised. `line2` and `state` are optional because plenty of the world has
- * neither; `country` is an ISO 3166-1 alpha-2 code.
+ * Billing address, as it appears on the card statement.  Collected primarily
+ * so Stripe can run an AVS check against it — one of the cheaper fraud signals
+ * available — and stored so the record matches what was authorised.
  */
 export interface BillingAddress {
   line1: string;
@@ -48,15 +44,10 @@ export interface StayDetails {
 }
 
 /**
- * There is deliberately no card *entry* type here. Payment is taken on a
+ * There is deliberately no card *entry* type here.  Payment is taken on a
  * Stripe-hosted checkout page, so no card data is ever collected, typed, or
  * transmitted by this app — that is what keeps the platform out of PCI SAQ D
  * scope.
- *
- * CardDetails below is not an exception to that. Brand, last four and expiry
- * are read back from Stripe after the charge has settled and exist only to be
- * displayed on the confirmation page; they are also the only card fields
- * PCI-DSS permits storing. No PAN or CVC exists anywhere in this application.
  */
 export interface CardDetails {
   brand: string;
@@ -74,11 +65,9 @@ export interface CheckoutQuote extends StayDetails {
   nights: number;
   currency: string;
   /**
-   * Human names for the rooms, index-aligned with roomTypes.
-   *
-   * A supplier room id is an opaque UUID, so roomTypes is unreadable on screen
-   * the moment a booking comes from a real hotel rather than the demo
-   * catalogue. Display only — never look a rate up by this.
+   * Human names for the rooms, index-aligned with roomTypes.  A supplier room
+   * id is an opaque UUID, so roomTypes is unreadable on screen the moment a
+   * booking comes from a real hotel rather than the demo catalogue.
    */
   roomLabels: string[];
   /** Index-aligned with roomTypes so a multi-room stay can be itemised. */
@@ -91,10 +80,9 @@ export interface CheckoutQuote extends StayDetails {
 }
 
 /**
- * A persisted booking, as the API returns it.
- *
- * The row has price_paid and payment_id NOT NULL and no status column, so the
- * existence of one of these is itself the proof that payment cleared.
+ * A persisted booking, as the API returns it.  The row has price_paid and
+ * payment_id NOT NULL and no status column, so the existence of one of these
+ * is itself the proof that payment cleared.
  */
 export interface BookingRecord {
   id: string;

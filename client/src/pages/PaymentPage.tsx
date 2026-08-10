@@ -82,12 +82,8 @@ export default function PaymentPage() {
   /**
    * Build the back link with the stay in its query — /checkout reads its stay
    * from the URL, so a bare link dead-ends on "this checkout link is missing
-   * …" with no route back to payment. With the handoff still in storage the
+   * …" with no route back to payment.  With the handoff still in storage the
    * page resumes at the review step, details intact.
-   *
-   * With no handoff there are no details to go back to, so the link goes to
-   * search — the label changes with the target rather than promising details
-   * that no longer exist.
    */
   const back = useMemo(
     () =>
@@ -98,12 +94,10 @@ export default function PaymentPage() {
   );
 
   /**
-   * Hold the in-flight request, not a "have I run" boolean. StrictMode mounts
+   * Hold the in-flight request, not a "have I run" boolean.  StrictMode mounts
    * the effect twice: a plain flag fires two POSTs and orphans a PaymentIntent
    * in the Stripe dashboard, while a run-once ref strands the page loading
    * forever (the first mount's cleanup already tripped its cancelled flag).
-   * Caching the promise fixes both — one request, resolved by whichever mount
-   * is still alive.
    */
   const intentRequest = useRef<Promise<IntentResponse> | null>(null);
 
@@ -117,12 +111,10 @@ export default function PaymentPage() {
 
     if (!intentRequest.current) {
       /**
-       * The access token is what attaches this booking to an account. It is not
-       * accompanied by a userId in the body: the server reads the account from
-       * the token it verifies and rejects a body that claims a different one,
-       * so sending both could only ever disagree.
-       *
-       * Signed out, authHeader() is empty and this is a guest checkout.
+       * The access token is what attaches this booking to an account.  It is
+       * not accompanied by a userId in the body: the server reads the account
+       * from the token it verifies and rejects a body that claims a different
+       * one, so sending both could only ever disagree.
        */
       intentRequest.current = authHeader()
         .then((headers) =>
@@ -276,7 +268,7 @@ export default function PaymentPage() {
 
 /**
  * The booking summary beside the card form — the last screen before money
- * moves, and so the last chance to notice a wrong-dates booking. Every figure
+ * moves, and so the last chance to notice a wrong-dates booking.  Every figure
  * comes from the quote the intent was minted from; the guest name comes from
  * the handoff as the one thing here that is not priced.
  */
@@ -352,9 +344,9 @@ function BookingSummary({
 }
 
 /**
- * The server is taking a real payment and this build cannot render card
- * fields for it. Both ways out are configuration, so both are named rather
- * than guessed at — and neither is the page's call to make: Elements needs a
+ * The server is taking a real payment and this build cannot render card fields
+ * for it.  Both ways out are configuration, so both are named rather than
+ * guessed at — and neither is the page's call to make: Elements needs a
  * publishable key at build time, and the simulator is the server's choice (a
  * client that could choose it could ask for the demo form against live
  * Stripe).
@@ -475,7 +467,7 @@ function StripeCardForm({ intent, onPaid }: FormProps) {
            * PayNow and Link alongside card for SGD, and left to itself the
            * Element opens on a method chooser with no typeable fields — a
            * payment page you cannot type into is indistinguishable from one
-           * that is stuck. `tabs` keeps the other methods one click away.
+           * that is stuck.  `tabs` keeps the other methods one click away.
            */
           layout: 'tabs',
           paymentMethodOrder: ['card'],
@@ -534,11 +526,8 @@ const groupDigits = (value: string) =>
 /**
  * Demo-only card entry, shown when the server reports it is simulating —
  * Elements cannot mount without a real client secret, so a credential-free
- * demo needs its own payment step.
- *
- * Safety guardrail: the number typed here never leaves the browser. Brand and
- * last four are derived locally and only those are sent, and the server
- * discards the field entirely unless it is simulating.
+ * demo needs its own payment step.  Safety guardrail: the number typed here
+ * never leaves the browser.
  */
 function DemoCardForm({ intent, onPaid }: FormProps) {
   const [number, setNumber] = useState(DEMO_CARDS[0].number);

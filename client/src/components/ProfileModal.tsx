@@ -19,11 +19,10 @@ const formatStay = (startDate: string, endDate: string): string => {
 };
 
 /**
- * Past or upcoming, decided from the checkout date.
- *
- * Derived rather than stored: `bookings` has no status column — a row exists
- * only once the charge has cleared, so every booking here is by definition
- * paid, and the only thing left to distinguish is whether the stay has happened.
+ * Past or upcoming, decided from the checkout date.  Derived rather than
+ * stored: `bookings` has no status column — a row exists only once the charge
+ * has cleared, so every booking here is by definition paid, and the only thing
+ * left to distinguish is whether the stay has happened.
  */
 const stayStatus = (endDate: string): 'Upcoming' | 'Completed' =>
   new Date(endDate) >= new Date() ? 'Upcoming' : 'Completed';

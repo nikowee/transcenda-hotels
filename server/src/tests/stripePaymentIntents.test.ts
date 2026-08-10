@@ -20,21 +20,7 @@ import {
   stripeError,
 } from './helpers/stripeNock.js';
 
-/**
- * The Elements / PaymentIntent path over the live SDK, with nock standing in for
- * Stripe — the counterpart of stripePayments.test.ts, which does the same for
- * hosted Checkout Sessions.
- *
- * The simulator short-circuits before a request is ever built, so it can prove
- * our branching and nothing about the wire. Everything that can only go wrong on
- * the wire lives here: a major-unit amount sent where minor units belong, an
- * `automatic_payment_methods` flag that never left the process, an `expand` that
- * was not requested and so returns a payment with no card for two NOT NULL
- * columns. Each of those produces a perfectly healthy-looking simulator run.
- *
- * Assertions therefore check the *request Stripe receives*, not only the value
- * handed back.
- */
+/** The Elements / PaymentIntent path over the live SDK, with nock standing in for Stripe — the counterpart of stripePayments.test.ts, which does the same for hosted Checkout Sessions. */
 
 const METADATA = {
   guest: JSON.stringify({
@@ -109,12 +95,7 @@ describe('Stripe PaymentIntents (live SDK path via nock)', () => {
       expect(received.currency).to.equal('jpy');
     });
 
-    /**
-     * Hardcoding `payment_method_types[0]=card` silently drops every wallet the
-     * dashboard has enabled, and the customer just sees fewer options with no
-     * error anywhere. The flag has to actually reach Stripe for the Elements
-     * payment element to offer anything but a card.
-     */
+    /** Hardcoding `payment_method_types[0]=card` silently drops every wallet the dashboard has enabled, and the customer just sees fewer options with no error anywhere. */
     it('enables automatic payment methods on the wire', async () => {
       let received: Record<string, string> = {};
 
@@ -132,12 +113,7 @@ describe('Stripe PaymentIntents (live SDK path via nock)', () => {
       expect(received['payment_method_types[0]']).to.equal(undefined);
     });
 
-    /**
-     * Nothing is written before payment, so this metadata is the only record of
-     * what the customer asked for. If it does not reach Stripe the charge clears
-     * and the booking can never be reconstructed from anything — the Elements
-     * flow has no redirect and no session to fall back on.
-     */
+    /** Nothing is written before payment, so this metadata is the only record of what the customer asked for. */
     it('carries the guest and stay out in the intent metadata', async () => {
       let received: Record<string, string> = {};
 
@@ -189,11 +165,7 @@ describe('Stripe PaymentIntents (live SDK path via nock)', () => {
       expect(result.clientSecret).to.equal('pi_live_1_secret_xyz');
     });
 
-    /**
-     * Elements cannot mount without a client secret. Returning the intent anyway
-     * would hand the browser `undefined`, which Stripe.js reports as a generic
-     * initialisation failure on the payment page rather than here.
-     */
+    /** Elements cannot mount without a client secret. */
     it('throws rather than handing the browser an intent it cannot confirm', async () => {
       nock(STRIPE_API)
         .post('/v1/payment_intents')
@@ -269,12 +241,7 @@ describe('Stripe PaymentIntents (live SDK path via nock)', () => {
   });
 
   describe('verifyPaymentIntent', () => {
-    /**
-     * card_brand, card_last4, card_exp_month and card_exp_year are all NOT NULL,
-     * and the payment method is a separate object an unexpanded retrieve returns
-     * as a bare id string. Without this parameter every Elements booking arrives
-     * with no card at all.
-     */
+    /** card_brand, card_last4, card_exp_month and card_exp_year are all NOT NULL, and the payment method is a separate object an unexpanded retrieve returns as a bare id string. */
     it('asks Stripe to expand the payment method, or the card columns arrive empty', async () => {
       let expandParam: string | null = null;
 
@@ -469,11 +436,7 @@ describe('Stripe PaymentIntents (live SDK path via nock)', () => {
       expect(result.metadata).to.deep.equal({});
     });
 
-    /**
-     * A PaymentIntent has no client_reference_id — the field exists on Checkout
-     * Sessions only. It stays null so the two flows produce one VerifiedPayment
-     * shape and recordPaidBooking never has to ask which one it is holding.
-     */
+    /** A PaymentIntent has no client_reference_id — the field exists on Checkout Sessions only. */
     it('produces the same VerifiedPayment shape a session does', async () => {
       nock(STRIPE_API)
         .get('/v1/payment_intents/pi_shape')
@@ -545,11 +508,7 @@ describe('Stripe PaymentIntents (live SDK path via nock)', () => {
       expect(first.paymentIntentId).to.not.equal(second.paymentIntentId);
     });
 
-    /**
-     * The simulator holds what it was handed so verifyPaymentIntent can give it
-     * back. Without that the metadata carrying the guest and stay evaporates and
-     * the simulated Elements flow can never reach an insert.
-     */
+    /** The simulator holds what it was handed so verifyPaymentIntent can give it back. */
     it('hands the intent metadata back after the browser confirms', async () => {
       const intent = await createPaymentIntent(BASE_INPUT);
 

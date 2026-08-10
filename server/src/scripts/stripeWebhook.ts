@@ -34,10 +34,10 @@ const WEBHOOK_PATH = '/api/webhooks/stripe';
 // ── Secret generation ───────────────────────────────────────────────────────
 
 /**
- * Stripe's own secrets are `whsec_` followed by 32 random bytes in base64. The
- * prefix carries no meaning to the verifier — the secret is used as raw key
- * material — but matching the format means the value can be swapped for a real
- * one later without anything else changing.
+ * Stripe's own secrets are `whsec_` followed by 32 random bytes in base64.
+ * The prefix carries no meaning to the verifier — the secret is used as raw
+ * key material — but matching the format means the value can be swapped for a
+ * real one later without anything else changing.
  */
 const generateSecret = (): string => `whsec_${randomBytes(32).toString('base64url')}`;
 
@@ -151,13 +151,9 @@ const deliver = async (event: unknown, secret: string, tamper: boolean): Promise
 
 /**
  * Mints a real checkout session through the API so the event refers to one the
- * server actually knows about.
- *
- * Simulate mode holds sessions in a process-local Map, so an invented id
- * verifies as paid but carries no metadata, and the handler correctly refuses to
- * build a booking from it. Booking first is what makes the recovery path
- * reachable — and it mirrors the real scenario exactly: the customer paid, then
- * closed the tab instead of returning to /confirmation.
+ * server actually knows about.  Simulate mode holds sessions in a process-
+ * local Map, so an invented id verifies as paid but carries no metadata, and
+ * the handler correctly refuses to build a booking from it.
  */
 const createSession = async (): Promise<{ sessionId: string; paymentIntentId: string }> => {
   const today = new Date();

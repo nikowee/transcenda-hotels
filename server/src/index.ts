@@ -23,7 +23,7 @@ import { resolveUser, requireUser } from './middleware/auth.js';
 /**
  * Lazy import, deliberately: supabaseClient throws at module scope when the
  * env vars are absent, and the server must still boot on the in-memory store
- * with no database — a supported mode. Only the two routes that need the
+ * with no database — a supported mode.  Only the two routes that need the
  * client pay for it.
  */
 const supabaseLib = () => import('./lib/supabaseClient.js');
@@ -38,15 +38,9 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 /**
- * One proxy hop is trusted when resolving req.ip.
- *
- * Every rate limiter keys on req.ip, so this figure decides whether they
- * throttle a caller or the whole internet. Too low behind a load balancer and
- * req.ip resolves to the balancer for every request, so all customers share
- * one bucket; too high and a caller can spoof X-Forwarded-For for a fresh
- * bucket per request. Fixed at 1 — the single-ALB shape this deploys behind;
- * local dev is unaffected because Express only consults this when an
- * X-Forwarded-For header is present. Change the literal if the topology does.
+ * One proxy hop is trusted when resolving req.ip.  Every rate limiter keys on
+ * req.ip, so this figure decides whether they throttle a caller or the whole
+ * internet.
  */
 app.set('trust proxy', 1);
 
@@ -60,11 +54,11 @@ const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
   .filter(Boolean);
 
 /**
- * Safety guardrail: warn loudly when production forgot CORS_ORIGINS — an
- * unset value refuses every browser request from the real frontend while
- * /api/health keeps answering (no Origin header), leaving a service that
- * looks healthy from the backend and empty from the UI. A warning, not fatal:
- * a deployment serving only non-browser callers is legitimate.
+ * Safety guardrail: warn loudly when production forgot CORS_ORIGINS — an unset
+ * value refuses every browser request from the real frontend while /api/health
+ * keeps answering (no Origin header), leaving a service that looks healthy
+ * from the backend and empty from the UI.  A warning, not fatal: a deployment
+ * serving only non-browser callers is legitimate.
  */
 if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
   console.warn(
@@ -79,10 +73,10 @@ if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
 }
 
 /**
- * Accept any loopback or private-range origin outside production — Vite
- * serves the same app on localhost, 127.0.0.1 and the LAN address, Docker
- * adds more, and pinning one spelling silently breaks the rest (the browser
- * drops the response and the UI just looks empty).
+ * Accept any loopback or private-range origin outside production — Vite serves
+ * the same app on localhost, 127.0.0.1 and the LAN address, Docker adds more,
+ * and pinning one spelling silently breaks the rest (the browser drops the
+ * response and the UI just looks empty).
  */
 const isLocalOrigin = (origin: string): boolean => {
   try {
@@ -148,9 +142,9 @@ const paymentLimiter = rateLimit({ windowMs: 60_000, max: 10 });
 const lookupLimiter = rateLimit({ windowMs: 60_000, max: 30 });
 
 /**
- * Looser than the lookup limits: quoting is what a guest does while making
- * up their mind, and a limit tuned for enumeration would throttle ordinary
- * browsing. hotelRoomService's cache makes re-quoting the same stay free —
+ * Looser than the lookup limits: quoting is what a guest does while making up
+ * their mind, and a limit tuned for enumeration would throttle ordinary
+ * browsing.  hotelRoomService's cache makes re-quoting the same stay free —
  * this caps the rate of distinct ones, which are what reach the supplier.
  */
 const quoteLimiter = rateLimit({ windowMs: 60_000, max: 60 });
@@ -171,9 +165,9 @@ app.post('/api/bookings/payment-intent', paymentLimiter, resolveUser, postPaymen
 /**
  * Its own limiter, not paymentLimiter: ConfirmationPage legitimately polls
  * several times per booking while a charge settles, and a throttled confirm
- * shows an unreachable-service error to someone already charged. Still
- * bounded — the endpoint takes a payment identifier — but the bound clears
- * the polling loop.
+ * shows an unreachable-service error to someone already charged.  Still
+ * bounded — the endpoint takes a payment identifier — but the bound clears the
+ * polling loop.
  */
 const confirmLimiter = rateLimit({ windowMs: 60_000, max: 60 });
 
@@ -189,12 +183,10 @@ app.get('/api/bookings/:id', lookupLimiter, getBookingById);
 
 /**
  * Account deletion — the most destructive request this API accepts, since
- * deleting an auth user cascades to their profile row.
- *
- * Two checks, both needed: requireUser rejects an anonymous caller, and the
- * ownership check below rejects a verified one acting on somebody else's
- * account — the token proves who you are, not what you may delete.
- * lookupLimiter caps the damage of a leaked token walking ids.
+ * deleting an auth user cascades to their profile row.  Two checks, both
+ * needed: requireUser rejects an anonymous caller, and the ownership check
+ * below rejects a verified one acting on somebody else's account — the token
+ * proves who you are, not what you may delete.
  */
 app.delete('/api/users/:uid', lookupLimiter, requireUser, async (req, res) => {
   try {
@@ -254,17 +246,11 @@ if (isDirectRun) {
   });
 
   /**
-   * Graceful shutdown, on the signal orchestrators actually send.
-   *
-   * ECS, Kubernetes and `docker stop` all deliver SIGTERM and wait; unhandled,
-   * Node dies mid-request — including a confirm that has captured money but
-   * not yet written the booking row, which is the one request this server must
-   * never drop. `server.close` stops accepting new connections and lets
-   * in-flight ones finish, then Redis is torn down last.
-   *
-   * The forced exit below is the backstop for a connection that never drains
-   * (an abandoned SSE or a stuck client): better a bounded 10 s than an
-   * orchestrator SIGKILL at its own, unknown timeout.
+   * Graceful shutdown, on the signal orchestrators actually send.  ECS,
+   * Kubernetes and `docker stop` all deliver SIGTERM and wait; unhandled, Node
+   * dies mid-request — including a confirm that has captured money but not yet
+   * written the booking row, which is the one request this server must never
+   * drop.
    */
   const shutdown = (signal: string) => {
     console.log(`${signal} received, draining connections…`);

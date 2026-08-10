@@ -44,14 +44,10 @@ export const rateLimit = (options: { windowMs: number; max: number }) => {
     }
 
     /**
-     * Key on the route pattern, not the concrete path. req.path resolves
+     * Key on the route pattern, not the concrete path.  req.path resolves
      * `/api/bookings/:id` to the full URL, handing every distinct id a fresh
      * bucket — a scanner walking ids would never be throttled on an endpoint
-     * that returns full booking records. Pattern-keying also bounds the map to
-     * one entry per (address, route).
-     *
-     * Fallback: req.route is undefined on a 404 (no route matched), so use the
-     * path there — nothing is enumerable through a route that does not exist.
+     * that returns full booking records.
      */
     const routeKey =
       (req.route as { path?: string } | undefined)?.path ?? req.path;

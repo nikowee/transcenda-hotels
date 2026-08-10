@@ -9,24 +9,7 @@ import { MAX_GUESTS, MAX_NIGHTS, MAX_ROOMS } from '../controllers/bookingControl
 import { useHotelNock, mockRoomPrices } from './helpers/hotelNock.js';
 import { signIn, useAuthNock, type FakeSession } from './helpers/authNock.js';
 
-/**
- * UC4 — Book & Make Payment, end to end over HTTP.
- *
- * Runs against the simulated gateway (PAYMENTS_MODE=simulate, set in ./env), so
- * no Stripe credentials are needed. The simulator mirrors the real branch's
- * shape: it mints `sim_sess_<uuid>`, substitutes it into the success URL exactly
- * as Stripe substitutes {CHECKOUT_SESSION_ID}, and holds the session so
- * verifySession can hand the metadata back after the redirect.
- *
- * The flow runs the opposite way round from the first cut of this file: nothing
- * is written before payment, so there is no PENDING row to inspect between
- * /payment and /confirm. What used to be asserted against a pending booking is
- * now asserted against the booking /confirm returns.
- *
- * Most of these assert security properties rather than happy-path behaviour —
- * they are the regression net for the payment-bypass and price-manipulation
- * findings, and each one maps to a specific defect that was live at one point.
- */
+/** UC4 — Book & Make Payment, end to end over HTTP. */
 
 const VALID_GUEST = {
   salutation: 'Ms',
@@ -47,8 +30,7 @@ const VALID_STAY = {
   children: 0,
 };
 
-/** A complete billing address. Required by the payment endpoints now that Stripe
- *  runs an AVS check against it, so every payment fixture has to carry one. */
+/** A complete billing address. */
 const VALID_BILLING = {
   line1: '10 Bayfront Avenue',
   line2: '#12-34',
@@ -64,11 +46,7 @@ const VALID_STAY_QUERY = { ...VALID_STAY, roomTypes: VALID_STAY.roomTypes.join('
 /** deluxe-king is 240/night × 3 nights, +9% tax */
 const EXPECTED_TOTAL = 784.8;
 
-/**
- * The confirmation email logs a line per booking, and the suite creates enough
- * of them to bury the reporter output. Silenced where the log is noise; the
- * one test that asserts on it does not use this.
- */
+/** The confirmation email logs a line per booking, and the suite creates enough of them to bury the reporter output. */
 const quietly = async <T>(fn: () => Promise<T>): Promise<T> => {
   const original = console.log;
   console.log = () => {};
@@ -86,13 +64,7 @@ const sessionIdFrom = (redirectUrl: string): string => {
   return sessionId as string;
 };
 
-/**
- * Sequence steps 4-5: prices the stay and opens a checkout session.
- *
- * `session` is what makes the booking a signed-in one. It has to be a real
- * bearer token rather than a `userId` in the body — the server takes the
- * account from the verified token and rejects a body that claims one.
- */
+/** Sequence steps 4-5: prices the stay and opens a checkout session. */
 const startCheckout = async (
   body: Record<string, unknown> = {},
   session?: FakeSession
@@ -157,11 +129,7 @@ describe('UC4 — Book & Make Payment', () => {
       expect(response.body.nightlyTotal).to.equal(240);
     });
 
-    /**
-     * An id outside the demo catalogue might be a real supplier room, so the
-     * server has to ask before it can say no — and the supplier answering "I
-     * sell no such room" is what makes this a 400 rather than a 502.
-     */
+    /** An id outside the demo catalogue might be a real supplier room, so the server has to ask before it can say no — and the supplier answering "I sell no such room" is what makes this a 400 rather than a 502. */
     it('refuses to price an unknown room type', async () => {
       mockRoomPrices({ hotelId: 'marina-bay', rooms: [] });
 
@@ -407,18 +375,7 @@ describe('UC4 — Book & Make Payment', () => {
   });
 
   describe('POST /api/bookings/confirm', () => {
-    /**
-     * The duplicate-bookings defect, end to end.
-     *
-     * Two confirmations for one session arriving together is the ordinary case,
-     * not an unlucky one — the browser posts /confirm on the confirmation page
-     * while the Stripe webhook independently recovers the same charge. Before
-     * insertOne serialised writers by payment_id, both wrote, and 7 of the 11
-     * payments in the development database ended up with two or three rows.
-     *
-     * Sending them sequentially is what the older tests do and is exactly the
-     * shape that cannot catch this.
-     */
+    /** The duplicate-bookings defect, end to end. */
     it('writes one booking when two confirmations arrive together', async () => {
       const sessionId = await startCheckout();
 
@@ -524,11 +481,7 @@ describe('UC4 — Book & Make Payment', () => {
       }
     });
 
-    /**
-     * Regression: the transaction id used to be accepted on truthiness alone,
-     * which made the payment endpoint entirely optional — anyone could POST a
-     * made-up id and receive a confirmed booking.
-     */
+    /** Regression: the transaction id used to be accepted on truthiness alone, which made the payment endpoint entirely optional — anyone could POST a made-up id and receive a confirmed booking. */
     it('cannot be made to write a booking from a forged session id', async () => {
       const forged = `sim_sess_${randomUUID()}`;
 
@@ -556,11 +509,7 @@ describe('UC4 — Book & Make Payment', () => {
       expect(JSON.stringify(response.body)).to.not.contain('sk_test');
     });
 
-    /**
-     * The browser return and the webhook race each other, and a guest refreshing
-     * the confirmation page replays this endpoint. One charge must stay one
-     * booking: insertOne dedupes on payment_id, and that is what this pins.
-     */
+    /** The browser return and the webhook race each other, and a guest refreshing the confirmation page replays this endpoint. */
     it('is idempotent across repeated confirmations', async () => {
       const sessionId = await startCheckout();
 
@@ -633,12 +582,7 @@ describe('UC4 — Book & Make Payment', () => {
     });
   });
 
-  /**
-   * The response carries names, emails, phone numbers, stay dates and card
-   * last-four, so most of what is asserted here is who is allowed to see it.
-   * This endpoint was unauthenticated at one point and these are the regression
-   * net for that.
-   */
+  /** The response carries names, emails, phone numbers, stay dates and card last-four, so most of what is asserted here is who is allowed to see it. */
   describe('GET /api/bookings/user/:userId', () => {
     it('rejects a malformed userId', async () => {
       const session = signIn();
@@ -696,12 +640,7 @@ describe('UC4 — Book & Make Payment', () => {
     });
   });
 
-  /**
-   * Route ordering. `/api/bookings/:id` is a wildcard: registered ahead of the
-   * literal segments it matches "checkout" and routes it to the lookup handler,
-   * which answers "a valid booking id is required" and takes the quote endpoint
-   * off the air. Same trap as /api/hotels/:id swallowing /api/hotels/search.
-   */
+  /** Route ordering. */
   describe('route ordering', () => {
     it('reaches the quote handler at /api/bookings/checkout, not the id lookup', async () => {
       const response = await request(app).get('/api/bookings/checkout').query(VALID_STAY_QUERY);

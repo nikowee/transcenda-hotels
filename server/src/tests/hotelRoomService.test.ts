@@ -15,15 +15,7 @@ import {
   mockPriceFailure,
 } from './helpers/hotelNock.js';
 
-/**
- * Room rate resolution against Ascenda.
- *
- * Every case here is intercepted at the socket, so the service does its real
- * polling, its real field selection and its real arithmetic against payloads
- * shaped the way the endpoint actually answers — including the parts of that
- * shape that are inconvenient: camelCase beside snake_case, a top-level
- * `currency` of null, and a first response that carries no rooms at all.
- */
+/** Room rate resolution against Ascenda. */
 
 const REQUEST: RoomRateRequest = {
   hotelId: 'hotel-1',
@@ -85,10 +77,7 @@ describe('hotelRoomService', () => {
       }
     });
 
-    /**
-     * The guard that stops `rates['constructor']` resolving to a function off
-     * Object.prototype and being multiplied into a NaN subtotal.
-     */
+    /** The guard that stops `rates['constructor']` resolving to a function off Object.prototype and being multiplied into a NaN subtotal. */
     it('does not report inherited Object properties as demo rooms', () => {
       for (const key of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
         expect(isDemoRoom(key), key).to.equal(false);
@@ -141,11 +130,7 @@ describe('hotelRoomService', () => {
       expect(result.table['deluxe-king']?.supplier).to.equal(false);
     });
 
-    /**
-     * The endpoint answers `completed: false` with an empty room list while it
-     * fans out to suppliers. Taking the first response at face value reports
-     * every hotel as having no availability.
-     */
+    /** The endpoint answers `completed: false` with an empty room list while it fans out to suppliers. */
     it('polls past an unfinished search rather than reporting no rooms', async () => {
       mockRoomPrices({ completed: false, rooms: [], times: 2 });
       mockRoomPrices();
@@ -168,10 +153,7 @@ describe('hotelRoomService', () => {
       expect(result.status).to.equal(504);
     });
 
-    /**
-     * Falling back to the demo catalogue here would price a real supplier room
-     * at an invented rate and charge a guest an amount no supplier ever quoted.
-     */
+    /** Falling back to the demo catalogue here would price a real supplier room at an invented rate and charge a guest an amount no supplier ever quoted. */
     it('fails rather than substituting demo rates when the supplier is down', async () => {
       mockPriceFailure();
 
@@ -183,13 +165,7 @@ describe('hotelRoomService', () => {
       expect(result.error).to.not.match(/partner_id|hotelapi/i);
     });
 
-    /**
-     * Ascenda answers an unknown hotel or destination with 422 and a body of
-     * {completed: true, rooms: []}. axios raises that as an exception, so the
-     * first cut reported a perfectly clear "no such rooms" as a supplier outage
-     * — and the e2e spec for an invalid room saw a 502 where it expected a
-     * refusal.
-     */
+    /** Ascenda answers an unknown hotel or destination with 422 and a body of {completed: true, rooms: []}. */
     it('reads a 4xx rejection as no availability rather than an outage', async () => {
       mockPriceFailure('hotel-1', 422);
 
@@ -254,11 +230,7 @@ describe('hotelRoomService', () => {
       expect(result.table['good']).to.include({ subtotal: 450, taxes: 50, total: 500 });
     });
 
-    /**
-     * The two tax fields are reported in different currencies — the converted
-     * one and the supplier's own. Reading the wrong one produces a tax line
-     * bigger than the bill and a negative subtotal.
-     */
+    /** The two tax fields are reported in different currencies — the converted one and the supplier's own. */
     it('ignores a tax figure larger than the total rather than going negative', async () => {
       mockRoomPrices({ rooms: [ascendaRoom({ key: 'odd', total: 100, taxes: 9999 })] });
 
@@ -269,11 +241,7 @@ describe('hotelRoomService', () => {
       expect(result.table['odd']).to.include({ subtotal: 100, taxes: 0, total: 100 });
     });
 
-    /**
-     * A stay is priced three times over one checkout — display, charge, confirm.
-     * If the supplier is asked each time, a rate that moves in between makes the
-     * confirm-time amount check reject a charge that already succeeded.
-     */
+    /** A stay is priced three times over one checkout — display, charge, confirm. */
     it('answers a repeat lookup for the same stay from cache', async () => {
       mockRoomPrices();
 
@@ -303,10 +271,7 @@ describe('hotelRoomService', () => {
       expect(later.table[ROOM_KEY]?.total).to.equal(1500);
     });
 
-    /**
-     * An unfinished search is transient. Cached, it would keep answering "no
-     * rooms" for the next half hour for a hotel that is merely slow.
-     */
+    /** An unfinished search is transient. */
     it('does not cache a search that timed out', async () => {
       mockRoomPrices({ completed: false, rooms: [], times: 3 });
       await silently(() => resolveRateTable(REQUEST, [ROOM_KEY]));

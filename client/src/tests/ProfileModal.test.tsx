@@ -8,17 +8,7 @@ import { supabase } from '../lib/supabaseClient';
 import type { BookingRecord } from '../types/booking';
 import type { User } from '@supabase/supabase-js';
 
-/**
- * ProfileModal — the Booking History tab.
- *
- * The tab used to render a hardcoded pair of trips, so none of this was
- * reachable. What it does now is an authenticated read of the signed-in user's
- * own bookings, and the assertions below are mostly about the states around
- * that request: which one is shown while it is in flight, when it comes back
- * empty, and when it fails.
- *
- * Handlers use wildcard origins so the suite does not depend on VITE_API_URL.
- */
+/** ProfileModal — the Booking History tab. */
 
 vi.mock('../lib/supabaseClient', () => ({
   supabase: {

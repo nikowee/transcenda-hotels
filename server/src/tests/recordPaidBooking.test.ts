@@ -7,20 +7,7 @@ import { findByPaymentId } from '../models/bookingModel.js';
 import type { VerifiedPayment } from '../services/paymentService.js';
 import { withSilencedErrorLog } from './helpers/stripeNock.js';
 
-/**
- * recordPaidBooking — the one place a captured charge becomes a booking row.
- *
- * Both /confirm and the webhook funnel through here, which is why it is tested
- * directly rather than only through them: the two callers must not be able to
- * drift, and half of what this function refuses is unreachable over HTTP
- * because the simulator would never produce it. A charge whose amount disagrees
- * with a re-priced quote, or whose metadata is unreadable, only arrives from a
- * tampered session or a Stripe-side change — and both are precisely the cases
- * that must not silently become a booking.
- *
- * Outcomes are returned rather than thrown, and `status` doubles as the retry
- * signal the webhook reads: 5xx is worth redelivering, 4xx never will be.
- */
+/** recordPaidBooking — the one place a captured charge becomes a booking row. */
 
 const GUEST = {
   salutation: 'Ms',
@@ -53,11 +40,7 @@ const metadataFor = (
   ...overrides.extras,
 });
 
-/**
- * Payment ids are derived from a per-call UUID. The in-memory store lives for
- * the whole run, so a shared id would let one test resolve another test's
- * booking — that has already caused a real failure once.
- */
+/** Payment ids are derived from a per-call UUID. */
 const paymentFixture = (overrides: Partial<VerifiedPayment> = {}): VerifiedPayment => ({
   paid: true,
   paymentIntentId: `pi_record_${randomUUID()}`,
@@ -174,13 +157,7 @@ describe('recordPaidBooking', () => {
   });
 
   describe('the amount cross-check', () => {
-    /**
-     * The re-price is the last line of defence on price integrity. Everything
-     * between the quote and the charge left our process, so the total is rebuilt
-     * from the stay and compared against what Stripe actually captured — a
-     * session whose amount was altered anywhere in between is refused here even
-     * though the money cleared.
-     */
+    /** The re-price is the last line of defence on price integrity. */
     it('refuses a charge that disagrees with a re-priced quote', async () => {
       const outcome = await mustFail(paymentFixture({ amountTotal: 100 }));
 
@@ -305,12 +282,7 @@ describe('recordPaidBooking', () => {
   });
 
   describe('repeat delivery', () => {
-    /**
-     * /confirm and the webhook race each other on every booking, and Stripe
-     * redelivers events freely. Whichever arrives first writes the row; the
-     * loser must be a no-op returning the same booking, not a second charge
-     * record and not an error.
-     */
+    /** /confirm and the webhook race each other on every booking, and Stripe redelivers events freely. */
     it('returns the existing booking rather than writing a second one', async () => {
       const payment = paymentFixture();
 
@@ -335,17 +307,7 @@ describe('recordPaidBooking', () => {
     });
 
     it('sends the confirmation email once when two deliveries arrive together', async () => {
-      /**
-       * The concurrent case, which the sequential test below cannot reach.
-       *
-       * The browser confirming while the webhook recovers is the exact race
-       * writesInFlight exists for. Both callers pass the findByPaymentId
-       * short-circuit, both call insertOne, and both are handed the *same*
-       * record — so emailing from the return value emailed twice for one
-       * booking. Only the caller that actually wrote the row may email.
-       *
-       * Verified failing before the fix (2 emails) and passing after (1).
-       */
+      /** The concurrent case, which the sequential test below cannot reach. */
       const payment = paymentFixture();
 
       const original = console.log;

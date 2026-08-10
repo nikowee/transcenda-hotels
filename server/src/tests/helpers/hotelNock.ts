@@ -3,21 +3,7 @@ import nock from 'nock';
 import { allowLoopbackOnly } from '../globalSetup.js';
 import { __clearRateCache } from '../../services/hotelRoomService.js';
 
-/**
- * nock harness for Ascenda's room price endpoint.
- *
- * The demo catalogue proves our own arithmetic; it cannot prove we read the
- * supplier correctly, because it never parses a response. These interceptors sit
- * at the socket, so hotelRoomService does its real polling, its real field
- * selection and its real subtotal-by-subtraction against payloads shaped like
- * the ones the API actually returns.
- *
- * Every helper here also clears the rate cache between tests. Supplier rates are
- * held for half an hour so that quoting, charging and confirming a stay all
- * agree on one number — which means without this, the second test to price the
- * same stay would be answered from the first test's fixture and never touch its
- * own interceptor.
- */
+/** nock harness for Ascenda's room price endpoint. */
 
 export const HOTEL_API = 'https://hotelapi.loyalty.dev';
 
@@ -52,13 +38,7 @@ export interface RoomFixtureOptions {
   taxes?: number;
 }
 
-/**
- * One room, trimmed to the fields hotelRoomService reads.
- *
- * The names are the supplier's, camelCase and snake_case side by side, because
- * that is genuinely how the endpoint answers — normalising them here would hide
- * the exact inconsistency the mapping code exists to absorb.
- */
+/** One room, trimmed to the fields hotelRoomService reads. */
 export const ascendaRoom = (options: RoomFixtureOptions = {}) => ({
   key: options.key ?? '2eb243ba-2f54-561b-8069-0db1439138f1',
   roomNormalizedDescription: options.label ?? 'Premier Courtyard Room King',
@@ -82,13 +62,7 @@ export interface PriceResponseOptions {
   times?: number;
 }
 
-/**
- * Intercepts GET /api/hotels/:id/price.
- *
- * The query is matched loosely on purpose: the partner parameters are asserted
- * once, in the service's own suite, and repeating them in every controller test
- * would make an unrelated parameter change fail thirty tests instead of one.
- */
+/** Intercepts GET /api/hotels/:id/price. */
 export const mockRoomPrices = (options: PriceResponseOptions = {}) =>
   nock(HOTEL_API)
     .get(`/api/hotels/${options.hotelId ?? 'hotel-1'}/price`)

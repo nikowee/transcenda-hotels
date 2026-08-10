@@ -4,17 +4,7 @@ import nock from 'nock';
 import { sendConfirmation } from '../services/emailService.js';
 import type { BookingRecord } from '../models/bookingTypes.js';
 
-/**
- * EmailService — the last step of a paid booking, and until now the only
- * production module with no suite of its own.
- *
- * It was reached incidentally through the booking flows, which proved it does
- * not throw and nothing else. The properties that matter here are the ones the
- * caller depends on: recordPaidBooking awaits this *after* the money is captured
- * and the row is committed, so a rejected promise or a thrown error would turn a
- * successful booking into a failed request. Everything below exists to hold that
- * line, plus the content the guest actually receives.
- */
+/** EmailService — the last step of a paid booking, and until now the only production module with no suite of its own. */
 
 const BOOKING: BookingRecord = {
   id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
@@ -72,10 +62,7 @@ describe('emailService', () => {
     expect(receipt.errorMessage).to.equal(undefined);
   });
 
-  /**
-   * The booking id is the guest's only handle — booking_reference does not exist
-   * in this schema — so a confirmation that omits it is unusable for support.
-   */
+  /** The booking id is the guest's only handle — booking_reference does not exist in this schema — so a confirmation that omits it is unusable for support. */
   it('carries everything the guest needs to identify the stay', async () => {
     const { output } = await capture();
 
@@ -100,20 +87,13 @@ describe('emailService', () => {
     expect(output).to.not.contain('1 nights');
   });
 
-  /**
-   * Sent to the address asked for, not the one on the booking. The two differ
-   * when a webhook recovers a booking whose payer email came from Stripe.
-   */
+  /** Sent to the address asked for, not the one on the booking. */
   it('sends to the address it was given', async () => {
     const { output } = await capture(BOOKING, 'someone.else@example.com');
     expect(output).to.contain('someone.else@example.com');
   });
 
-  /**
-   * The contract recordPaidBooking relies on. By the time this is called the
-   * card is charged and the row is committed, so a throw here would report a
-   * completed booking as a failure and send the guest back to pay again.
-   */
+  /** The contract recordPaidBooking relies on. */
   it('never rejects, even when the booking is malformed', async () => {
     const broken = { ...BOOKING, guest: undefined, roomTypes: undefined } as unknown as BookingRecord;
 
@@ -129,12 +109,7 @@ describe('emailService', () => {
     expect(receipt?.errorMessage).to.be.a('string');
   });
 
-  /**
-   * The log path must be the only path: delivery that touched the network
-   * would leak bookings to a provider nobody opted into. globalSetup blocks
-   * outbound sockets outright, so an escaped request would fail loudly — this
-   * interceptor existing and staying unused is the affirmative proof.
-   */
+  /** The log path must be the only path: delivery that touched the network would leak bookings to a provider nobody opted into. */
   it('makes no HTTP request at all', async () => {
     const scope = nock('https://api.resend.com').post('/emails').reply(200, { id: 'nope' });
 

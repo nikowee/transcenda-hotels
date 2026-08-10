@@ -2,9 +2,9 @@ import type { CardDetails } from '../types/booking';
 
 /**
  * Display formatting shared by the booking pages — one definition per
- * formatter, keeping copies from drifting apart ("1 child" on one page and
- * "1 children" on another). Lives in lib/ beside amenityIcons and
- * amenityLabels because nothing here renders.
+ * formatter, keeping copies from drifting apart ("1 child" on one page and "1
+ * children" on another).  Lives in lib/ beside amenityIcons and amenityLabels
+ * because nothing here renders.
  */
 
 /** The schema stores no currency column: the platform prices everything in SGD. */

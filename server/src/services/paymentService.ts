@@ -19,16 +19,9 @@ const SIMULATED_CARD: CardDetails = {
 };
 
 /**
- * PaymentService — the «External API» box from the class diagram.
- *
- * Payment happens on Stripe's side, so card data never reaches this server or
- * the client bundle (PCI SAQ A, not SAQ D). The diagram's
- * processPayment(amount, currency) splits into create + verify calls because
- * its original signature required holding the PAN.
- *
- * Verification is the only source of the booking's payment columns — the
- * table cannot hold an unpaid row, so nothing is written until this module
- * says the charge cleared.
+ * PaymentService — the «External API» box from the class diagram.  Payment
+ * happens on Stripe's side, so card data never reaches this server or the
+ * client bundle (PCI SAQ A, not SAQ D).
  */
 
 /** Pinned: the ^22 caret range would let the wire version drift on any lockfile refresh. */
@@ -114,7 +107,7 @@ export const toMinorUnits = (amount: number, currency: string): number => {
 /**
  * Error allowlist: nothing from the SDK is relayed verbatim, keeping
  * configuration detail ("Invalid API Key provided: sk_test_...") out of
- * responses. Card errors map to these messages; everything else gets a
+ * responses.  Card errors map to these messages; everything else gets a
  * correlation ID.
  */
 const SAFE_DECLINE_MESSAGES: Record<string, string> = {
@@ -166,7 +159,7 @@ export interface CheckoutSessionInput {
   /**
    * The one channel that survives the round trip to the hosted page —
    * everything needed to write the booking rides here, since no row can exist
-   * before payment. Stripe caps metadata at 50 keys / 500 chars per value;
+   * before payment.  Stripe caps metadata at 50 keys / 500 chars per value;
    * callers stay under both.
    */
   metadata: Record<string, string>;
@@ -253,18 +246,18 @@ export interface VerifiedPayment {
   /** What createCheckoutSession sent out, handed back after the redirect. */
   metadata: Record<string, string>;
   /**
-   * Provenance flag: true only when the simulator produced this payment,
-   * never merely because the process runs in simulate mode. A genuine pi_…
-   * on a simulate-mode box with real credentials verifies against live
-   * Stripe, so callers relaxing a rule for demo payments must key off this
-   * field, not off isSimulated().
+   * Provenance flag: true only when the simulator produced this payment, never
+   * merely because the process runs in simulate mode.  A genuine pi_… on a
+   * simulate-mode box with real credentials verifies against live Stripe, so
+   * callers relaxing a rule for demo payments must key off this field, not off
+   * isSimulated().
    */
   simulated: boolean;
 }
 
 /**
  * Authoritative payment check against Stripe — callers never infer payment
- * state from anything the browser sent. Returns everything the bookings table
+ * state from anything the browser sent.  Returns everything the bookings table
  * needs (charge, payer, card columns, and the metadata carrying the guest and
  * stay), because the row is assembled from this and nothing else.
  */
@@ -340,27 +333,20 @@ export interface PaymentIntentInput {
   guestEmail: string;
   description: string;
   /**
-   * Idempotency key: a repeated create returns the intent already made
-   * instead of minting another (every page refresh is a fresh mount, and each
-   * would otherwise orphan an intent at requires_payment_method). Stripe
-   * replays the original response for 24 hours, so the caller must vary the
-   * key when the amount changes — bookingController folds the priced total in,
-   * keeping a stale price from ever being charged.
+   * Idempotency key: a repeated create returns the intent already made instead
+   * of minting another (every page refresh is a fresh mount, and each would
+   * otherwise orphan an intent at requires_payment_method).  Stripe replays
+   * the original response for 24 hours, so the caller must vary the key when
+   * the amount changes — bookingController folds the priced total in, keeping
+   * a stale price from ever being charged.
    */
   idempotencyKey?: string;
   /**
-   * Attached to the intent as `shipping`, which is not the same thing as an AVS
-   * check and this comment used to claim it was.
-   *
-   * AVS runs against payment_method.billing_details, and in the Elements flow
-   * the payment method is created in the browser at confirm time — there is no
-   * server-side field on a PaymentIntent that sets it. Reaching a real AVS check
-   * means having the page pass billing details to confirmPayment, which is a
-   * change to PaymentPage, not to this call.
-   *
-   * `shipping` is still worth sending: it puts the address on the Stripe object
-   * where Radar can score it and support can read it — and since our own table
-   * stores no address, it is the only copy that exists anywhere.
+   * Attached to the intent as `shipping`, which is not the same thing as an
+   * AVS check and this comment used to claim it was.  AVS runs against
+   * payment_method.billing_details, and in the Elements flow the payment
+   * method is created in the browser at confirm time — there is no server-side
+   * field on a PaymentIntent that sets it.
    */
   billing?: {
     name: string;
@@ -379,9 +365,8 @@ export interface PaymentIntentResult {
   paymentIntentId: string;
   /**
    * Handed to Stripe.js in the browser to mount Elements and confirm the
-   * charge. It authorises exactly one payment and nothing else — it is not a
-   * secret key, and it is safe to send to the client. That is the whole point:
-   * the card is confirmed browser→Stripe, so the PAN never reaches us.
+   * charge.  It authorises exactly one payment and nothing else — it is not a
+   * secret key, and it is safe to send to the client.
    */
   clientSecret: string;
 }
@@ -390,13 +375,8 @@ export interface PaymentIntentResult {
 const simulatedIntents = new Map<string, PaymentIntentInput>();
 
 /**
- * Creates a PaymentIntent for the embedded Elements flow.
- *
- * The alternative, createCheckoutSession, redirects the customer to a
- * Stripe-hosted page. This one keeps them on ours: Stripe.js mounts the card
- * fields as cross-origin iframes, so the page is ours while the inputs are
- * Stripe's. Both keep the platform at PCI SAQ A; only this one puts a payment
- * page in our own application, which is what the UC4 diagrams draw.
+ * Creates a PaymentIntent for the embedded Elements flow.  The alternative,
+ * createCheckoutSession, redirects the customer to a Stripe-hosted page.
  */
 export const createPaymentIntent = async (
   input: PaymentIntentInput
@@ -451,11 +431,10 @@ export const createPaymentIntent = async (
 };
 
 /**
- * Reads a PaymentIntent back after the browser confirmed it.
- *
- * Returns the same VerifiedPayment shape as verifySession on purpose:
- * recordPaidBooking consumes either without caring which flow produced it, so
- * the two payment paths cannot drift in how a booking gets written.
+ * Reads a PaymentIntent back after the browser confirmed it.  Returns the same
+ * VerifiedPayment shape as verifySession on purpose: recordPaidBooking
+ * consumes either without caring which flow produced it, so the two payment
+ * paths cannot drift in how a booking gets written.
  */
 export const verifyPaymentIntent = async (
   paymentIntentId: string
@@ -528,20 +507,8 @@ export interface RefundResult {
 }
 
 /**
- * Refunds a captured payment.
- *
- * Amount is optional on purpose: omitting it tells Stripe to refund the full
- * captured total, which is always correct. Passing a locally computed "full"
- * amount can drift from what was actually captured and leave a few cents
- * unrefunded.
- *
- * Idempotency is Stripe-side via the key derived from the intent, so a retried
- * call returns the original refund rather than issuing a second one.
- *
- * The returned refundId has nowhere to go: the bookings table has no refund
- * column and no status, so a refunded stay still reads as paid in our database
- * and Stripe remains the only record that the money went back. Callers should
- * log the id. See the charge.refunded branch in webhookController.
+ * Refunds a captured payment.  Amount is optional on purpose: omitting it
+ * tells Stripe to refund the full captured total, which is always correct.
  */
 export const refundPayment = async (input: RefundInput): Promise<RefundResult> => {
   if (isSimulated()) {
@@ -590,13 +557,12 @@ export const constructWebhookEvent = (
   }
 
   /**
-   * The static, not the instance. Verification is an HMAC over bytes we already
-   * hold — no API key is involved and nothing leaves the process — so requiring
-   * a configured Stripe client to do it was an accident of where the method
-   * hangs, and it made the whole webhook path unreachable in simulate mode: no
-   * STRIPE_SECRET_KEY meant no client, which meant every delivery answered 503.
-   * That is the one path a demo most needs to exercise, because it is the only
-   * thing that turns a charge the customer walked away from into a booking.
+   * The static, not the instance.  Verification is an HMAC over bytes we
+   * already hold — no API key is involved and nothing leaves the process — so
+   * requiring a configured Stripe client to do it was an accident of where the
+   * method hangs, and it made the whole webhook path unreachable in simulate
+   * mode: no STRIPE_SECRET_KEY meant no client, which meant every delivery
+   * answered 503.
    */
   return Stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
 };

@@ -16,16 +16,9 @@ export type {
 
 /**
  * BookingModel — the «Database Model» box from the class diagram, written
- * against the deployed Supabase `bookings` table.
- *
- * Schema rule: payment_id and price_paid are NOT NULL with no status column,
- * so a row cannot describe an unpaid booking. insertOne only ever runs after
- * Stripe confirms the charge — there is no PENDING state to transition out of.
- *
- * Trade-off: a failed insert leaves a charged customer with no row.
- * findByPaymentId plus the webhook retry are the recovery path (see
- * webhookController); a unique constraint on payment_id would make that
- * recovery airtight.
+ * against the deployed Supabase `bookings` table.  Schema rule: payment_id and
+ * price_paid are NOT NULL with no status column, so a row cannot describe an
+ * unpaid booking.
  */
 
 const TABLE = 'bookings';
@@ -66,7 +59,7 @@ const toRow = (input: BookingInput) => ({
   /**
    * Safety guardrail: write no billing_* columns — the deployed table does not
    * have them, and PostgREST rejects the whole insert on any unknown column,
-   * failing the booking after the charge is already captured. The address
+   * failing the booking after the charge is already captured.  The address
    * still reaches Stripe in the PaymentIntent's billing_details for AVS.
    */
   price_paid: input.pricePaid,
@@ -129,14 +122,9 @@ const fromRow = (row: BookingRow): BookingRecord => ({
 });
 
 /**
- * Duplicate-write lock: writes in progress, keyed by payment_id.
- *
- * Three writers reach insertOne for one charge — the browser's /confirm, the
- * Stripe webhook, and Stripe's redelivery of it. Without this map their
- * read-then-write interleaves (await findByPaymentId yields, so each observes
- * "no booking yet" before any has written) and one charge becomes two or
- * three rows. Sharing the *promise* makes the second caller wait for the
- * first write and receive its row instead of starting another.
+ * Duplicate-write lock: writes in progress, keyed by payment_id.  Three
+ * writers reach insertOne for one charge — the browser's /confirm, the Stripe
+ * webhook, and Stripe's redelivery of it.
  */
 const writesInFlight = new Map<string, Promise<BookingRecord>>();
 
@@ -224,9 +212,8 @@ const performWrite = async (
   /**
    * Race handler: 23505 is Postgres' unique_violation — another request
    * inserted this payment_id between the lookup above and this insert (the
-   * browser confirms while the webhook recovers). Losing that race is the
-   * correct outcome, not an error: return whatever the winner wrote. Only
-   * fires once a unique constraint on payment_id exists in the database.
+   * browser confirms while the webhook recovers).  Losing that race is the
+   * correct outcome, not an error: return whatever the winner wrote.
    */
   if (error) {
     if (error.code === '23505') {

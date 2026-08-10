@@ -6,25 +6,15 @@ import axios from 'axios';
 
 /**
  * Room rates — the supplier half of the «External API» box in the class
- * diagram. Every amount the booking flow charges comes from a table built
+ * diagram.  Every amount the booking flow charges comes from a table built
  * here: the browser sends which rooms it wants, never what they cost.
- *
- * Two sources feed one table:
- *
- *   supplier — Ascenda's /hotels/{id}/price, keyed by the opaque room `key`
- *              the API returns, pricing bookings made from real search.
- *   demo     — four fixed slugs needing no network, keeping the flow
- *              demoable offline and free of a third party being up.
- *
- * Safety guardrail: the two key spaces are disjoint (UUIDs versus slugs), so
- * merging them cannot shadow a real room with a cheaper fake one.
  */
 
 const HOTEL_API_BASE = 'https://hotelapi.loyalty.dev/api';
 
 /**
  * Required on every priced Ascenda request — they select the white-label
- * partner whose rates come back. Omitting them returns an empty room list
+ * partner whose rates come back.  Omitting them returns an empty room list
  * rather than an error, which reads as "no availability" and is very hard to
  * tell from a genuinely full hotel.
  */
@@ -38,23 +28,19 @@ const PARTNER_PARAMS = {
 /**
  * The price endpoint answers immediately with `completed: false` and an empty
  * room list while it fans out to suppliers, so the first response is almost
- * never the answer. Poll until it settles.
- *
- * The env reads are test plumbing, not configuration: tests/env.ts shrinks
- * them so polls resolve against nock interceptors instantly instead of
- * sleeping 1200 ms × 8. Nothing else sets them.
+ * never the answer.  Poll until it settles.
  */
 const POLL_INTERVAL_MS = Number(process.env.HOTEL_API_POLL_MS ?? 1200);
 const MAX_POLLS = Number(process.env.HOTEL_API_MAX_POLLS ?? 8);
 const REQUEST_TIMEOUT_MS = 8_000;
 
 /**
- * A quote is priced three times over one checkout — once for display, once when
- * the PaymentIntent is minted, once when the charge is confirmed — and all three
- * amounts have to agree or the confirm-time cross-check rejects a payment that
- * already went through. Supplier rates move on their own schedule, so this cache
- * is what makes those three reads return the same number. It is a correctness
- * mechanism first and a latency one second.
+ * A quote is priced three times over one checkout — once for display, once
+ * when the PaymentIntent is minted, once when the charge is confirmed — and
+ * all three amounts have to agree or the confirm-time cross-check rejects a
+ * payment that already went through.  Supplier rates move on their own
+ * schedule, so this cache is what makes those three reads return the same
+ * number.
  */
 const CACHE_TTL_MS = 30 * 60 * 1000;
 
@@ -180,10 +166,10 @@ export const __clearRateCache = (): void => {
 
 /**
  * `converted_price` is the tax-inclusive stay total, and the tax component is
- * reported separately. Deriving the subtotal by subtraction rather than reading
- * `base_rate_in_currency` guarantees subtotal + taxes === total exactly; the two
- * supplier fields disagree by a cent often enough that trusting both produces a
- * breakdown that does not add up on screen.
+ * reported separately.  Deriving the subtotal by subtraction rather than
+ * reading `base_rate_in_currency` guarantees subtotal + taxes === total
+ * exactly; the two supplier fields disagree by a cent often enough that
+ * trusting both produces a breakdown that does not add up on screen.
  */
 const toPricedRoom = (room: AscendaRoom, nights: number): PricedRoom | null => {
   const key = typeof room.key === 'string' ? room.key.trim() : '';
@@ -222,16 +208,8 @@ const toPricedRoom = (room: AscendaRoom, nights: number): PricedRoom | null => {
 };
 
 /**
- * Polls Ascenda until the price search settles, then maps the rooms.
- *
- * Returns a failure rather than falling back to the demo catalogue. A real room
- * key priced from invented rates would charge a guest an amount no supplier ever
- * quoted, which is worse in every way than showing an error.
- *
- * Exported because the demo stay picker needs the same thing for a different
- * reason — it has no room in mind and wants the whole list to choose from — and
- * a second copy of the polling, mapping and caching would be a second place for
- * the price a demo shows to diverge from the price it charges.
+ * Polls Ascenda until the price search settles, then maps the rooms.  Returns
+ * a failure rather than falling back to the demo catalogue.
  */
 export const listSupplierRooms = async (request: RoomRateRequest): Promise<RateLookup> => {
   const key = cacheKey(request);
@@ -267,19 +245,9 @@ export const listSupplierRooms = async (request: RoomRateRequest): Promise<RateL
 
       /**
        * The supplier rejected the query — but "rejected" covers two different
-       * things, and caching them alike made a transient fault permanent.
-       *
-       * A 422 for an unknown hotel is a settled answer: the id will be just as
+       * things, and caching them alike made a transient fault permanent.  A
+       * 422 for an unknown hotel is a settled answer: the id will be just as
        * unknown in four seconds, so caching it saves eight pointless polls.
-       * A 429 or a 408 is the opposite — the supplier is telling us to come
-       * back. Writing an empty table for those pinned a real, bookable hotel
-       * as "no availability" for the full 30-minute TTL, and no retry could
-       * clear it because the empty answer was itself the cached one. A guest
-       * saw the hotel in search results and a hard 400 on the checkout page,
-       * blaming the room rather than the supplier.
-       *
-       * 401 and 403 are also excluded: those mean our credentials are wrong,
-       * which is an operator problem, not an absence of rooms.
        */
       const RETRYABLE_REJECTIONS = new Set([401, 403, 408, 425, 429]);
 
@@ -335,24 +303,17 @@ export const listSupplierRooms = async (request: RoomRateRequest): Promise<RateL
 
 /**
  * Hotel names, resolved from the supplier and held for the process lifetime.
- *
  * A name does not change between requests the way a rate does, so unlike the
- * rate cache this one has no TTL — re-fetching it would only add a round trip to
- * every quote for a value that is already correct.
+ * rate cache this one has no TTL — re-fetching it would only add a round trip
+ * to every quote for a value that is already correct.
  */
 const hotelNameCache = new Map<string, string>();
 
 /**
- * The display name for a hotel, or null if the supplier will not say.
- *
- * Needed because RoomList — the component that actually starts a booking — has
- * no hotel name to forward: it navigates with the hotel *id* and the room key,
- * and the name lives on the hotel page it came from. Rather than teach the two
- * screens a new query parameter, the server asks the supplier the same question
- * the hotel page asked.
- *
- * Null rather than an error: a missing display name must never be the reason a
- * bookable stay cannot be priced.
+ * The display name for a hotel, or null if the supplier will not say.  Needed
+ * because RoomList — the component that actually starts a booking — has no
+ * hotel name to forward: it navigates with the hotel *id* and the room key,
+ * and the name lives on the hotel page it came from.
  */
 export const fetchHotelName = async (hotelId: string): Promise<string | null> => {
   const cached = hotelNameCache.get(hotelId);
@@ -383,11 +344,10 @@ export const __clearHotelNameCache = (): void => {
 };
 
 /**
- * The table bookingController prices a stay against.
- *
- * The supplier is only called when a requested room is not one of the demo
- * slugs, which keeps the offline demo flow — and every test that uses it — off
- * the network without needing a mode flag to say so.
+ * The table bookingController prices a stay against.  The supplier is only
+ * called when a requested room is not one of the demo slugs, which keeps the
+ * offline demo flow — and every test that uses it — off the network without
+ * needing a mode flag to say so.
  */
 export const resolveRateTable = async (
   request: RoomRateRequest,

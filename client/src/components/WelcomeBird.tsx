@@ -8,17 +8,14 @@ export default function WelcomeBird({ onComplete }: WelcomeBirdProps) {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    // 1. Fade IN: Trigger shortly after mounting
     const fadeInTimer = setTimeout(() => {
       setIsVisible(true);
     }, 100);
 
-    // 2. Fade OUT: Start fading out at 1.8 seconds
     const fadeOutTimer = setTimeout(() => {
       setIsVisible(false);
     }, 1800);
 
-    // 3. COMPLETE: Unmount at exactly 2.5 seconds (1800ms + 700ms transition)
     const completeTimer = setTimeout(() => {
       onComplete();
     }, 2500);

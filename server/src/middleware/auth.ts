@@ -1,15 +1,9 @@
 import { type Request, type Response, type NextFunction } from 'express';
 
 /**
- * Turn the caller's Supabase access token into a verified user id.
- *
- * Core rule: a user id in a request body or URL path is an identifier, not a
- * credential (anyone can type a UUID). Only req.auth.userId — verified from
- * the token — decides which account a booking belongs to.
- *
- * Verify against Supabase via supabaseAdmin.auth.getUser rather than decoding
- * the JWT locally, catching signed-out and revoked sessions (a decoded JWT
- * stays valid until expiry no matter what the user did since).
+ * Turn the caller's Supabase access token into a verified user id.  Core rule:
+ * a user id in a request body or URL path is an identifier, not a credential
+ * (anyone can type a UUID).
  */
 
 export interface AuthenticatedUser {
@@ -27,10 +21,9 @@ declare module 'express-serve-static-core' {
 /**
  * Verification cache: skip the Supabase round trip for a token verified
  * moments ago (/payment-intent and /confirm land seconds apart, and the
- * profile modal refetches on every open).
- *
- * Kept short so a signed-out session only looks live for one minute, and only
- * successes are cached — a rejection is cheap to repeat and must not stick.
+ * profile modal refetches on every open).  Kept short so a signed-out session
+ * only looks live for one minute, and only successes are cached — a rejection
+ * is cheap to repeat and must not stick.
  */
 const CACHE_TTL_MS = 60_000;
 const CACHE_MAX_ENTRIES = 500;
@@ -108,9 +101,9 @@ const verifyToken = async (token: string): Promise<VerifyOutcome> => {
   if (error) {
     /**
      * Status split: a 4xx from the auth API means the token really was
-     * rejected (401 back). Anything else means Supabase could not answer
-     * (503 back), keeping a guest mid-payment from being signed out by an
-     * outage on our side.
+     * rejected (401 back).  Anything else means Supabase could not answer (503
+     * back), keeping a guest mid-payment from being signed out by an outage on
+     * our side.
      */
     const status = (error as { status?: number }).status;
     if (typeof status === 'number' && status >= 400 && status < 500) {
@@ -133,9 +126,9 @@ const verifyToken = async (token: string): Promise<VerifyOutcome> => {
 
 /**
  * Optional authentication: set req.auth when a token is presented, pass a
- * guest with no token straight through, and still reject a bad token —
- * falling through to anonymous would write the booking with no user_id and
- * silently hide it from the guest's booking history.
+ * guest with no token straight through, and still reject a bad token — falling
+ * through to anonymous would write the booking with no user_id and silently
+ * hide it from the guest's booking history.
  */
 export const resolveUser = async (
   req: Request,

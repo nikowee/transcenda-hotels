@@ -24,20 +24,9 @@ const API_URL = import.meta.env.VITE_API_URL;
 
 /**
  * «React Page» ConfirmationPage — sequence step 11, the "Display Booking
- * Confirmation" use case. Reached by redirect back from Stripe, so router
+ * Confirmation" use case.  Reached by redirect back from Stripe, so router
  * state does not survive the trip and everything is re-fetched from the query
  * string.
- *
- * No payment status renders here: a row cannot exist unless Stripe confirmed
- * the charge (price_paid and payment_id are NOT NULL with no status column),
- * so a returned booking IS a paid booking — the only other outcome is a
- * charge not recorded yet.
- *
- * Sequence steps map to:
- *   6-10 POST /api/bookings/confirm  → server verifies the session with Stripe
- *                                      and inserts the booking
- *   11   render the returned record
- *   ?id=<uuid> revisit               → GET /api/bookings/:id, no Stripe hop
  */
 
 const POLL_INTERVAL_MS = 2000;
@@ -95,27 +84,9 @@ export default function ConfirmationPage() {
   const bookingId = searchParams.get('id');
 
   /**
-   * Holds the in-flight confirmation, not a "have I run" boolean.
-   *
-   * This used to deliberately allow the effect to run twice, on the grounds
-   * that confirming is idempotent server-side. It is not: insertOne reads
-   * findByPaymentId and then inserts, with nothing atomic in between and no
-   * unique constraint behind it, so two concurrent confirmations both see no
-   * booking and both write one. Rows milliseconds apart sharing a payment_id
-   * are exactly that race.
-   *
-   * A plain run-once ref is the wrong fix and was correctly rejected before —
-   * it strands the page in its loading state, because the first mount's cleanup
-   * has already tripped `cancelled`. Caching the promise gives one request and
-   * lets whichever mount is still alive consume it.
-   *
-   * The cache is scoped to one set of URL params, not to the page. The effect
-   * clears the ref on every run, so a navigation from one session/intent to
-   * another starts its own request instead of reusing the previous one — a
-   * stale promise would otherwise confirm the wrong payment and show the wrong
-   * booking. Clearing on every run is safe for StrictMode too: the second mount
-   * simply fires its own request, and the server's findByPaymentId check makes
-   * the duplicate a no-op.
+   * Holds the in-flight confirmation, not a "have I run" boolean.  This used
+   * to deliberately allow the effect to run twice, on the grounds that
+   * confirming is idempotent server-side.
    */
   const confirmRequest = useRef<Promise<unknown> | null>(null);
 
@@ -183,9 +154,9 @@ export default function ConfirmationPage() {
             /**
              * Clear the handoff here, not only in PaymentPage's success
              * handler — a 3DS challenge takes the whole page away and returns
-             * the browser straight to this URL, so nothing on the payment
-             * page runs. A confirmed booking record is the one signal both
-             * paths share, and it defines "this handoff is spent".
+             * the browser straight to this URL, so nothing on the payment page
+             * runs.  A confirmed booking record is the one signal both paths
+             * share, and it defines "this handoff is spent".
              */
             clearHandoff();
             setError(null);

@@ -34,23 +34,10 @@ import { matchesStay, readHandoff, stayToParams, writeHandoff } from '../lib/che
 const API_URL = import.meta.env.VITE_API_URL;
 
 /**
- * «React Page» CheckoutPage — UC4 "Book & Make Payment".
- *
- * Replaces the checkout.ejs template from the class diagram: the diagram was
- * drawn against a server-rendered EJS monolith, while this codebase is a
- * decoupled SPA, so `render(page, data, errorMessage)` becomes local state.
- *
- * This page never collects card details. The card is entered on the next page
- * (/payment) inside Stripe's own hosted fields, so no PAN, expiry or CVC is
- * ever entered into, stored by, or transmitted through our client or server.
- *
- * Sequence steps map to:
- *   1-2  mount + GET /api/bookings/checkout   → priced quote (display only)
- *   3    submit guest details                 → POST /api/bookings/guest-details
- *   1a-3a invalid details                     → fieldErrors, stay on step 1
- *   4    continue to payment                  → write handoff, go to /payment
- *   5    the payment page mints the intent    → POST /api/bookings/payment-intent
- *   6-11 handled there and in ConfirmationPage, and by the webhook
+ * «React Page» CheckoutPage — UC4 "Book & Make Payment".  Replaces the
+ * checkout.ejs template from the class diagram: the diagram was drawn against
+ * a server-rendered EJS monolith, while this codebase is a decoupled SPA, so
+ * `render(page, data, errorMessage)` becomes local state.
  */
 
 type Step = 'guest' | 'review';
@@ -106,17 +93,17 @@ export default function CheckoutPage() {
 
   /**
    * A handoff left behind by a payment that did not complete — the payment
-   * page only clears it on success, so its presence means the customer
-   * reached the card form and came back with everything they typed intact.
-   * Read once, lazily: hydrating in an effect would flash an empty form
-   * before filling it.
+   * page only clears it on success, so its presence means the customer reached
+   * the card form and came back with everything they typed intact.  Read once,
+   * lazily: hydrating in an effect would flash an empty form before filling
+   * it.
    */
   const resumed = useMemo(() => readHandoff(), []);
 
   /**
    * Read the stay from the URL, inventing nothing — a silently-substituted
    * default shows the guest a payment page for a stay they never chose, so a
-   * missing parameter has to be visible instead. The alternate spellings
+   * missing parameter has to be visible instead.  The alternate spellings
    * (dest/in/out/guests) are what search and hotel details emit.
    */
   const urlStay = useMemo(() => {
@@ -147,10 +134,10 @@ export default function CheckoutPage() {
   }, [searchParams]);
 
   /**
-   * A bare /checkout with a handoff in storage is a resume, not a broken
-   * link — the stay is borrowed from storage only when the URL supplies
-   * nothing. A link carrying some parameters is a link to a different stay,
-   * and filling its gaps from a previous booking would price a substitute.
+   * A bare /checkout with a handoff in storage is a resume, not a broken link
+   * — the stay is borrowed from storage only when the URL supplies nothing.  A
+   * link carrying some parameters is a link to a different stay, and filling
+   * its gaps from a previous booking would price a substitute.
    */
   const stayParams = useMemo(
     () =>
@@ -162,11 +149,9 @@ export default function CheckoutPage() {
 
   /**
    * Resume gate: only a handoff that matches the stay on screen unlocks the
-   * review step. The handoff outlives its booking by design, so resuming a
+   * review step.  The handoff outlives its booking by design, so resuming a
    * different stay's handoff would seat a previous, unrelated guest one click
-   * from a confirmed booking. The billing address is part of the gate too — a
-   * handoff without one cannot pass the payment endpoint, and only step 1 can
-   * collect it.
+   * from a confirmed booking.
    */
   const resumes = Boolean(
     resumed && resumed.billingAddress && matchesStay(resumed.stay, stayParams)
@@ -175,9 +160,9 @@ export default function CheckoutPage() {
   /**
    * Start at step 2 when there is something to resume — a failed payment
    * returns the customer to review-and-pay with details intact rather than to
-   * an empty form. A handoff for a different stay still refills the form
-   * (the details are the same person's) but starts at step 1, where they are
-   * re-validated against the new booking.
+   * an empty form.  A handoff for a different stay still refills the form (the
+   * details are the same person's) but starts at step 1, where they are re-
+   * validated against the new booking.
    */
   const [step, setStep] = useState<Step>(resumes ? 'review' : 'guest');
   const [quote, setQuote] = useState<CheckoutQuote | null>(null);

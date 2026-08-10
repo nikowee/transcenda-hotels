@@ -10,14 +10,13 @@ const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 export const CACHE_TTL = 300;
 
 /**
- * Two different reconnection problems, two different answers: bounded
- * retries while starting up (so connect() cannot hang forever against a
- * Redis that is not there), unbounded-but-backed-off retries afterwards (so
- * a Redis that restarted — a deploy, an OOM kill, coming up a second after
- * the API in compose — is reconnected to rather than abandoned).
- *
- * `retries` counts from zero on each fresh disconnect, and `hasConnected`
- * distinguishes "never came up" from "came up and dropped".
+ * Two different reconnection problems, two different answers: bounded retries
+ * while starting up (so connect() cannot hang forever against a Redis that is
+ * not there), unbounded-but-backed-off retries afterwards (so a Redis that
+ * restarted — a deploy, an OOM kill, coming up a second after the API in
+ * compose — is reconnected to rather than abandoned).  `retries` counts from
+ * zero on each fresh disconnect, and `hasConnected` distinguishes "never came
+ * up" from "came up and dropped".
  */
 const STARTUP_RETRY_LIMIT = 5;
 let hasConnected = false;
@@ -63,16 +62,8 @@ redis.on('ready', () => {
 });
 
 /**
- * Connect without blocking the module.
- *
- * This was a top-level `await redis.connect()`. Inside Docker that is fine
- * because compose starts a redis service, but with nothing listening the client
- * retried indefinitely and the await never settled — so importing this file hung
- * forever. Anything that reaches it transitively (hotelController → index.ts →
- * the whole server suite) hung with it, before a single test could run.
- *
- * Fire-and-forget delivers what the original comment intended: a missing Redis
- * degrades to "no cache" rather than stopping the process.
+ * Connect without blocking the module.  This was a top-level `await
+ * redis.connect()`.
  */
 void redis.connect().catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
