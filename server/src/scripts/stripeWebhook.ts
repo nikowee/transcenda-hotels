@@ -1,20 +1,13 @@
 #!/usr/bin/env tsx
 /**
  * Local Stripe webhook tooling — a stand-in for `stripe listen` / `stripe
- * trigger` when the Stripe CLI is not installed and no Stripe account is
- * involved.
+ * trigger` when the Stripe CLI is not installed.
  *
- * The webhook is the only path that turns a captured charge into a booking when
- * the customer never comes back from the payment page, so it is the path most
- * worth exercising by hand and the one hardest to reach: you cannot make Stripe
- * deliver an event to localhost without the CLI's tunnel.
- *
- * You do not need one. A webhook signature is an HMAC-SHA256 over
- * `<timestamp>.<raw body>` keyed on the endpoint's signing secret — entirely
- * local arithmetic. Generate a secret, tell the server about it, and sign your
- * own deliveries with the same key. The server's verification code is untouched
- * and cannot tell the difference, which is the point: what gets tested is the
- * real handler, not a bypass.
+ * A webhook signature is an HMAC-SHA256 over `<timestamp>.<raw body>` keyed on
+ * the endpoint's signing secret — entirely local arithmetic. Generate a
+ * secret, tell the server about it, and sign your own deliveries with the same
+ * key: the server's verification code cannot tell the difference, so what gets
+ * tested is the real handler, not a bypass.
  *
  *   npm run stripe:secret              print a signing secret
  *   npm run stripe:secret -- --write   ...and write it into server/.env

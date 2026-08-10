@@ -21,18 +21,10 @@ import { handleStripeWebhook } from './controllers/webhookController.js';
 import { rateLimit } from './middleware/rateLimit.js';
 import { resolveUser, requireUser } from './middleware/auth.js';
 /**
- * Deliberately NOT a static import.
- *
- * ./lib/supabaseClient throws at module scope when SUPABASE_URL or
- * SUPABASE_SECRET_KEY is absent. bookingModel and middleware/auth both import
- * it lazily for exactly that reason — so the server can run on the in-memory
- * store with no database, which the startup banner below explicitly describes
- * as a supported mode. Importing it eagerly here defeated both of them: the
- * process aborted during module evaluation, before Express bound a port, so
- * the credential-free path never actually started. The test suite hid it by
- * assigning placeholder credentials in tests/env.ts.
- *
- * The two routes that need it are the only places that pay for it.
+ * Lazy import, deliberately: supabaseClient throws at module scope when the
+ * env vars are absent, and the server must still boot on the in-memory store
+ * with no database — a supported mode. Only the two routes that need the
+ * client pay for it.
  */
 const supabaseLib = () => import('./lib/supabaseClient.js');
 import { isSupabaseConfigured } from './models/bookingModel.js';
@@ -68,17 +60,11 @@ const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
   .filter(Boolean);
 
 /**
- * Fail loudly on a production deployment that forgot CORS_ORIGINS.
- *
- * The default is the localhost value, and production has no local-origin
- * escape hatch, so an unset CORS_ORIGINS refuses every browser request from the
- * real frontend while /api/health and curl — neither of which sends an Origin
- * header — keep answering. The service looks healthy from the backend and the
- * UI renders as empty results with a generic "could not reach the service"
- * message. That is a very expensive thing to debug from the wrong end.
- *
- * A startup warning is the cheapest place to catch it. Not fatal: a deployment
- * that genuinely only serves same-origin or non-browser callers is legitimate.
+ * Safety guardrail: warn loudly when production forgot CORS_ORIGINS — an
+ * unset value refuses every browser request from the real frontend while
+ * /api/health keeps answering (no Origin header), leaving a service that
+ * looks healthy from the backend and empty from the UI. A warning, not fatal:
+ * a deployment serving only non-browser callers is legitimate.
  */
 if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
   console.warn(
@@ -93,11 +79,10 @@ if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
 }
 
 /**
- * Vite serves the same app on localhost, 127.0.0.1, and the LAN address it
- * prints as "Network:" — and Docker adds more. Pinning the allowlist to a
- * single spelling silently breaks every other one: the browser drops the
- * response and the UI just looks empty. Outside production, accept any
- * loopback or private-range origin.
+ * Accept any loopback or private-range origin outside production — Vite
+ * serves the same app on localhost, 127.0.0.1 and the LAN address, Docker
+ * adds more, and pinning one spelling silently breaks the rest (the browser
+ * drops the response and the UI just looks empty).
  */
 const isLocalOrigin = (origin: string): boolean => {
   try {
@@ -163,14 +148,10 @@ const paymentLimiter = rateLimit({ windowMs: 60_000, max: 10 });
 const lookupLimiter = rateLimit({ windowMs: 60_000, max: 30 });
 
 /**
- * Looser than the lookups because quoting is what a guest does while making up
- * their mind — changing dates, adding a room, going back a page — and a limit
- * tuned for enumeration would throttle ordinary browsing.
- *
- * It exists at all because a quote can now reach the supplier. What actually
- * bounds that is hotelRoomService's cache: only a stay this server has not
- * priced before costs an outbound call, so re-quoting the same stay is free and
- * this limit is what caps the rate of *distinct* ones.
+ * Looser than the lookup limits: quoting is what a guest does while making
+ * up their mind, and a limit tuned for enumeration would throttle ordinary
+ * browsing. hotelRoomService's cache makes re-quoting the same stay free —
+ * this caps the rate of distinct ones, which are what reach the supplier.
  */
 const quoteLimiter = rateLimit({ windowMs: 60_000, max: 60 });
 
@@ -178,29 +159,21 @@ app.get('/api/bookings/checkout', quoteLimiter, getCheckout);
 
 app.post('/api/bookings/guest-details', lookupLimiter, postGuestDetails);
 /**
- * resolveUser, not requireUser: booking without an account is a supported flow,
- * so a request with no Authorization header is a guest checkout rather than an
- * error. What it does is make a *presented* token authoritative — the resulting
- * user_id comes from the verified subject and never from the request body.
+ * resolveUser, not requireUser: guest checkout is a supported flow, so a
+ * request with no Authorization header proceeds — but a presented token
+ * becomes authoritative, and user_id comes from the verified subject, never
+ * the request body.
  */
 app.post('/api/bookings/payment', paymentLimiter, resolveUser, postPayment);
 // Elements flow: returns a client secret instead of a redirect, so the card is
 // entered on our own /payment page rather than on a Stripe-hosted one.
 app.post('/api/bookings/payment-intent', paymentLimiter, resolveUser, postPaymentIntent);
 /**
- * Its own limiter, not paymentLimiter.
- *
- * ConfirmationPage polls this up to MAX_POLLS times for a single booking while
- * a charge settles, so one customer legitimately spends several requests. At
- * the payment limiter's 10/min that left room for two guests a minute — and
- * fewer behind a NAT or a CGNAT address, where they share a bucket. A throttled
- * confirm is not a harmless retry either: the page treats 429 as neither paid
- * nor missing, burns its remaining attempts and shows an unreachable-service
- * error to someone whose card has already been charged.
- *
- * Raised rather than removed. The endpoint is still worth bounding — it takes a
- * payment identifier — but the bound has to clear the polling loop it was
- * throttling.
+ * Its own limiter, not paymentLimiter: ConfirmationPage legitimately polls
+ * several times per booking while a charge settles, and a throttled confirm
+ * shows an unreachable-service error to someone already charged. Still
+ * bounded — the endpoint takes a payment identifier — but the bound clears
+ * the polling loop.
  */
 const confirmLimiter = rateLimit({ windowMs: 60_000, max: 60 });
 
@@ -215,18 +188,13 @@ app.get('/api/bookings/user/:userId', lookupLimiter, requireUser, getBookingsByU
 app.get('/api/bookings/:id', lookupLimiter, getBookingById);
 
 /**
- * Account deletion.
+ * Account deletion — the most destructive request this API accepts, since
+ * deleting an auth user cascades to their profile row.
  *
- * This was unauthenticated: any caller who knew a UUID could permanently
- * delete that account, and the UUID is not a secret — it appears in the URL of
- * GET /api/bookings/user/:userId and in booking payloads. Deleting an auth user
- * cascades to their profile row, so this was the single most destructive
- * request the API accepted, from anyone.
- *
- * requireUser rejects an anonymous caller; the check below rejects a verified
- * one acting on somebody else's account. Both are needed — the token proves who
- * you are, not what you may delete. lookupLimiter caps the damage of a leaked
- * token being used to walk ids.
+ * Two checks, both needed: requireUser rejects an anonymous caller, and the
+ * ownership check below rejects a verified one acting on somebody else's
+ * account — the token proves who you are, not what you may delete.
+ * lookupLimiter caps the damage of a leaked token walking ids.
  */
 app.delete('/api/users/:uid', lookupLimiter, requireUser, async (req, res) => {
   try {

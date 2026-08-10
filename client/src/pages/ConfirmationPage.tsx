@@ -23,16 +23,15 @@ import { clearHandoff } from '../lib/checkoutHandoff';
 const API_URL = import.meta.env.VITE_API_URL;
 
 /**
- * «React Page» ConfirmationPage — sequence step 11, and the "Display Booking
- * Confirmation" use case. Replaces confirmation.ejs.
+ * «React Page» ConfirmationPage — sequence step 11, the "Display Booking
+ * Confirmation" use case. Reached by redirect back from Stripe, so router
+ * state does not survive the trip and everything is re-fetched from the query
+ * string.
  *
- * Reached by redirect back from Stripe, so router state does not survive the
- * trip and everything is re-fetched from the session id in the query string.
- *
- * There is no payment status to render. The bookings table has price_paid and
- * payment_id NOT NULL and no status column, so a row cannot exist unless Stripe
- * confirmed the charge: a returned booking *is* a paid booking, and the only
- * other outcome is that the charge has not been recorded yet.
+ * No payment status renders here: a row cannot exist unless Stripe confirmed
+ * the charge (price_paid and payment_id are NOT NULL with no status column),
+ * so a returned booking IS a paid booking — the only other outcome is a
+ * charge not recorded yet.
  *
  * Sequence steps map to:
  *   6-10 POST /api/bookings/confirm  → server verifies the session with Stripe
@@ -47,11 +46,10 @@ const MAX_POLLS = 5;
 /** The schema stores no currency column: the platform prices everything in SGD. */
 
 /**
- * A 404 is an answer — that booking does not exist. Every other failure
- * (5xx, network, CORS) means the lookup failed, not that the booking did, and
- * the two must not read the same: telling someone who has just paid that their
- * booking cannot be found, when the truth is that the API is down, is the worst
- * wrong answer this page can give.
+ * Error split: a 404 is an answer (that booking does not exist); every other
+ * failure means the lookup failed, not the booking — and telling someone who
+ * just paid that their booking cannot be found, when the API is merely down,
+ * is the worst wrong answer this page can give.
  */
 type PageError = { title: string; detail: string };
 
@@ -183,17 +181,11 @@ export default function ConfirmationPage() {
           if (record) {
             setBooking(record);
             /**
-             * Here, not only in PaymentPage's success handler.
-             *
-             * That handler runs for cards Stripe settles inline, but a bank that
-             * demands a 3DS challenge takes the whole page away and returns the
-             * browser straight to this URL — confirmPayment never resolves, so
-             * nothing on the payment page clears anything. The handoff then
-             * survives a paid booking and auto-resumes the customer's *next*
-             * checkout onto the stay they have already paid for.
-             *
-             * A confirmed booking record is the one signal both paths share, and
-             * it is the definition of "this handoff is spent".
+             * Clear the handoff here, not only in PaymentPage's success
+             * handler — a 3DS challenge takes the whole page away and returns
+             * the browser straight to this URL, so nothing on the payment
+             * page runs. A confirmed booking record is the one signal both
+             * paths share, and it defines "this handoff is spent".
              */
             clearHandoff();
             setError(null);
@@ -229,8 +221,8 @@ export default function ConfirmationPage() {
 
       if (cancelled) return;
 
-      // Out of attempts with the charge still in flight. The money may well be
-      // gone, so this must not read as a failure or as a missing booking.
+      // Out of attempts with the charge still in flight — the money may well
+      // be gone, so this must not read as a failure or a missing booking.
       setIsSettling(true);
       setIsLoading(false);
     };

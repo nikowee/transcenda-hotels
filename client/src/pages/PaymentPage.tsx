@@ -30,15 +30,12 @@ const API_URL = import.meta.env.VITE_API_URL;
 const PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 
 /**
- * «React Page» PaymentPage — UC4 sequence step 4, "Submit Payment".
+ * «React Page» PaymentPage — sequence step 4, "Submit Payment".
  *
- * The class diagram draws a payment page inside the application, and this is it.
- * What the diagram could not know is that implementing it literally — our own
- * inputs, posting a PAN to our own server — puts the Express host inside PCI
- * SAQ D. So the page is ours and the *inputs* are Stripe's: PaymentElement
- * mounts cross-origin iframes, the card is confirmed browser→Stripe, and no
- * card number ever reaches this bundle or our API. That keeps SAQ A while still
- * putting the payment step where the diagram puts it.
+ * The page is ours and the inputs are Stripe's: PaymentElement mounts
+ * cross-origin iframes and the card is confirmed browser→Stripe, so no card
+ * number ever reaches this bundle or our API (PCI SAQ A — our own inputs
+ * posting a PAN to our own server would be SAQ D).
  *
  * Two card UIs, and the server picks:
  *   - Stripe configured  → PaymentElement, a real charge
@@ -58,13 +55,10 @@ interface IntentResponse {
   currency: string;
   simulated: boolean;
   /**
-   * The priced stay behind the amount, for the summary beside the card form.
-   *
-   * Comes from the intent response rather than the sessionStorage handoff on
-   * purpose. The browser carries the guest and the stay across the two pages; it
-   * must never carry the price. Reading the summary from the same response the
-   * PaymentIntent was minted from is what guarantees the figures on screen are
-   * the figures being charged.
+   * The priced stay behind the amount, read from the intent response rather
+   * than the handoff on purpose — the browser must never carry the price, and
+   * reading the summary from the same response the PaymentIntent was minted
+   * from guarantees the figures on screen are the figures being charged.
    */
   quote: CheckoutQuote;
 }
@@ -80,27 +74,20 @@ export default function PaymentPage() {
   const [error, setError] = useState('');
 
   /**
-   * The guest and stay are handed over in sessionStorage rather than router
-   * state so a refresh on this page does not lose them and strand the customer
-   * mid-flow. Cleared once the booking is confirmed.
+   * Read the handoff once — sessionStorage rather than router state, so a
+   * refresh keeps the booking to pay for. Cleared once the booking confirms.
    */
   const handoff = useMemo<CheckoutHandoff | null>(() => readHandoff(), []);
 
   /**
-   * Where "back" goes, and why it carries a query string.
+   * Build the back link with the stay in its query — /checkout reads its stay
+   * from the URL, so a bare link dead-ends on "this checkout link is missing
+   * …" with no route back to payment. With the handoff still in storage the
+   * page resumes at the review step, details intact.
    *
-   * The checkout page reads its stay from the URL, so a bare /checkout link
-   * landed on "this checkout link is missing destinationId, hotelId, …" — a dead
-   * end with no route back to payment at all. Rebuilding the query from the
-   * handoff means the page can price the stay again, and because the handoff is
-   * still in storage it resumes at the review step with the guest's details
-   * intact rather than an empty form.
-   *
-   * With no handoff there is no stay to go back *to*, and this is exactly the
-   * case the page reaches when it says "your booking details have expired" —
-   * offering "back to details" there sends the customer to a checkout page with
-   * no booking. Search is the only honest destination, so the label changes with
-   * the target rather than promising details that no longer exist.
+   * With no handoff there are no details to go back to, so the link goes to
+   * search — the label changes with the target rather than promising details
+   * that no longer exist.
    */
   const back = useMemo(
     () =>
@@ -111,18 +98,12 @@ export default function PaymentPage() {
   );
 
   /**
-   * Holds the in-flight request, not a "have I run" boolean.
-   *
-   * StrictMode mounts this effect twice in development. A plain flag would fire
-   * two POSTs and mint two PaymentIntents — real objects in the Stripe
-   * dashboard, one of them permanently orphaned. A run-once ref that skips the
-   * second mount is worse: the first mount's cleanup has already tripped its
-   * own cancelled flag, so nothing ever calls setIntent and the page sits on
-   * "Preparing secure payment…" forever. That exact mistake cost real debugging
-   * time on ConfirmationPage earlier.
-   *
-   * Caching the promise fixes both: one request, and whichever mount is still
-   * alive resolves it.
+   * Hold the in-flight request, not a "have I run" boolean. StrictMode mounts
+   * the effect twice: a plain flag fires two POSTs and orphans a PaymentIntent
+   * in the Stripe dashboard, while a run-once ref strands the page loading
+   * forever (the first mount's cleanup already tripped its cancelled flag).
+   * Caching the promise fixes both — one request, resolved by whichever mount
+   * is still alive.
    */
   const intentRequest = useRef<Promise<IntentResponse> | null>(null);
 
@@ -182,12 +163,9 @@ export default function PaymentPage() {
   }, [handoff]);
 
   const onPaid = (paymentIntentId: string) => {
-    // Only on success: a failed payment must leave it so the customer can
-    // resume at the review step instead of re-entering the whole booking.
-    //
-    // Not the only place this happens — a 3DS challenge navigates away and never
-    // comes back through here, so ConfirmationPage clears it too, on the
-    // confirmed record. Both paths, one meaning.
+    // Clear only on success — a failed payment leaves the handoff so the
+    // customer resumes at the review step. ConfirmationPage clears it too:
+    // a 3DS challenge navigates away and never comes back through here.
     clearHandoff();
     navigate(`/confirmation?payment_intent=${encodeURIComponent(paymentIntentId)}`);
   };
@@ -263,15 +241,11 @@ export default function PaymentPage() {
           <div className="grid gap-6 lg:grid-cols-[1fr_20rem] lg:items-start">
             <main className="rounded-2xl bg-white p-6 shadow-xl md:p-8">
               {/**
-               * Three outcomes, not two. `simulated || !stripePromise` used to
-               * collapse the last two together, and that was a trap: when the
-               * server mints a *real* PaymentIntent and this build has no
-               * publishable key, it mounted the demo form against a live charge.
-               * The demo form derives brand and last four and posts them — it
-               * cannot confirm a card with Stripe — so the intent stays at
-               * requires_payment_method, /confirm answers 402 "Payment has not
-               * completed", and the page is a dead end that looks like a working
-               * form. Say what is actually wrong instead.
+               * Three outcomes, not two: the demo form only for a simulated
+               * intent, Elements only with a publishable key, and an explicit
+               * explainer otherwise — mounting the demo form against a real
+               * PaymentIntent leaves it stuck at requires_payment_method, a
+               * dead end that looks like a working form.
                */}
               {intent.simulated ? (
                 <DemoCardForm intent={intent} onPaid={onPaid} />
@@ -287,12 +261,9 @@ export default function PaymentPage() {
               )}
             </main>
 
-            {/* Guarded, not assumed. Reading quote.currency off an absent quote
-                throws during render, React unmounts the tree, and the customer
-                gets a blank page with no error — which is precisely how a
-                server/client contract drift blanked the checkout page once
-                already. A missing summary is a worse page; a thrown one is no
-                page at all. */}
+            {/* Guarded, not assumed: reading fields off an absent quote throws
+                during render and blanks the whole page — a missing summary is
+                a worse page; a thrown one is no page at all. */}
             {intent.quote && (
               <BookingSummary quote={intent.quote} guest={handoff?.guestDetails ?? null} />
             )}
@@ -304,17 +275,10 @@ export default function PaymentPage() {
 }
 
 /**
- * What is being paid for, beside the card form.
- *
- * Checkout showed this too, but a customer arrives here having crossed a page
- * boundary with the total in their head and nothing else — asking them to
- * commit a card against a bare figure is how a wrong-dates booking gets paid
- * for. It is also the last screen before money moves, which makes it the last
- * chance to notice.
- *
- * Every figure comes from the quote the intent was minted from. The guest name
- * comes from the handoff because it is the one thing here that is not priced and
- * not sent to Stripe as an amount.
+ * The booking summary beside the card form — the last screen before money
+ * moves, and so the last chance to notice a wrong-dates booking. Every figure
+ * comes from the quote the intent was minted from; the guest name comes from
+ * the handoff as the one thing here that is not priced.
  */
 function BookingSummary({
   quote,
@@ -388,15 +352,12 @@ function BookingSummary({
 }
 
 /**
- * The server is taking a real payment and this build cannot render card fields
- * for it.
- *
- * Both ways out are configuration, and which one is right depends on what the
- * reader is doing, so both are named rather than guessed at. Neither is
- * something the page can do for itself: mounting Elements needs a publishable
- * key at build time, and switching to the simulator is the server's call — a
- * client that could choose it would be a client that could ask for the demo form
- * against live Stripe.
+ * The server is taking a real payment and this build cannot render card
+ * fields for it. Both ways out are configuration, so both are named rather
+ * than guessed at — and neither is the page's call to make: Elements needs a
+ * publishable key at build time, and the simulator is the server's choice (a
+ * client that could choose it could ask for the demo form against live
+ * Stripe).
  */
 function MissingStripeKey() {
   return (
@@ -449,10 +410,9 @@ function StripeCardForm({ intent, onPaid }: FormProps) {
     event.preventDefault();
 
     /**
-     * Never a silent return. If Stripe.js has not finished initialising, a bare
-     * `return` here makes the Pay button do literally nothing — no spinner, no
-     * message, no request — which is indistinguishable from a broken page and
-     * impossible to report usefully.
+     * Never a silent return: before Stripe.js finishes initialising, a bare
+     * return makes the Pay button do literally nothing — indistinguishable
+     * from a broken page.
      */
     if (!stripe || !elements) {
       setMessage('The payment form is still loading. Give it a moment and try again.');
@@ -504,28 +464,18 @@ function StripeCardForm({ intent, onPaid }: FormProps) {
       )}
 
       {/**
-       * onLoadError is not optional decoration. Without it, an Element that
-       * fails to initialise leaves Stripe's own loading skeleton on screen
-       * indefinitely — no error, no timeout, a spinner that never resolves and
-       * a Pay button that cannot do anything. Surfacing the reason is the
-       * difference between a bug report and a shrug.
+       * onLoadError is load-bearing: without it a failed Element leaves
+       * Stripe's loading skeleton on screen indefinitely — no error, no
+       * timeout, a Pay button that cannot do anything.
        */}
       <PaymentElement
         options={{
           /**
-           * Card first, and expanded on arrival.
-           *
-           * The intent is created with automatic_payment_methods, so Stripe
-           * offers everything the account has enabled for the currency — for SGD
-           * that is PayNow and Link alongside card. Left to itself it opened on
-           * PayNow and rendered a method chooser with no fields at all: the card
-           * inputs are created lazily and did not exist in the DOM until the
-           * Card tab was clicked. Nothing was broken, but a payment page you
-           * cannot type into is indistinguishable from one that is stuck, which
-           * is precisely how this was first reported.
-           *
-           * `tabs` keeps the other methods one click away rather than removing
-           * them, so PayNow and Link are still offered.
+           * Card first, expanded on arrival: automatic_payment_methods offers
+           * PayNow and Link alongside card for SGD, and left to itself the
+           * Element opens on a method chooser with no typeable fields — a
+           * payment page you cannot type into is indistinguishable from one
+           * that is stuck. `tabs` keeps the other methods one click away.
            */
           layout: 'tabs',
           paymentMethodOrder: ['card'],
@@ -582,15 +532,13 @@ const groupDigits = (value: string) =>
   value.replace(/\D/g, '').slice(0, 19).replace(/(.{4})/g, '$1 ').trim();
 
 /**
- * Demo-only card entry, shown when the server reports it is simulating.
+ * Demo-only card entry, shown when the server reports it is simulating —
+ * Elements cannot mount without a real client secret, so a credential-free
+ * demo needs its own payment step.
  *
- * This exists because Elements cannot mount without a real client secret, so
- * without it a credential-free demo has no payment step to show at all.
- *
- * The number typed here never leaves the browser. Brand and last four are
- * derived locally and only those are sent, so even the demo path never puts a
- * PAN on the wire — and the server discards the field entirely unless it is
- * simulating, so this cannot be used against a real charge.
+ * Safety guardrail: the number typed here never leaves the browser. Brand and
+ * last four are derived locally and only those are sent, and the server
+ * discards the field entirely unless it is simulating.
  */
 function DemoCardForm({ intent, onPaid }: FormProps) {
   const [number, setNumber] = useState(DEMO_CARDS[0].number);

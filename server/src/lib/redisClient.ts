@@ -10,20 +10,14 @@ const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 export const CACHE_TTL = 300;
 
 /**
- * How long to keep trying before giving up on the *initial* connection, and how
- * to back off on every reconnection after that.
+ * Two different reconnection problems, two different answers: bounded
+ * retries while starting up (so connect() cannot hang forever against a
+ * Redis that is not there), unbounded-but-backed-off retries afterwards (so
+ * a Redis that restarted — a deploy, an OOM kill, coming up a second after
+ * the API in compose — is reconnected to rather than abandoned).
  *
- * These are two different problems and an earlier fix conflated them. Returning
- * false unconditionally stopped `connect()` hanging forever when nothing is
- * listening — but it also disabled node-redis's retry loop for the whole life
- * of the client, so a Redis that restarted (a deploy, an OOM kill, or simply
- * coming up a second after the API in compose) was never reconnected to.
- * isCacheReady() then reported false permanently and every hotel search made a
- * full supplier round trip until someone restarted the process by hand.
- *
- * So: bounded retries while starting up, unbounded-but-backed-off afterwards.
- * `retries` counts from zero on each fresh disconnect, and `hasConnected` is
- * what distinguishes "never came up" from "came up and dropped".
+ * `retries` counts from zero on each fresh disconnect, and `hasConnected`
+ * distinguishes "never came up" from "came up and dropped".
  */
 const STARTUP_RETRY_LIMIT = 5;
 let hasConnected = false;
