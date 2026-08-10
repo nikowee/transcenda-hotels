@@ -110,11 +110,24 @@ export default function ConfirmationPage() {
    * it strands the page in its loading state, because the first mount's cleanup
    * has already tripped `cancelled`. Caching the promise gives one request and
    * lets whichever mount is still alive consume it.
+   *
+   * The cache is scoped to one set of URL params, not to the page. The effect
+   * clears the ref on every run, so a navigation from one session/intent to
+   * another starts its own request instead of reusing the previous one — a
+   * stale promise would otherwise confirm the wrong payment and show the wrong
+   * booking. Clearing on every run is safe for StrictMode too: the second mount
+   * simply fires its own request, and the server's findByPaymentId check makes
+   * the duplicate a no-op.
    */
   const confirmRequest = useRef<Promise<unknown> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+
+    // Clear any stale request from a previous URL so the new params start
+    // their own confirm request rather than reusing one meant for a different
+    // session or intent.
+    confirmRequest.current = null;
 
     const finalise = async () => {
       if (!sessionId && !paymentIntentId && !bookingId) {
