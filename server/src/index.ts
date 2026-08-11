@@ -130,8 +130,13 @@ app.get('/api/hotels/:id', getHotelById);
 // UC4 — Book & Make Payment
 // Payment and lookup are throttled: without a limit these are a card-testing
 // and reference-enumeration surface.
-const paymentLimiter = rateLimit({ windowMs: 60_000, max: 10 });
-const lookupLimiter = rateLimit({ windowMs: 60_000, max: 30 });
+// Only relax limits for Docker-based E2E runs, never for the Mocha
+// suite (which runs this file directly and needs real limits to test
+// against) and never in production.
+const relaxRateLimits = process.env.RATE_LIMIT_RELAXED === 'true';
+const rateLimitMultiplier = relaxRateLimits ? 20 : 1;
+const paymentLimiter = rateLimit({ windowMs: 60_000, max: 10 * rateLimitMultiplier });
+const lookupLimiter = rateLimit({ windowMs: 60_000, max: 30 * rateLimitMultiplier });
 
 /** Looser than the lookup limits: quoting is what a guest does while making up their mind, and a limit tuned for enumeration would throttle ordinary browsing. */
 const quoteLimiter = rateLimit({ windowMs: 60_000, max: 60 });
