@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import axios from 'axios';
@@ -151,5 +151,220 @@ describe('SearchForm Component', () => {
     await waitFor(() => {
       expect(screen.queryByText('Singapore, Singapore')).not.toBeInTheDocument();
     });
+  });
+
+  // ── Boundary / robustness ──
+
+  it('shows alert when travel dates are missing', async () => {
+    const user = userEvent.setup();
+    const alertMock = vi.fn();
+    window.alert = alertMock;
+    vi.mocked(axios.get).mockResolvedValue({ data: mockSuggestions });
+
+    render(
+      <MemoryRouter>
+        <SearchForm />
+      </MemoryRouter>
+    );
+
+    const input = screen.getByPlaceholderText(/search destinations/i);
+    await user.type(input, 'Singapore');
+    await waitFor(() => {
+      expect(screen.getByText('Singapore, Singapore')).toBeInTheDocument();
+    }, { timeout: 500 });
+    await user.click(screen.getByText('Singapore, Singapore'));
+
+    const button = screen.getByRole('button', { name: /search/i });
+    await user.click(button);
+
+    expect(alertMock).toHaveBeenCalledWith(
+      expect.stringContaining('Please select your travel dates.')
+    );
+  });
+
+  it('shows alert when check-in is less than 3 days from today', async () => {
+    const alertMock = vi.fn();
+    window.alert = alertMock;
+    vi.mocked(axios.get).mockResolvedValue({ data: mockSuggestions });
+
+    const { container } = render(
+      <MemoryRouter>
+        <SearchForm />
+      </MemoryRouter>
+    );
+
+    const input = screen.getByPlaceholderText(/search destinations/i);
+    await fireEvent.change(input, { target: { value: 'Singapore' } });
+    await waitFor(() => {
+      expect(screen.getByText('Singapore, Singapore')).toBeInTheDocument();
+    }, { timeout: 500 });
+    fireEvent.click(screen.getByText('Singapore, Singapore'));
+
+    // Set check-in to today and check-out to tomorrow. The check-in input has
+    // `min` = today+3, so native constraint validation would block a click on
+    // the submit button before React's onSubmit ever runs. Dispatch a submit
+    // event directly on the <form> to exercise the handler itself.
+    const today = new Date().toISOString().split('T')[0];
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+    const dateInputs = container.querySelectorAll('input[type="date"]');
+    fireEvent.change(dateInputs[0], { target: { value: today } });
+    fireEvent.change(dateInputs[1], { target: { value: tomorrow } });
+
+    fireEvent.submit(container.querySelector('form')!);
+
+    expect(alertMock).toHaveBeenCalledWith(
+      expect.stringContaining('Check-in date must be at least 3 days from today.')
+    );
+  });
+
+  it('does not call the API for whitespace-only input', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <SearchForm />
+      </MemoryRouter>
+    );
+
+    const input = screen.getByPlaceholderText(/search destinations/i);
+    await user.type(input, '   ');
+
+    await new Promise((r) => setTimeout(r, 400));
+    expect(axios.get).not.toHaveBeenCalled();
+  });
+
+  it('calls the API for exactly 2 characters (lower boundary)', async () => {
+    const user = userEvent.setup();
+    vi.mocked(axios.get).mockResolvedValue({ data: mockSuggestions });
+
+    render(
+      <MemoryRouter>
+        <SearchForm />
+      </MemoryRouter>
+    );
+
+    const input = screen.getByPlaceholderText(/search destinations/i);
+    await user.type(input, 'Si');
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalled();
+    }, { timeout: 500 });
+
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('q=Si'));
+  });
+
+  it('shows a loading spinner while suggestions are fetching', async () => {
+    const user = userEvent.setup();
+    // Keep the promise pending so isLoading stays true.
+    vi.mocked(axios.get).mockImplementationOnce(() => new Promise(() => {}));
+
+    render(
+      <MemoryRouter>
+        <SearchForm />
+      </MemoryRouter>
+    );
+
+    const input = screen.getByPlaceholderText(/search destinations/i);
+    await user.type(input, 'Singapore');
+
+    // Spinner appears once the 300ms debounce fires and the fetch starts.
+    await waitFor(() => {
+      expect(document.querySelector('.animate-spin')).toBeInTheDocument();
+    }, { timeout: 1000 });
+  });
+
+  it('selecting a suggestion sets the destination id and closes the dropdown', async () => {
+    const user = userEvent.setup();
+    vi.mocked(axios.get).mockResolvedValue({ data: mockSuggestions });
+
+    render(
+      <MemoryRouter>
+        <SearchForm />
+      </MemoryRouter>
+    );
+
+    const input = screen.getByPlaceholderText(/search destinations/i);
+    await user.type(input, 'Singapore');
+
+    await waitFor(() => {
+      expect(screen.getByText('Singapore, Singapore')).toBeInTheDocument();
+    }, { timeout: 500 });
+
+    await user.click(screen.getByText('Singapore, Singapore'));
+
+    // Input now reflects the selected suggestion.
+    expect(input).toHaveValue('Singapore, Singapore');
+    // Dropdown closes.
+    await waitFor(() => {
+      expect(screen.queryByText('Singapore, Malaysia')).not.toBeInTheDocument();
+    });
+  });
+
+  it('resets the selected destination id when the user re-types', async () => {
+    const user = userEvent.setup();
+    vi.mocked(axios.get).mockResolvedValue({ data: mockSuggestions });
+
+    render(
+      <MemoryRouter>
+        <SearchForm />
+      </MemoryRouter>
+    );
+
+    const input = screen.getByPlaceholderText(/search destinations/i);
+    await user.type(input, 'Singapore');
+
+    await waitFor(() => {
+      expect(screen.getByText('Singapore, Singapore')).toBeInTheDocument();
+    }, { timeout: 500 });
+
+    await user.click(screen.getByText('Singapore, Singapore'));
+    expect(input).toHaveValue('Singapore, Singapore');
+
+    // Re-type (clears the selection, resets selectedDestId).
+    await user.clear(input);
+    await user.type(input, 'Tokyo');
+
+    // A submit attempt must go back to the "no destination" alert, proving the
+    // previously selected dest id was cleared.
+    const alertMock = vi.fn();
+    window.alert = alertMock;
+    const button = screen.getByRole('button', { name: /search/i });
+    await user.click(button);
+
+    expect(alertMock).toHaveBeenCalledWith(
+      expect.stringContaining('Please select a valid destination from the dropdown!')
+    );
+  });
+
+  it('does not alert and passes validation on a valid search submission', async () => {
+    const user = userEvent.setup();
+    vi.mocked(axios.get).mockResolvedValue({ data: mockSuggestions });
+    const alertMock = vi.fn();
+    window.alert = alertMock;
+
+    const { container } = render(
+      <MemoryRouter>
+        <SearchForm />
+      </MemoryRouter>
+    );
+
+    const input = screen.getByPlaceholderText(/search destinations/i);
+    await user.type(input, 'Singapore');
+    await waitFor(() => {
+      expect(screen.getByText('Singapore, Singapore')).toBeInTheDocument();
+    }, { timeout: 500 });
+    await user.click(screen.getByText('Singapore, Singapore'));
+
+    // Valid dates well in the future.
+    const dateInputs = container.querySelectorAll('input[type="date"]');
+    await user.clear(dateInputs[0]);
+    await user.type(dateInputs[0], '2026-12-01');
+    await user.clear(dateInputs[1]);
+    await user.type(dateInputs[1], '2026-12-07');
+
+    const button = screen.getByRole('button', { name: /search/i });
+    await user.click(button);
+
+    // No alert fires for a valid submission.
+    expect(alertMock).not.toHaveBeenCalled();
   });
 });
