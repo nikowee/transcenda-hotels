@@ -22,6 +22,8 @@ The backend requires a `.env` file located at `server/.env`. Below is the comple
 | `SUPABASE_SECRET_KEY` | ✅ Yes | Supabase service role (secret) key for admin operations | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` |
 | `STRIPE_SECRET_KEY` | ✅ Yes | Stripe secret key for server-side payments | `sk_live_51H3...` or `sk_test_51H3...` |
 | `PORT` | ❌ No | Backend server port (defaults to 5000) | `5000` |
+| `RESEND_API_KEY` | ❌ No | Resend API key for confirmation emails; blank → emails are logged, not sent | `re_abc123...` |
+| `EMAIL_FROM` | ❌ No | Sender address for confirmation emails, on a Resend-verified domain | `bookings@yourdomain.com` |
 
 ---
 
@@ -46,6 +48,14 @@ The backend requires a `.env` file located at `server/.env`. Below is the comple
 - **Where to find it:** Log in to [Stripe Dashboard](https://dashboard.stripe.com) → **Developers** → **API Keys**.
 - **How it's used:** The Stripe SDK uses this key to create Payment Intents, process charges, handle webhooks, and manage customers.
 - **⚠️ Security:** Never commit this key to version control. Use test keys (`sk_test_...`) during development.
+
+---
+
+### `RESEND_API_KEY` and `EMAIL_FROM`
+
+- **What they are:** The confirmation-email transport. When both are set, booking confirmations are delivered through [Resend](https://resend.com)'s HTTP API; when either is blank, the email is written to the server log instead — which is what development, docker-compose and the test suite run on.
+- **Where to find them:** Resend Dashboard → **API Keys** for the key. `EMAIL_FROM` is any address on a domain you have verified in Resend (**Domains** → **Add Domain**, then publish the SPF and DKIM records it gives you).
+- **⚠️ Keep both blank outside production:** E2E test bookings use throwaway `@example.com` addresses, which accept no mail — every send would hard-bounce against your domain's sending reputation.
 
 ---
 

@@ -518,18 +518,19 @@ export const recordPaidBooking = async (
   const stay = repriced ?? { ...carried.stay, nights };
 
   try {
-    /** Sequence steps 9-10, wired as insertOne's onCreated hook rather than a line after it. */
-    const emailOnce = async (written: BookingRecord): Promise<void> => {
-      try {
-        const receipt = await sendConfirmation(written.guest.email, written);
-        if (!receipt.delivered) {
-          console.warn(
-            `Booking ${written.id} saved but confirmation email failed: ${receipt.errorMessage}`
-          );
-        }
-      } catch (error) {
-        console.warn(`Booking ${written.id} saved but confirmation email threw:`, error);
-      }
+    /** Sequence steps 9-10, on insertOne's onCreated hook. Not awaited: a paid guest's response must not wait on a mail provider. */
+    const emailOnce = (written: BookingRecord): void => {
+      sendConfirmation(written.guest.email, written)
+        .then((receipt) => {
+          if (!receipt.delivered) {
+            console.warn(
+              `Booking ${written.id} saved but confirmation email failed: ${receipt.errorMessage}`
+            );
+          }
+        })
+        .catch((error) => {
+          console.warn(`Booking ${written.id} saved but confirmation email threw:`, error);
+        });
     };
 
     const booking = await insertOne({

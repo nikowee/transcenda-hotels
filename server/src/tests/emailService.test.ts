@@ -1,4 +1,4 @@
-import { describe, it } from 'mocha';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import nock from 'nock';
 import { sendConfirmation } from '../services/emailService.js';
@@ -54,6 +54,17 @@ const capture = async (
 };
 
 describe('emailService', () => {
+  /** A populated .env would flip the log-path tests onto the network path. */
+  beforeEach(() => {
+    delete process.env.RESEND_API_KEY;
+    delete process.env.EMAIL_FROM;
+  });
+
+  /** The no-HTTP test leaves its interceptor pending by design; nock hands stale interceptors to later requests (oldest match wins). */
+  afterEach(() => {
+    nock.cleanAll();
+  });
+
   it('reports delivery with a message id tied to the booking', async () => {
     const { receipt } = await capture();
 
@@ -118,5 +129,69 @@ describe('emailService', () => {
     expect(receipt.delivered).to.equal(true);
     expect(receipt.messageId).to.contain('log_');
     expect(scope.isDone(), 'no request may leave the process').to.equal(false);
+  });
+
+  /** The Resend path. globalSetup blocks outbound sockets, so a request that escapes these interceptors fails the test. */
+  describe('with a Resend key configured', () => {
+    beforeEach(() => {
+      process.env.RESEND_API_KEY = 're_test_key';
+      process.env.EMAIL_FROM = 'bookings@transcenda.example';
+    });
+    afterEach(() => {
+      // A leaked key would flip later suites onto the network path.
+      delete process.env.RESEND_API_KEY;
+      delete process.env.EMAIL_FROM;
+      nock.cleanAll();
+    });
+
+    it('delivers through the API and returns the provider message id', async () => {
+      let sent: Record<string, unknown> | null = null;
+      const scope = nock('https://api.resend.com', {
+        reqheaders: { authorization: 'Bearer re_test_key' },
+      })
+        .post('/emails', (body) => {
+          sent = body;
+          return true;
+        })
+        .reply(200, { id: 'email_abc123' });
+
+      // Not @example.com: reserved recipient domains deliberately take the log path.
+      const receipt = await sendConfirmation('jane@transcenda-hotels.dev', BOOKING);
+
+      expect(scope.isDone()).to.equal(true);
+      expect(receipt.delivered).to.equal(true);
+      expect(receipt.messageId).to.equal('email_abc123');
+      expect(sent, 'request body was captured').to.not.equal(null);
+      const body = sent as unknown as { from: string; to: string[]; subject: string; text: string };
+      expect(body.from).to.equal('bookings@transcenda.example');
+      expect(body.to).to.deep.equal(['jane@transcenda-hotels.dev']);
+      expect(body.subject).to.contain(BOOKING.id);
+      expect(body.text).to.contain('The Fullerton Hotel Singapore');
+      expect(body.text).to.contain('SGD 1990.49');
+      // The guest gets a letter, not the server's debug log.
+      expect(body.text).to.contain('Dear Dr Jane Tan');
+      expect(body.text).to.not.contain('📧');
+    });
+
+    /** E2E books @example.com guests; a real send to one hard-bounces against the sending domain. */
+    it('logs instead of sending when the recipient domain is reserved', async () => {
+      const scope = nock('https://api.resend.com').post('/emails').reply(200, { id: 'nope' });
+
+      const receipt = await sendConfirmation('jane+e2e@example.com', BOOKING);
+
+      expect(receipt.delivered).to.equal(true);
+      expect(receipt.messageId).to.contain('log_');
+      expect(scope.isDone(), 'reserved recipients must never reach the API').to.equal(false);
+    });
+
+    it('reports a provider failure without rejecting', async () => {
+      nock('https://api.resend.com').post('/emails').reply(500, { message: 'internal error' });
+
+      const receipt = await sendConfirmation('jane@transcenda-hotels.dev', BOOKING).catch(() => null);
+
+      expect(receipt, 'must resolve, never reject').to.not.equal(null);
+      expect(receipt?.delivered).to.equal(false);
+      expect(receipt?.errorMessage).to.be.a('string');
+    });
   });
 });

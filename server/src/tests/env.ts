@@ -15,3 +15,7 @@ process.env.STRIPE_HTTP_CLIENT ??= 'fetch';
 /** The real price search takes several seconds to settle, and the defaults are tuned for that. */
 process.env.HOTEL_API_POLL_MS ??= '1';
 process.env.HOTEL_API_MAX_POLLS ??= '3';
+
+/** Forced to '', not deleted: this runs before dotenv.config(), which refills deleted variables but never overrides existing ones. */
+process.env.RESEND_API_KEY = '';
+process.env.EMAIL_FROM = '';
