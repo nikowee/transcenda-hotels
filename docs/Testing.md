@@ -275,10 +275,41 @@ assertion message carries the seed and iteration, so a failure reproduces
 exactly and converts straight into a named regression test.
 
 ```bash
-npm test                              # default budget, ~6s, runs in CI
-FUZZ_SCALE=20 npm test                # exploratory: 20× the iterations
-FUZZ_SEED=99 FUZZ_SCALE=50 npm test   # different territory
+npm run test:fuzz                     # default budget, ~11s, runs in CI
+FUZZ_SCALE=20 npm run test:fuzz       # exploratory: 20× the iterations
+FUZZ_SEED=99 npm run test:fuzz        # different territory
+npm run test:fuzz:soak                # 24 hours, the overnight campaign
+FUZZ_DURATION_MS=600000 npm run test:fuzz    # any other wall-clock budget
 ```
+
+**Soak mode is the one that matters for robustness testing.** `FUZZ_SCALE`
+multiplies a fixed iteration count, which is the wrong knob for a long run: the
+count that fills 24 hours is unguessable, and guessing high just trips mocha's
+per-test timeout. `FUZZ_DURATION_MS` switches every target to a wall clock
+instead, splits the budget across the four targets, and disables the timeout
+for the duration. Three things make a long run useful rather than merely long:
+
+- **The seed rotates** every 500 iterations. One mulberry32 stream is periodic,
+  so a 24-hour run on a single seed replays the same territory for hours; the
+  new seed is logged whenever it changes, so a finding is still reproducible.
+- **Progress is reported** once a minute per target — iterations so far, current
+  seed, seconds remaining — so an overnight run is visibly alive.
+- **Failures are persisted** to `fuzz-corpus.jsonl` (target, seed, the exact
+  input, timestamp) before the assertion rethrows. A run that dies at hour 19
+  leaves the input behind rather than a scrollback line.
+
+Measured throughput, 30 s per target on a development laptop:
+
+| Target | Iterations in 30 s | Extrapolated over a 6 h slice |
+|---|---:|---:|
+| `buildQuote` | 280,681 | ~202 million |
+| `validators` | 188,690 | ~136 million |
+| `checkout` endpoint | 3,374 | ~2.4 million |
+| `destinations/search` | 32 | ~23,000 |
+
+Search is three orders of magnitude slower because every iteration is a real
+fuzzy match over 69,785 destinations — which is the same property that made it
+the DoS target in the first place.
 
 Its first run found a denial of service: `/api/destinations/search` capped the
 *minimum* query length and nothing else, and `fuse.search` is synchronous, so a
