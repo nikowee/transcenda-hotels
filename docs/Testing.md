@@ -208,7 +208,10 @@ fails loudly if that ever regresses.
 
 The booking suites exist mainly to hold shut defects that were once live. Each of
 these maps to a specific vulnerability — see
-[UC4 — Book & Make Payment]({{ site.baseurl }}/UC4-Book-And-Make-Payment):
+[UC4 — Book & Make Payment]({{ site.baseurl }}/UC4-Book-And-Make-Payment). The
+same defences are modelled as attacks in
+[Misuse Cases]({{ site.baseurl }}/Misuse-Cases), which groups them by what an
+attacker is trying to achieve and names the residual risks:
 
 | Test | Defect it prevents |
 |------|--------------------|
