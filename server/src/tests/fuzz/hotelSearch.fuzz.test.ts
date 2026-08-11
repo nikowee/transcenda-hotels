@@ -61,10 +61,15 @@ describe('searchHotels — fuzz / property tests', function () {
   // never call nock.enableNetConnect() in this file, which would restore full
   // network access for every later suite in a combined run.
   beforeEach(() => {
+    // A suite running earlier may have called nock.restore(); re-activating
+    // here matches the pattern in helpers/hotelNock.ts and helpers/authNock.ts,
+    // otherwise requests fall through and surface as "Nock: No match".
+    if (!nock.isActive()) nock.activate();
     nock.cleanAll();
   });
 
   afterEach(() => {
+    if (!nock.isActive()) nock.activate();
     nock.cleanAll();
   });
 
