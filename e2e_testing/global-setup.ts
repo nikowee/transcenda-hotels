@@ -52,12 +52,19 @@ export default async function globalSetup() {
 
   console.log('🐳 Starting Docker containers...');
 
-  // Start docker-compose (detached mode)
-  const dockerUp = spawn('docker', ['compose', 'up', '-d', '--build'], {
-    cwd: rootDir,
-    stdio: 'pipe',
-    shell: true,
-  });
+  // Start docker-compose (detached mode). 
+  // Relaxed rate limits only here (defaults to false in docker-compose.yaml 
+  // so normal dev runs retain the same prod limits)
+  const dockerUp = spawn(
+    'docker',
+    ['compose', 'up', '-d', '--build'],
+    {
+      cwd: rootDir,
+      stdio: 'pipe',
+      shell: true,
+      env: { ...process.env, RATE_LIMIT_RELAXED: 'true' },
+    },
+  );
 
   dockerUp.stdout?.on('data', (data: Buffer) => {
     console.log(`[Docker] ${data.toString().trim()}`);

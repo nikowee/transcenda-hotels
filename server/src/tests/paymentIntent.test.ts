@@ -291,7 +291,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
       this.timeout(60_000);
 
       const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
-      const tsx = fileURLToPath(new URL('../../node_modules/.bin/tsx', import.meta.url));
+      const tsxCli = fileURLToPath(new URL('../../node_modules/tsx/dist/cli.cjs', import.meta.url));
       const controller = new URL('../controllers/bookingController.js', import.meta.url).href;
 
       const script = `
@@ -308,9 +308,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
         })();
       `;
 
-      // Empty strings rather than deletions: dotenv skips a key that is already
-      // present, so this also blocks the developer's own .env from supplying one.
-      const { stdout } = await promisify(execFile)(tsx, ['-e', script], {
+      const { stdout } = await promisify(execFile)(process.execPath, [tsxCli, '-e', script], {
         cwd: repoRoot,
         env: { ...process.env, STRIPE_SECRET_KEY: '', PAYMENTS_MODE: '' },
       });
@@ -320,7 +318,6 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
 
       expect(reported.status).to.equal(503);
       expect(reported.body.error).to.match(/not available/i);
-      // Refused before anything was priced or a client secret was minted.
       expect(reported.body.clientSecret).to.equal(undefined);
     });
 

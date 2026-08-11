@@ -11,6 +11,7 @@
     "test:watch": "mocha --exit -r tsx --watch --spec src/tests/**/*.test.ts --exclude src/tests/external/**",
     "test:external": "mocha --exit -r tsx --spec src/tests/external/**/*.test.ts",
     "test:all": "mocha --exit -r tsx --spec src/tests/**/*.test.ts",
+    "test:fuzz": "mocha --exit -r tsx src/tests/fuzz/**/*.fuzz.test.ts",
     "stripe:secret": "tsx src/scripts/stripeWebhook.ts secret",
     "stripe:send": "tsx src/scripts/stripeWebhook.ts send"
   },
@@ -37,6 +38,7 @@
     "@types/node": "^26.1.1",
     "@types/supertest": "^7.2.1",
     "chai": "^6.2.2",
+    "fast-check": "^4.9.0",
     "mocha": "12.0.0-rc.5",
     "nock": "^14.0.16",
     "supertest": "^7.2.2",
