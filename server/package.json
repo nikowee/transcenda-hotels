@@ -7,7 +7,7 @@
     "dev": "npx tsx watch src/index.ts",
     "build": "tsc && rm -rf dist/data && cp -r src/data dist/data",
     "type-check": "tsc --noEmit",
-    "test": "mocha --exit -r tsx --spec \"src/tests/**/*.test.ts\" --exclude \"src/tests/external/**\" \"src/tests/fuzz/**/*.fuzz.test.ts\"",
+    "test": "mocha --exit -r tsx --spec \"src/tests/**/*.test.ts\" --exclude \"src/tests/external/**\"",
     "test:watch": "mocha --exit -r tsx --watch --spec \"src/tests/**/*.test.ts\" --exclude \"src/tests/external/**\"",
     "test:external": "mocha --exit -r tsx --spec \"src/tests/external/**/*.test.ts\"",
     "test:all": "mocha --exit -r tsx --spec \"src/tests/**/*.test.ts\"",

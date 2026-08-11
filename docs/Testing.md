@@ -48,6 +48,47 @@ on demand with `npm run test:external`. `globalSetup.ts` detects those runs and
 skips the nock guard entirely (nock is imported lazily), letting the tests use a real socket with normal
 decompression.
 
+### Real-network layers added for rubric coverage
+
+The suite now deliberately spans four ways of talking to the Ascenda API, so
+each rubric claim is backed by more than one layer:
+
+| Layer | What it proves | Run with |
+|-------|----------------|----------|
+| nock-mocked server integration (`hotels/search.test.ts`, `destinations/search.test.ts`) | Our route logic, filters, sorting and pagination against a *fixed* upstream shape — fast, offline, deterministic | `npm test` |
+| **`external/search.integration.test.ts`** (new) | The **real Express app** driving the **real live Ascenda API** through supertest — no nock, real axios, real polling. Asserts the merged-hotel shape the frontend depends on | `npm run test:external` |
+| `external/ascenda-api.test.ts` | Raw axios smoke tests straight against `hotelapi.loyalty.dev` (the socket-level contract) | `npm run test:external` |
+| Playwright E2E | Full browser → Vite → Express → live Ascenda in Docker | `cd e2e_testing && npx playwright test` |
+
+### Robustness / fuzz additions
+
+- **`server/src/tests/fuzz/hotelSearch.fuzz.test.ts`** (new): fast-check
+  property tests over `searchHotels` — garbage params never throw, valid params
+  always produce the full merged shape, results stay sorted by `searchRank`, and
+  a price entry with no matching hotel detail is skipped, never a crash.
+- **`hotels/search.test.ts`** now also covers: page beyond range, `page=0` /
+  `pageSize=0`, missing `rooms`, `rooms=0/-1`, non-numeric `guests`, invalid
+  dates, unknown `sortBy` fallback, out-of-range `starRating`, whitespace
+  `destination_id`.
+- **`destinations/search.test.ts`** now also covers: missing `q`, whitespace-only
+  `q`, 10k-char query, unicode/emoji, SQL-injection/XSS payloads, and the 5-result cap.
+
+### Frontend unit/boundary additions
+
+- `SearchForm.test.tsx` +8: missing dates, check-in < 3 days out, whitespace-only
+  input makes no API call, exactly-2-char boundary fires the API, loading spinner,
+  suggestion selection closes the dropdown, re-typing resets the selected
+  destination, valid submission passes validation.
+- `ResultsPage.test.tsx` +3: `guests=0`, non-numeric `guests`, missing `rooms`.
+- New component suites: `HotelCard.test.tsx` (6), `Pagination.test.tsx` (5),
+  `FilterPanel.test.tsx` (5).
+
+### E2E additions
+
+- `results-page.spec.ts` +3: apply 5★ filter, sort by price ascending, pagination
+  next-button.
+- `global-setup.ts` `ROUTES` now includes `/results` (the load-bearing warm-up list).
+
 Every client suite lives in `client/src/tests/`; every server suite lives in
 `server/src/tests/`. Tests are not co-located with source — keeping them out of
 `src/pages` and `src/components` is also what keeps them out of the coverage
