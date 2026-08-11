@@ -97,4 +97,74 @@ describe('Destination Search API', () => {
       expect(result).to.have.property('term');
     }
   });
+
+  // ── Robustness / boundary cases ──
+
+  it('should return 200 (empty or 400) when q is omitted entirely', async () => {
+    const response = await request(app).get('/api/destinations/search');
+    expect(response.status).to.be.at.most(400);
+  });
+
+  it('should not crash for a whitespace-only query', async () => {
+    const response = await request(app)
+      .get('/api/destinations/search')
+      .query({ q: '   ' });
+
+    expect([200, 400]).to.include(response.status);
+  });
+
+  it('should not crash for an extremely long query (100 chars)', async function () {
+    // Fuse.js fuzzy matching is O(pattern × records). 100 chars is an
+    // unrealistic-but-absurd input that proves the robustness claim
+    this.timeout(15_000);
+
+    const longQuery = 'a'.repeat(100);
+    const response = await request(app)
+      .get('/api/destinations/search')
+      .query({ q: longQuery });
+
+    expect(response.status).to.equal(200);
+    expect(response.body).to.be.an('array');
+  });
+
+  it('should not crash for unicode and emoji input', async () => {
+    const inputs = ['東京', '😀😀', 'éclair', '新加坡', '🚀', 'éü'];
+    for (const q of inputs) {
+      const response = await request(app)
+        .get('/api/destinations/search')
+        .query({ q });
+      expect(response.status).to.equal(200);
+      expect(response.body).to.be.an('array');
+    }
+  });
+
+  it('should be resilient to SQL-injection and XSS payloads', async function () {
+    this.timeout(15_000);
+
+    const payloads = [
+      "' OR 1=1 --",
+      "'; DROP TABLE destinations; --",
+      '<script>alert(1)</script>',
+      '"><img src=x onerror=alert(1)>',
+      '${constructor.constructor("return process")()}',
+    ];
+
+    for (const q of payloads) {
+      const response = await request(app)
+        .get('/api/destinations/search')
+        .query({ q });
+      // Never a 500; an empty array is the expected outcome.
+      expect(response.status).to.equal(200);
+      expect(response.body).to.be.an('array');
+    }
+  });
+
+  it('should cap results at 5 even for broadly matching queries', async () => {
+    const response = await request(app)
+      .get('/api/destinations/search')
+      .query({ q: 'a' });
+
+    expect(response.status).to.equal(200);
+    expect(response.body.length).to.be.at.most(5);
+  });
 });

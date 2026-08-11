@@ -77,6 +77,13 @@ project settings (Environment Variables). They are baked into the bundle at
 build time — there is no runtime injection into a static bundle, so **each
 environment needs its own build**.
 
+**`VITE_API_URL` is the load-bearing one.** Production code reads
+`import.meta.env.VITE_API_URL || 'http://localhost:5000'` — the `localhost:5000`
+is only a local-dev fallback. If Vercel does not set `VITE_API_URL`, the
+deployed bundle points at the *user's own machine* instead of your EC2 backend,
+so set it to `https://<api-domain>` (your ALB/ECS endpoint) in Vercel before
+deploying.
+
 Vercel handles the two things the old nginx config did by hand:
 
 - **SPA fallback** — unknown routes (deep-link refreshes on /checkout etc.)

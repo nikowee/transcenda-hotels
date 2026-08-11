@@ -4,17 +4,16 @@ export default defineConfig({
   // Timeout for each test
   timeout: 30000,
 
-  // Run tests in parallel
-  fullyParallel: true,
+  fullyParallel: false,
 
   // Fail build on CI if you accidentally left test.only in the source code
   forbidOnly: !!process.env.CI,
 
-  // Retry on CI only
-  retries: process.env.CI ? 2 : 0,
+  // Retry once locally as Ascenda can transiently rate-limit or stall.
+  retries: process.env.CI ? 2 : 1,
 
-  // Opt out of parallel tests on CI
-  workers: process.env.CI ? 1 : undefined,
+  // Single worker to ensure one real-API search at a time. Ascendas rate limits are crazy.
+  workers: 1,
 
   // Reporter to use
   reporter: [
