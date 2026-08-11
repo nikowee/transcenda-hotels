@@ -10,7 +10,11 @@ export const allowLoopbackOnly = (host: string): boolean =>
 const isExternalRun =
   process.env.npm_lifecycle_event === 'test:external' ||
   process.env.npm_lifecycle_event === 'test:all' ||
-  process.argv.some((arg) => arg.includes('src/tests/external'));
+  // Skips the value after --exclude: that argument names the external tests in
+  // order to exclude them, so matching it disarms the guard for a normal run.
+  process.argv.some(
+    (arg, i) => arg.includes('src/tests/external') && process.argv[i - 1] !== '--exclude'
+  );
 
 // nock is imported lazily and only when actually needed
 if (!isExternalRun) {
