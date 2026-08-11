@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
 
 /**
@@ -70,6 +71,9 @@ const GUEST = {
 const TYPED_CARD = '5555555555554444';
 const TYPED_CARD_DISPLAYED = '5555 5555 5555 4444';
 
+/** Stripe's published decline number. Recognised locally by the simulator and by Stripe itself. */
+const DECLINED_CARD = '4000000000000002';
+
 /** Every API request the browser actually made, body included. */
 interface ApiPost {
   path: string;
@@ -93,8 +97,20 @@ const recordApiPosts = (page: Page): ApiPost[] => {
   return posts;
 };
 
+/**
+ * A distinct address per booking. preparePayment folds the guest email into
+ * Stripe's idempotency key, so two bookings of the same stay by the same email
+ * are handed back the *same* PaymentIntent — and once one has been confirmed,
+ * Elements refuses to mount against a terminal intent. Real customers differ;
+ * the fixtures must too. A UUID rather than a counter, because parallel
+ * workers are separate processes.
+ */
+const uniqueEmail = () =>
+  `jane+e2e${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}@example.com`;
+
 const fillGuestDetails = async (page: Page, overrides: Partial<typeof GUEST> = {}) => {
   const guest = { ...GUEST, ...overrides };
+  if (!overrides.email) guest.email = uniqueEmail();
 
   await page.getByRole('combobox', { name: /salutation/i }).selectOption(guest.salutation);
   await page.getByPlaceholder('As it appears on your passport').fill(guest.firstName);
@@ -115,19 +131,89 @@ const fillGuestDetails = async (page: Page, overrides: Partial<typeof GUEST> = {
   await page.getByRole('combobox', { name: /billing country/i }).selectOption(BILLING.country);
 };
 
+/** Which card UI the server mounted: the demo form (PAYMENTS_MODE=simulate) or real Stripe Elements. */
+type PaymentUI = 'demo' | 'elements';
+
+const STRIPE_FRAME = 'iframe[title*="Secure payment input"]';
+
+/** Waits for either UI and reports which mounted. E2E_EXPECT_UI pins the mode so a stray key cannot silently flip the suite. */
+const detectPaymentUI = async (page: Page): Promise<PaymentUI> => {
+  const demo = page.getByText('Demo mode.', { exact: true });
+  const frame = page.locator(STRIPE_FRAME).first();
+  await expect(demo.or(frame)).toBeVisible({ timeout: 60000 });
+  const ui: PaymentUI = (await demo.isVisible()) ? 'demo' : 'elements';
+  const expected = process.env.E2E_EXPECT_UI;
+  if (expected && expected !== ui) {
+    throw new Error(
+      `Server mounted the ${ui} payment UI but E2E_EXPECT_UI=${expected}. ` +
+        'The mode follows PAYMENTS_MODE and the Stripe keys in server/.env.'
+    );
+  }
+  return ui;
+};
+
+/** Types a card into whichever UI mounted. Only Stripe's published test numbers pass through here — they cannot move real money in any mode. */
+const fillCard = async (page: Page, ui: PaymentUI, number: string) => {
+  if (ui === 'demo') {
+    await page.locator('#demo-card-number').fill(number);
+    return;
+  }
+  // Several Stripe iframes share the title; the inputs live in exactly one, found by asking each for the number field.
+  const findCardFrame = async () => {
+    const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
+      const count = await page.locator(STRIPE_FRAME).count();
+      for (let i = 0; i < count; i++) {
+        const cand = page.frameLocator(STRIPE_FRAME).nth(i);
+        if (await cand.locator('[name="number"]').isVisible().catch(() => false)) return cand;
+      }
+      await page.waitForTimeout(250);
+    }
+    throw new Error('No Stripe frame with a card number field appeared');
+  };
+  const f = await findCardFrame();
+  const type = async (name: string, value: string) => {
+    const field = f.locator(`[name="${name}"]`);
+    await field.click();
+    // Keystrokes only, clearing included: Stripe's controlled inputs ignore programmatic value-setting.
+    await field.press('ControlOrMeta+a');
+    await field.press('Backspace');
+    await field.pressSequentially(value, { delay: 25 });
+    await expect(field).not.toHaveValue('');
+  };
+  await type('number', number);
+  await type('expiry', '1234');
+  await type('cvc', '123');
+  const country = f.locator('select[name="country"]');
+  if (await country.isVisible().catch(() => false)) await country.selectOption('SG').catch(() => {});
+  const postal = f.locator('[name="postalCode"]');
+  if (await postal.isVisible().catch(() => false)) await postal.fill('018956');
+};
+
+/** Presses Pay. Under Elements the event is dispatched to the button: Stripe's overlay iframes (Link, invisible hCaptcha) sit over ours, so a coordinate click lands on them. Real users pass through; Playwright's hit-testing resolves to the topmost box. */
+const clickPay = async (page: Page, ui: PaymentUI) => {
+  const button = page.getByRole('button', { name: /pay sgd/i });
+  await expect(button).toBeEnabled();
+  if (ui === 'demo') {
+    await button.click();
+    return;
+  }
+  await button.dispatchEvent('click');
+};
+
 /**
- * Walks checkout end to end and leaves the browser on /payment with the demo
- * form mounted. The handoff travels in sessionStorage, so /payment is only
+ * Walks checkout end to end and leaves the browser on /payment with a card UI
+ * mounted. The handoff travels in sessionStorage, so /payment is only
  * reachable this way — going straight there shows the expired message instead.
  */
-const reachPaymentPage = async (page: Page) => {
+const reachPaymentPage = async (page: Page): Promise<PaymentUI> => {
   await page.goto(CHECKOUT_URL);
   await fillGuestDetails(page);
   await page.getByRole('button', { name: /continue to payment/i }).click();
   await page.getByRole('button', { name: /pay sgd/i }).click();
 
   await expect(page).toHaveURL(/.*\/payment/, { timeout: 15000 });
-  await expect(page.getByText('Demo mode.', { exact: true })).toBeVisible({ timeout: 15000 });
+  return detectPaymentUI(page);
 };
 
 test.describe('Booking Flow', () => {
@@ -168,7 +254,7 @@ test.describe('Booking Flow', () => {
     // An in-app route now, not a redirect to a Stripe-hosted page. The guest and
     // stay travel in sessionStorage; the price does not, and is re-derived here.
     await expect(page).toHaveURL(/.*\/payment/, { timeout: 15000 });
-    await expect(page.getByText('Demo mode.', { exact: true })).toBeVisible({ timeout: 15000 });
+    const ui = await detectPaymentUI(page);
 
     // Priced by the server for a second time, from the same stay. A figure the
     // browser carried over would still read correctly here — this only holds
@@ -177,19 +263,20 @@ test.describe('Booking Flow', () => {
       page.getByLabel('Booking summary').getByText('SGD 1,308.00', { exact: true })
     ).toBeVisible();
 
-    // ─── 6. Pay with a card typed into the demo form ────────
-    const cardField = page.locator('#demo-card-number');
-    await cardField.fill(TYPED_CARD);
-    await expect(cardField).toHaveValue(TYPED_CARD_DISPLAYED);
+    // ─── 6. Pay with a card typed into whichever UI mounted ────────
+    await fillCard(page, ui, TYPED_CARD);
+    if (ui === 'demo') {
+      await expect(page.locator('#demo-card-number')).toHaveValue(TYPED_CARD_DISPLAYED);
+    }
 
-    const demoPayButton = page.getByRole('button', { name: /pay sgd/i });
-    await expect(demoPayButton).toContainText('1,308.00');
-    await demoPayButton.click();
+    await expect(page.getByRole('button', { name: /pay sgd/i })).toContainText('1,308.00');
+    await clickPay(page, ui);
 
     // The intent id is minted server-side; landing here with it in the query
     // proves the browser carried back what the server issued rather than
-    // assembling a reference of its own.
-    await expect(page).toHaveURL(/.*confirmation\?payment_intent=sim_pi_/, { timeout: 15000 });
+    // assembling a reference of its own. sim_pi_ under the simulator, pi_
+    // against real Stripe.
+    await expect(page).toHaveURL(/.*confirmation\?payment_intent=(sim_)?pi_/, { timeout: 60000 });
 
     // ─── 7. Nothing priced, and no card number, left the browser ───
     // Not asserted as exactly one. main.tsx renders under StrictMode and this
@@ -207,18 +294,27 @@ test.describe('Booking Flow', () => {
     // as well would mint a second, unpaid intent for the same stay.
     expect(apiPosts.filter((post) => post.path === '/api/bookings/payment')).toHaveLength(0);
 
-    // The demo form's own confirm call: brand, last four and expiry, derived in
-    // the browser from a number that stays in the browser.
-    const demoConfirm = apiPosts.find(
-      (post) => post.path === '/api/bookings/confirm' && post.body.includes('demoCard')
-    );
-    expect(demoConfirm).toBeDefined();
-    expect(JSON.parse(demoConfirm!.body).demoCard).toMatchObject({
-      brand: 'mastercard',
-      last4: '4444',
-      expMonth: 12,
-      expYear: 2030,
-    });
+    // Where the card metadata comes from differs by mode, and only the demo
+    // form derives it in the browser. Under Elements the browser sends no card
+    // detail at all — Stripe holds it and the server reads it back off the
+    // payment method — so there is nothing in the request to assert on, and
+    // the PAN invariant below carries the weight either way.
+    if (ui === 'demo') {
+      const demoConfirm = apiPosts.find(
+        (post) => post.path === '/api/bookings/confirm' && post.body.includes('demoCard')
+      );
+      expect(demoConfirm).toBeDefined();
+      expect(JSON.parse(demoConfirm!.body).demoCard).toMatchObject({
+        brand: 'mastercard',
+        last4: '4444',
+        expMonth: 12,
+        expYear: 2030,
+      });
+    } else {
+      const confirms = apiPosts.filter((post) => post.path === '/api/bookings/confirm');
+      expect(confirms.length).toBeGreaterThan(0);
+      for (const post of confirms) expect(post.body).not.toContain('demoCard');
+    }
 
     // The invariant, against everything the browser actually sent. The last four
     // are expected and present; the sixteen digits they came from are not, in any
@@ -349,26 +445,35 @@ test.describe('Booking Flow', () => {
     // still reached /confirmation would show the customer a paid booking.
     const apiPosts = recordApiPosts(page);
 
-    await reachPaymentPage(page);
-    await page.getByRole('button', { name: 'Visa — declined' }).click();
-    await expect(page.locator('#demo-card-number')).toHaveValue('4000 0000 0000 0002');
+    const ui = await reachPaymentPage(page);
 
-    await page.getByRole('button', { name: /pay sgd/i }).click();
+    if (ui === 'demo') {
+      await page.getByRole('button', { name: 'Visa — declined' }).click();
+      await expect(page.locator('#demo-card-number')).toHaveValue('4000 0000 0000 0002');
+    } else {
+      await fillCard(page, ui, DECLINED_CARD);
+    }
+    await clickPay(page, ui);
 
-    await expect(page.getByRole('alert')).toContainText('Your card was declined.');
+    // Wording differs between the simulator and Stripe's own decline copy; the
+    // guarantee under test is that the guest is told, not the exact sentence.
+    await expect(page.getByRole('alert')).toContainText(/declined/i, { timeout: 60000 });
     await expect(page).toHaveURL(/.*\/payment/);
     expect(apiPosts.filter((post) => post.path === '/api/bookings/confirm')).toHaveLength(0);
 
     // Recoverable in place: the intent is already minted, so switching cards and
-    // paying is one click away rather than a trip back through checkout.
-    const payButton = page.getByRole('button', { name: /pay sgd/i });
-    await expect(payButton).toBeEnabled();
+    // paying is one step away rather than a trip back through checkout.
+    await expect(page.getByRole('button', { name: /pay sgd/i })).toBeEnabled();
 
-    await page.getByRole('button', { name: 'Mastercard — succeeds' }).click();
-    await payButton.click();
+    if (ui === 'demo') {
+      await page.getByRole('button', { name: 'Mastercard — succeeds' }).click();
+    } else {
+      await fillCard(page, ui, TYPED_CARD);
+    }
+    await clickPay(page, ui);
 
-    await expect(page).toHaveURL(/.*confirmation\?payment_intent=sim_pi_/, { timeout: 15000 });
-    await expect(page.getByText('PAID', { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(page).toHaveURL(/.*confirmation\?payment_intent=(sim_)?pi_/, { timeout: 60000 });
+    await expect(page.getByText('PAID', { exact: true })).toBeVisible({ timeout: 60000 });
   });
 
   test('The payment page cannot be reached without a stay to pay for', async ({ page }) => {
@@ -431,7 +536,10 @@ test.describe('Booking Flow', () => {
     // see their details pre-filled — not an empty form. This broke before:
     // the handoff was written but never read back on re-mount.
     await page.goto(CHECKOUT_URL);
-    await fillGuestDetails(page);
+    // Pinned rather than unique: this test never mints a payment intent, so it
+    // has no idempotency key to collide on, and it asserts the exact address
+    // back out of the repopulated form.
+    await fillGuestDetails(page, { email: GUEST.email });
     await page.getByRole('button', { name: /continue to payment/i }).click();
 
     // Now on review step — confirm the details are shown.

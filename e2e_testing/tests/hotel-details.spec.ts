@@ -68,10 +68,13 @@ test.describe('Hotel Room Details', () => {
     //select a room
     await selectRoom.click();
 
-    //verify handoff to booking carries the room key
-    await expect(page).toHaveURL(/\/booking\?/, { timeout: 20000 });
-    await expect(page).toHaveURL(/key=/);
-    await expect(page).toHaveURL(/hotel=/);
+    // Verify the handoff carries the room key. Asserted on the settled URL,
+    // not on /booking?key=…: BookingEntry is a pure redirect, so that address
+    // survives about one render before becoming /checkout?roomTypes=… and any
+    // assertion against it races the redirect.
+    await expect(page).toHaveURL(/\/checkout\?/, { timeout: 20000 });
+    await expect(page).toHaveURL(/roomTypes=/);
+    await expect(page).toHaveURL(/hotelId=/);
   });
 
   test('No-rooms state offers a way back to the results page', async ({ page }) => {
