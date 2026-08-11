@@ -311,9 +311,18 @@ test.describe('Booking Flow', () => {
         expYear: 2030,
       });
     } else {
-      const confirms = apiPosts.filter((post) => post.path === '/api/bookings/confirm');
-      expect(confirms.length).toBeGreaterThan(0);
-      for (const post of confirms) expect(post.body).not.toContain('demoCard');
+      // Polled, because the two modes call /confirm at different moments: the
+      // demo form calls it before navigating, Elements leaves it to the
+      // confirmation page after. Reading apiPosts the instant the URL changes
+      // is therefore too early under Elements and finds nothing.
+      await expect
+        .poll(() => apiPosts.filter((post) => post.path === '/api/bookings/confirm').length, {
+          timeout: 30000,
+        })
+        .toBeGreaterThan(0);
+      for (const post of apiPosts.filter((post) => post.path === '/api/bookings/confirm')) {
+        expect(post.body).not.toContain('demoCard');
+      }
     }
 
     // The invariant, against everything the browser actually sent. The last four
