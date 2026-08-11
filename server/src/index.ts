@@ -159,8 +159,13 @@ app.get('/api/hotels/:id', getHotelById);
 // UC4 — Book & Make Payment
 // Payment and lookup are throttled: without a limit these are a card-testing
 // and reference-enumeration surface.
-const paymentLimiter = rateLimit({ windowMs: 60_000, max: 10 });
-const lookupLimiter = rateLimit({ windowMs: 60_000, max: 30 });
+// Only relax limits for Docker-based E2E runs, never for the Mocha
+// suite (which runs this file directly and needs real limits to test
+// against) and never in production.
+const relaxRateLimits = process.env.RATE_LIMIT_RELAXED === 'true';
+const rateLimitMultiplier = relaxRateLimits ? 20 : 1;
+const paymentLimiter = rateLimit({ windowMs: 60_000, max: 10 * rateLimitMultiplier });
+const lookupLimiter = rateLimit({ windowMs: 60_000, max: 30 * rateLimitMultiplier });
 
 /**
  * Looser than the lookups because quoting is what a guest does while making up
@@ -172,7 +177,7 @@ const lookupLimiter = rateLimit({ windowMs: 60_000, max: 30 });
  * priced before costs an outbound call, so re-quoting the same stay is free and
  * this limit is what caps the rate of *distinct* ones.
  */
-const quoteLimiter = rateLimit({ windowMs: 60_000, max: 60 });
+const quoteLimiter = rateLimit({ windowMs: 60_000, max: 60 * rateLimitMultiplier });
 
 app.get('/api/bookings/checkout', quoteLimiter, getCheckout);
 
@@ -202,7 +207,7 @@ app.post('/api/bookings/payment-intent', paymentLimiter, resolveUser, postPaymen
  * payment identifier — but the bound has to clear the polling loop it was
  * throttling.
  */
-const confirmLimiter = rateLimit({ windowMs: 60_000, max: 60 });
+const confirmLimiter = rateLimit({ windowMs: 60_000, max: 60 * rateLimitMultiplier });
 
 app.post('/api/bookings/confirm', confirmLimiter, postConfirmBooking);
 
