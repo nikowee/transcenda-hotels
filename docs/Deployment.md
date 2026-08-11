@@ -52,13 +52,15 @@ Task definition env:
 
 | Source | Variables |
 |---|---|
-| **Secrets Manager** | `SUPABASE_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
-| **Plain env** | `NODE_ENV=production`, `PORT=5000`, `SUPABASE_URL`, `APP_URL` (public frontend URL — Stripe return URLs build from it), `CORS_ORIGINS` (deployed frontend origin), `REDIS_URL` (ElastiCache) |
+| **Secrets Manager** | `SUPABASE_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY` |
+| **Plain env** | `NODE_ENV=production`, `PORT=5000`, `SUPABASE_URL`, `APP_URL` (public frontend URL — Stripe return URLs build from it), `CORS_ORIGINS` (deployed frontend origin), `REDIS_URL` (ElastiCache), `EMAIL_FROM` (an address on the Resend-verified domain) |
 | **Leave unset** | `BOOKINGS_STORAGE` (memory = bookings vanish per task), `PAYMENTS_MODE` (ignored in production anyway) |
 
 Trust-proxy depth is fixed at 1 hop in `server/src/index.ts` (the single-ALB
 shape); change the literal there if the topology ever differs. Confirmation
-email is log-only — no mail provider is configured.
+email sends through Resend when `RESEND_API_KEY` and `EMAIL_FROM` are both
+set, and falls back to logging when either is blank — set them only in
+production, so test bookings never mail throwaway addresses.
 
 Boot refusals are deliberate: with `NODE_ENV=production` and no
 `STRIPE_SECRET_KEY` the process exits rather than silently accepting every

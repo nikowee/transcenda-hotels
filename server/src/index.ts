@@ -26,6 +26,7 @@ import { isSupabaseConfigured } from './models/bookingModel.js';
 // Already loaded transitively via hotelController; imported here only so
 // shutdown can release the connection after the HTTP listener drains.
 import { redis } from './lib/redisClient.js';
+import { emailConfigStatus, whenSendsSettled } from './services/emailService.js';
 
 dotenv.config();
 
@@ -43,6 +44,17 @@ const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+/** Safety guardrail: exactly one email var set is always a misconfiguration, and production provisions the two through different channels. */
+{
+  const email = emailConfigStatus();
+  if (email.missing) {
+    console.warn(
+      `⚠️  ${email.missing} is not set but its counterpart is. Confirmation emails ` +
+        'need both RESEND_API_KEY and EMAIL_FROM; falling back to log-only delivery.'
+    );
+  }
+}
 
 /** Safety guardrail: warn loudly when production forgot CORS_ORIGINS. */
 if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
@@ -214,6 +226,8 @@ if (isDirectRun) {
     force.unref();
 
     server.close(async () => {
+      // Emails are fired without awaiting the request; a deploy would otherwise eat them.
+      await whenSendsSettled();
       try {
         await redis.destroy();
         console.log('🔌 Redis disconnected');
