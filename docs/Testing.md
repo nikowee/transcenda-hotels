@@ -19,7 +19,7 @@ This page documents the complete testing suite for Transcenda Hotels, covering a
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │       Backend (377 tests)           │
+                    │       Backend (386 tests)           │
                     │  Mocha + Chai + Supertest; nock     │
                     │  fakes Stripe and Ascenda at the    │
                     │  socket, network blocked outright   │
@@ -56,7 +56,7 @@ report, which excludes `src/tests/`.
 | `ConfirmationPage.test.tsx` | 17 | MSW + Vitest | `client/src/tests/` |
 | `PaymentPageNoStripeKey.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
 | `BookingEntry.test.tsx` | 6 | Vitest + RTL | `client/src/tests/` |
-| `destination.test.ts` | 7 | Mocha + Chai + Supertest | `server/src/tests/` |
+| `destination.test.ts` | 11 | Mocha + Chai + Supertest | `server/src/tests/` |
 | `booking.test.ts` | 46 | Mocha + Chai + Supertest | `server/src/tests/` |
 | `buildQuote.test.ts` | 59 | Mocha + Chai | `server/src/tests/` |
 | `bookingModel.test.ts` | 17 | Mocha + Chai | `server/src/tests/` |
@@ -68,13 +68,14 @@ report, which excludes `src/tests/`.
 | `stripePaymentIntents.test.ts` | 25 | Mocha + Chai + **nock** | `server/src/tests/` |
 | `stripeRefunds.test.ts` | 11 | Mocha + Chai + **nock** | `server/src/tests/` |
 | `stripeWebhook.test.ts` | 21 | Mocha + Chai + Supertest | `server/src/tests/` |
+| `fuzz.test.ts` | 4 | Mocha + Chai + Supertest (seeded PRNG) | `server/src/tests/` |
 | `hotelRoomService.test.ts` | 19 | Mocha + Chai + **nock** | `server/src/tests/` |
 | `hotelName.test.ts` | 7 | Mocha + Chai + Supertest + **nock** | `server/src/tests/` |
-| `emailService.test.ts` | 9 | Mocha + Chai | `server/src/tests/` |
+| `emailService.test.ts` | 10 | Mocha + Chai | `server/src/tests/` |
 | `supplierPricing.test.ts` | 8 | Mocha + Chai + Supertest + **nock** | `server/src/tests/` |
 | `booking-flow.spec.ts` | 11 | Playwright | `e2e_testing/tests/` |
 | `search-*.spec.ts` | 5 | Playwright | `e2e_testing/tests/` |
-| **Total** | **467** | — | — |
+| **Total** | **479** | — | — |
 
 ---
 
@@ -84,7 +85,7 @@ report, which excludes `src/tests/`.
 # Frontend: 178 tests
 cd client && npm run test
 
-# Backend: 377 tests
+# Backend: 386 tests
 cd server && npm run test
 
 # E2E: 22 tests, auto-starts Docker
@@ -258,6 +259,34 @@ Handlers use wildcard origins (`*/api/...`) so the suite does not depend on
 The real Stripe SDK against a faked wire. See the section above: this is the only
 layer that can catch a wrong parameter name or a misread response field, because
 it is the only one where a request is actually serialised.
+
+### Fuzz — seeded PRNG
+
+`fuzz.test.ts` explores where the other layers enumerate. Every other
+adversarial test in this repo is a curated list, so it only finds failures
+someone already imagined; the fuzzer generates mutated payloads and hostile
+strings (regex metacharacters, CJK, emoji surrogates, zero-width and
+RTL-override characters, 2 KB blobs) and asserts one uniform invariant:
+hostile input may be **rejected** — an error value, a 4xx — but must never
+throw, 500, or mint non-finite money.
+
+It is deterministic. `mulberry32` is seeded from `FUZZ_SEED`, and every
+assertion message carries the seed and iteration, so a failure reproduces
+exactly and converts straight into a named regression test.
+
+```bash
+npm test                              # default budget, ~6s, runs in CI
+FUZZ_SCALE=20 npm test                # exploratory: 20× the iterations
+FUZZ_SEED=99 FUZZ_SCALE=50 npm test   # different territory
+```
+
+Its first run found a denial of service: `/api/destinations/search` capped the
+*minimum* query length and nothing else, and `fuse.search` is synchronous, so a
+5,000-character query blocked the event loop for **65 seconds** — one
+unauthenticated GET stalling the whole process. Now capped at 128 characters
+(the longest real term is 115) with a 120/min limiter: 1.86 s and flat.
+`destination.test.ts` pins that boundary deterministically rather than leaving
+it to the fuzzer's dice.
 
 ### E2E — Playwright
 
