@@ -20,7 +20,7 @@ services:
       - ./server/.env
     environment:
       - REDIS_URL=redis://redis:6379
-      - RATE_LIMIT_RELAXED=true
+      - RATE_LIMIT_RELAXED=${RATE_LIMIT_RELAXED:-false}
 
   # React UI Interface Frame
   frontend:
