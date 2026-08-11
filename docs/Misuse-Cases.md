@@ -134,9 +134,9 @@ flowchart LR
 | **Misuser** | Malicious Client, or an ordinary user refreshing the confirmation page |
 | **Threatens** | UC5 View booking confirmation |
 | **Attack paths** | Replay `/confirm` for one payment; race the browser confirmation against Stripe's webhook and its redelivery; retry a refund so the money leaves twice. |
-| **Mitigation** | Writes are idempotent on `payment_id` through three layers: an in-process lock, a `findByPaymentId` short-circuit, and a unique constraint in Postgres that arbitrates across processes. Refunds carry a Stripe idempotency key. The confirmation email hangs off the write hook, so it fires once per booking rather than once per caller. |
+| **Mitigation** | Writes are idempotent on `payment_id` through two in-process layers: a lock held for the duration of the write, and a `findByPaymentId` short-circuit. Refunds carry a Stripe idempotency key. The confirmation email hangs off the write hook, so it fires once per booking rather than once per caller. |
 | **Evidence** | `is idempotent across repeated confirmations`, `sends the confirmation email exactly once however often it is replayed`, `does not duplicate a booking the browser already confirmed`, `sends an idempotency key so a retry cannot refund twice`, `withholds Stripe detail when a charge has already been refunded`. |
-| **Residual risk** | The third layer only exists once `supabase/migrations/…_unique_payment_id.sql` is applied. Until then the in-process lock holds for exactly one server instance, so this misuse case reopens the moment a second replica starts. |
+| **Residual risk** | **Both layers are per-process.** A unique constraint on `bookings.payment_id` is what would arbitrate across processes, and the database does not have one — `bookingModel`'s `23505` handler is written for a constraint that does not exist. The guard therefore holds for exactly one server instance and this misuse case reopens the moment a second replica starts. |
 
 ### M4 — Read other guests' bookings
 
@@ -145,9 +145,9 @@ flowchart LR
 | **Misuser** | Curious User |
 | **Threatens** | UC7 View booking history |
 | **Attack path** | Read the publishable Supabase key out of the JavaScript bundle — it is world-readable by design — and query PostgREST directly, bypassing the API entirely: no gateway, no rate limit, no ownership check. `bookings` holds guest names, emails, phone numbers, stay dates and card brand/last four. A second path is enumerating booking UUIDs against `GET /api/bookings/:id`. |
-| **Mitigation** | Row Level Security enabled on `bookings` and `profiles` with no public policy, which denies the anon role outright. The server reaches the database only through the service-role client, which bypasses RLS by design, so nothing the application does today is affected. Booking history requires a verified token and compares the subject against the requested user id. |
-| **Evidence** | `supabase/migrations/…_row_level_security.sql`; `returns the booking and never exposes card data beyond the last four`; the auth middleware's 401/403 suite. |
-| **Residual risk** | **This one is not closed.** The migration is written but unapplied — it is a human step in the Supabase dashboard. Until it runs, the exposure is live. |
+| **Mitigation** | **Partial.** The API path is guarded: booking history requires a verified token and compares the subject against the requested `userId`, and a single booking never returns card data beyond the last four. The direct-PostgREST path is **not** guarded — that needs Row Level Security on `bookings` and `profiles`, which is not enabled. |
+| **Evidence** | `returns the booking and never exposes card data beyond the last four`; the auth middleware's 401/403 suite. |
+| **Residual risk** | **This one is open.** Anyone who reads the publishable key out of the bundle can query `bookings` and `profiles` directly, and no application-level control can stop them — the fix has to be enforced by the database. Enabling RLS with no public policy is the remedy; it is a deliberate operational decision, not an oversight in the code. |
 
 ### M5 — Exhaust the server
 
@@ -179,15 +179,22 @@ flowchart LR
 |---|---|---|---|---|
 | M1 | Pay less than quoted | UC4 | Server-side pricing, re-verified at capture | 8 tests |
 | M2 | Book without paying | UC4 | Verify with Stripe; HMAC over raw bytes | 7 tests |
-| M3 | Charged/refunded twice | UC5 | Idempotency on `payment_id`, three layers | 5 tests |
-| M4 | Read others' bookings | UC7 | RLS with no public policy; token ownership check | migration + 2 tests — **migration unapplied** |
+| M3 | Charged/refunded twice | UC5 | Idempotency on `payment_id`, two in-process layers | 5 tests — **single-instance only** |
+| M4 | Read others' bookings | UC7 | Token ownership check on the API path only | 2 tests — **direct database path open** |
 | M5 | Exhaust the server | UC1 | Input cap + rate limit | 2 boundary tests + fuzzer |
 | M6 | Card-testing oracle | UC4 | Tight limits, opaque errors, no card input | 3 tests |
 
 ## What this diagram deliberately does not claim
 
-Two misuse cases are mitigated **in code but not in the deployed system**: M4
-depends on a migration nobody has run yet, and M3's cross-process layer depends
-on the same migration file. Both are listed above with the gap stated rather
-than glossed, because a misuse-case model that quietly assumes its own
-mitigations are deployed is worth less than one that says which are not.
+**Two misuse cases are not fully closed, and both need a database-level
+control this repository does not carry.**
+
+M4 is open at the direct-database path: the publishable key is world-readable
+by design, and only Row Level Security can deny it. M3's guard is real but
+per-process; a unique constraint on `bookings.payment_id` is what would make it
+hold across replicas, and without one `bookingModel`'s `23505` handler catches
+nothing.
+
+Both are stated rather than glossed. A misuse-case model that quietly assumes
+its own mitigations exist is worth less than one that says which do not — and
+these two are the difference between "safe today at one instance" and "safe".
