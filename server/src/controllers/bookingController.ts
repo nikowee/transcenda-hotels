@@ -65,6 +65,10 @@ export const validateGuestDetails = (
 ): Record<string, string> => {
   const errors: Record<string, string> = {};
 
+  // Null-safe like validateBillingAddress: express.json rejects a bare `null`
+  // body before it reaches here, so this guards callers, not the route.
+  body = body ?? {};
+
   const salutation = asTrimmed(body.salutation);
   const firstName = asTrimmed(body.firstName);
   const lastName = asTrimmed(body.lastName);

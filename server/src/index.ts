@@ -125,7 +125,10 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'healthy', project: 'Transcenda Hotels Gateway Operational' });
 });
 
-app.get('/api/destinations/search', searchDestinations);
+/** Search-as-you-type fires per keystroke, so this is loose — it bounds abuse of the one unauthenticated route that does real CPU work, not ordinary typing. */
+const searchLimiter = rateLimit({ windowMs: 60_000, max: 120 });
+
+app.get('/api/destinations/search', searchLimiter, searchDestinations);
 app.get('/api/hotels/search', getHotelSearchResults);
 
 // Hotel Details Endpoints
