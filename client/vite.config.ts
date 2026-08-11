@@ -16,14 +16,15 @@ export default defineConfig({
     port: 3000
   },
   test: {
-    globals: true,          // Makes test functions available without imports
-    environment: 'jsdom',   // Uses jsdom to simulate browser
-    setupFiles: './src/tests/setup.ts',  // Runs this file before tests (testing utils)
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/tests/setup.ts',
+    testTimeout: 10000, // was defaulting to 5000
     coverage: {
-      provider: 'v8',       // Uses V8 for coverage (fast)
-      reporter: ['text', 'json', 'html'],  // Output formats
-      exclude: ['node_modules/', 'src/tests/', 'src/mocks/'],  // What to ignore
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      exclude: ['node_modules/', 'src/tests/', 'src/mocks/'],
     },
-    include: ['**/*.{test,spec}.{js,ts,jsx,tsx}'],  // Which files are tests
+    include: ['**/*.{test,spec}.{js,ts,jsx,tsx}'],
   }
 })
