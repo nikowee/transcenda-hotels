@@ -3,16 +3,7 @@ import { expect } from 'chai';
 import { type Request, type Response } from 'express';
 import { rateLimit, resetRateLimits } from '../middleware/rateLimit.js';
 
-/**
- * Unit tests for the fixed-window limiter.
- *
- * booking.test.ts proves the limiter throttles. It does not prove the window
- * ever reopens — a limiter that blocks forever passes that test and locks every
- * guest out of checkout after five attempts.
- *
- * Driven with fake req/res objects rather than supertest so the window can be
- * set to milliseconds and expiry observed without a slow test.
- */
+/** Unit tests for the fixed-window limiter. */
 
 interface FakeResponse {
   statusCode: number | null;
@@ -145,17 +136,7 @@ describe('rateLimit middleware', () => {
   });
 
   it('shares one bucket across every id on a wildcard route', () => {
-    /**
-     * The defect this closes. lookupLimiter is mounted on GET
-     * /api/bookings/:id precisely to blunt reference enumeration, but the key
-     * was built from req.path — which on a wildcard route is the *resolved*
-     * URL, so every scanned id opened its own fresh bucket and the limiter
-     * never fired. The 30/min cap only ever applied to repeated hits on the
-     * same id, which is the one case that is harmless.
-     *
-     * Keying on req.route.path is what makes a walk of distinct ids share the
-     * bucket the limiter was put there to enforce.
-     */
+    /** The defect this closes. */
     const middleware = rateLimit({ windowMs: 1000, max: 2 });
     const scan = (id: string) =>
       call(middleware, {

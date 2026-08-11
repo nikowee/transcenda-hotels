@@ -7,14 +7,7 @@ import { resetRateLimits } from '../middleware/rateLimit.js';
 import { fetchHotelName, __clearHotelNameCache } from '../services/hotelRoomService.js';
 import { HOTEL_API, useHotelNock, mockRoomPrices, ascendaRoom } from './helpers/hotelNock.js';
 
-/**
- * Hotel-name resolution — the server half of the RoomList connector.
- *
- * RoomList starts a booking with a hotel id and a room key and nothing else, so
- * without this a stay that came from hotel details has no name and buildQuote
- * refuses it. That makes this the piece standing between "picked a room" and
- * "cannot price that stay", which is worth pinning rather than assuming.
- */
+/** Hotel-name resolution — the server half of the RoomList connector. */
 
 const HOTEL_ID = 'diH7';
 const NAME = 'The Fullerton Hotel Singapore';
@@ -45,11 +38,7 @@ describe('hotel name resolution', () => {
     expect(await fetchHotelName(HOTEL_ID)).to.equal(NAME);
   });
 
-  /**
-   * Held for the process lifetime rather than a TTL: unlike a rate, a hotel's
-   * name does not move, and re-fetching it would add a round trip to every
-   * quote for a value already known to be right.
-   */
+  /** Held for the process lifetime rather than a TTL: unlike a rate, a hotel's name does not move, and re-fetching it would add a round trip to every quote for a value already known to be right. */
   it('asks the supplier once and remembers the answer', async () => {
     mockHotel();
 
@@ -60,10 +49,7 @@ describe('hotel name resolution', () => {
     expect(nock.isDone()).to.equal(true);
   });
 
-  /**
-   * A display string must never be the reason a bookable stay cannot be priced,
-   * so every failure mode resolves to null rather than throwing.
-   */
+  /** A display string must never be the reason a bookable stay cannot be priced, so every failure mode resolves to null rather than throwing. */
   it('returns null rather than throwing when the supplier will not say', async () => {
     mockHotel(HOTEL_ID, { error: 'no such hotel' }, 404);
     expect(await quietly(() => fetchHotelName(HOTEL_ID))).to.equal(null);
@@ -109,10 +95,7 @@ describe('hotel name resolution', () => {
       expect(response.body.hotelName).to.equal(NAME);
     });
 
-    /**
-     * Search results already know the name, and asking the supplier again would
-     * add a round trip per quote for an answer we were handed.
-     */
+    /** Search results already know the name, and asking the supplier again would add a round trip per quote for an answer we were handed. */
     it('keeps a name the caller supplied without asking the supplier', async () => {
       mockRoomPrices({ hotelId: HOTEL_ID, rooms: [ascendaRoom({ key: ROOM_KEY })] });
 

@@ -9,22 +9,7 @@ const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 /** Search-result cache lifetime, seconds. */
 export const CACHE_TTL = 300;
 
-/**
- * How long to keep trying before giving up on the *initial* connection, and how
- * to back off on every reconnection after that.
- *
- * These are two different problems and an earlier fix conflated them. Returning
- * false unconditionally stopped `connect()` hanging forever when nothing is
- * listening — but it also disabled node-redis's retry loop for the whole life
- * of the client, so a Redis that restarted (a deploy, an OOM kill, or simply
- * coming up a second after the API in compose) was never reconnected to.
- * isCacheReady() then reported false permanently and every hotel search made a
- * full supplier round trip until someone restarted the process by hand.
- *
- * So: bounded retries while starting up, unbounded-but-backed-off afterwards.
- * `retries` counts from zero on each fresh disconnect, and `hasConnected` is
- * what distinguishes "never came up" from "came up and dropped".
- */
+/** Two different reconnection problems, two different answers: bounded retries while starting up (so connect() cannot hang forever against a Redis that is not there), unbounded-but-backed-off retries afterwards (so a Redis that restarted. */
 const STARTUP_RETRY_LIMIT = 5;
 let hasConnected = false;
 
@@ -50,11 +35,7 @@ redis.on('connect', () => {
     console.log('🔗 Redis connected successfully');
 });
 
-/**
- * Errors arrive on every failed reconnect attempt, so logging each one turns a
- * Redis outage into an unbounded log flood. Log the first, then stay quiet
- * until the connection comes back.
- */
+/** Errors arrive on every failed reconnect attempt, so logging each one turns a Redis outage into an unbounded log flood. */
 let errorLogged = false;
 
 redis.on('error', (err) => {
@@ -68,18 +49,7 @@ redis.on('ready', () => {
     errorLogged = false;
 });
 
-/**
- * Connect without blocking the module.
- *
- * This was a top-level `await redis.connect()`. Inside Docker that is fine
- * because compose starts a redis service, but with nothing listening the client
- * retried indefinitely and the await never settled — so importing this file hung
- * forever. Anything that reaches it transitively (hotelController → index.ts →
- * the whole server suite) hung with it, before a single test could run.
- *
- * Fire-and-forget delivers what the original comment intended: a missing Redis
- * degrades to "no cache" rather than stopping the process.
- */
+/** Connect without blocking the module. */
 void redis.connect().catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     console.warn('⚠️ Redis unavailable, running without cache:', message);

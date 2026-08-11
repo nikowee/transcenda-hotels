@@ -22,37 +22,14 @@ import { clearHandoff } from '../lib/checkoutHandoff';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
-/**
- * «React Page» ConfirmationPage — sequence step 11, and the "Display Booking
- * Confirmation" use case. Replaces confirmation.ejs.
- *
- * Reached by redirect back from Stripe, so router state does not survive the
- * trip and everything is re-fetched from the session id in the query string.
- *
- * There is no payment status to render. The bookings table has price_paid and
- * payment_id NOT NULL and no status column, so a row cannot exist unless Stripe
- * confirmed the charge: a returned booking *is* a paid booking, and the only
- * other outcome is that the charge has not been recorded yet.
- *
- * Sequence steps map to:
- *   6-10 POST /api/bookings/confirm  → server verifies the session with Stripe
- *                                      and inserts the booking
- *   11   render the returned record
- *   ?id=<uuid> revisit               → GET /api/bookings/:id, no Stripe hop
- */
+/** «React Page» ConfirmationPage — sequence step 11, the "Display Booking Confirmation" use case. */
 
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLLS = 5;
 
 /** The schema stores no currency column: the platform prices everything in SGD. */
 
-/**
- * A 404 is an answer — that booking does not exist. Every other failure
- * (5xx, network, CORS) means the lookup failed, not that the booking did, and
- * the two must not read the same: telling someone who has just paid that their
- * booking cannot be found, when the truth is that the API is down, is the worst
- * wrong answer this page can give.
- */
+/** Error split: a 404 is an answer (that booking does not exist); every other failure means the lookup failed, not the booking. */
 type PageError = { title: string; detail: string };
 
 const NOT_FOUND: PageError = {
@@ -88,33 +65,20 @@ export default function ConfirmationPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const sessionId = searchParams.get('session_id');
-  /**
-   * The Elements flow returns here with payment_intent instead of session_id.
-   * Both are verified server-side against Stripe and both produce the same
-   * booking, so the page only needs to know which key to forward.
-   */
+  /** The Elements flow returns here with payment_intent instead of session_id. */
   const paymentIntentId = searchParams.get('payment_intent');
   const bookingId = searchParams.get('id');
 
-  /**
-   * Holds the in-flight confirmation, not a "have I run" boolean.
-   *
-   * This used to deliberately allow the effect to run twice, on the grounds
-   * that confirming is idempotent server-side. It is not: insertOne reads
-   * findByPaymentId and then inserts, with nothing atomic in between and no
-   * unique constraint behind it, so two concurrent confirmations both see no
-   * booking and both write one. Rows milliseconds apart sharing a payment_id
-   * are exactly that race.
-   *
-   * A plain run-once ref is the wrong fix and was correctly rejected before —
-   * it strands the page in its loading state, because the first mount's cleanup
-   * has already tripped `cancelled`. Caching the promise gives one request and
-   * lets whichever mount is still alive consume it.
-   */
+  /** Holds the in-flight confirmation, not a "have I run" boolean. */
   const confirmRequest = useRef<Promise<unknown> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+
+    // Clear any stale request from a previous URL so the new params start
+    // their own confirm request rather than reusing one meant for a different
+    // session or intent.
+    confirmRequest.current = null;
 
     const finalise = async () => {
       if (!sessionId && !paymentIntentId && !bookingId) {
@@ -169,19 +133,7 @@ export default function ConfirmationPage() {
           const record = readBooking(response.data);
           if (record) {
             setBooking(record);
-            /**
-             * Here, not only in PaymentPage's success handler.
-             *
-             * That handler runs for cards Stripe settles inline, but a bank that
-             * demands a 3DS challenge takes the whole page away and returns the
-             * browser straight to this URL — confirmPayment never resolves, so
-             * nothing on the payment page clears anything. The handoff then
-             * survives a paid booking and auto-resumes the customer's *next*
-             * checkout onto the stay they have already paid for.
-             *
-             * A confirmed booking record is the one signal both paths share, and
-             * it is the definition of "this handoff is spent".
-             */
+            /** Clear the handoff here, not only in PaymentPage's success handler. */
             clearHandoff();
             setError(null);
             setIsLoading(false);
@@ -216,8 +168,8 @@ export default function ConfirmationPage() {
 
       if (cancelled) return;
 
-      // Out of attempts with the charge still in flight. The money may well be
-      // gone, so this must not read as a failure or as a missing booking.
+      // Out of attempts with the charge still in flight — the money may well
+      // be gone, so this must not read as a failure or a missing booking.
       setIsSettling(true);
       setIsLoading(false);
     };

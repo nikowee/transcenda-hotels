@@ -6,11 +6,7 @@ import { randomUUID } from 'crypto';
 import Stripe from 'stripe';
 import type { CardDetails } from '../models/bookingTypes.js';
 
-/**
- * What simulate mode reports for the NOT NULL card columns. Shared by both the
- * hosted-checkout and Elements paths so a demo booking looks the same however
- * it was made.
- */
+/** What simulate mode reports for the NOT NULL card columns. */
 const SIMULATED_CARD: CardDetails = {
   brand: 'visa',
   last4: '4242',
@@ -18,18 +14,7 @@ const SIMULATED_CARD: CardDetails = {
   expYear: 2030,
 };
 
-/**
- * PaymentService — the «External API» box from the UC4 class diagram.
- *
- * Stripe Checkout Sessions: the customer pays on a Stripe-hosted page, so card
- * data never reaches this server or the client bundle — PCI SAQ A, not SAQ D.
- * The diagram's processPayment(amount, currency) is therefore split into
- * createCheckoutSession + verifySession; its signature required holding the PAN.
- *
- * verifySession is now the only place the booking's payment columns come from.
- * The table cannot hold an unpaid row, so nothing is written until this module
- * says the charge cleared.
- */
+/** PaymentService — the «External API» box from the class diagram. */
 
 /** Pinned: the ^22 caret range would let the wire version drift on any lockfile refresh. */
 const STRIPE_API_VERSION = '2026-06-24.dahlia';
@@ -37,11 +22,7 @@ const STRIPE_API_VERSION = '2026-06-24.dahlia';
 const secretKey = process.env.STRIPE_SECRET_KEY;
 const isProduction = process.env.NODE_ENV === 'production';
 
-/**
- * Simulation is opt-in and never available in production. A missing key must
- * fail loudly — silently downgrading to "every card succeeds" is a payment
- * bypass, not a convenience.
- */
+/** Safety guardrail: simulation is opt-in and never available in production. */
 export const isSimulated = (): boolean =>
   !isProduction && process.env.PAYMENTS_MODE === 'simulate';
 
@@ -65,17 +46,7 @@ if (isSimulated()) {
   );
 }
 
-/**
- * Stripe's default NodeHttpClient defers req.write() until the socket emits
- * `secureConnect`. nock's mocked socket never emits it, so an intercepted
- * request is written but never sent and the promise never settles — the test
- * hangs rather than failing. The fetch client has no such handshake and nock
- * intercepts it cleanly.
- *
- * STRIPE_HTTP_CLIENT is test plumbing, not configuration: tests/env.ts sets it
- * to 'fetch' so nock can intercept. Nothing else sets it, and production keeps
- * the default keep-alive agent.
- */
+/** Test plumbing, not configuration: tests/env.ts sets STRIPE_HTTP_CLIENT to 'fetch' so nock can intercept (Stripe's default NodeHttpClient waits on a socket handshake nock never emits, hanging the test instead of failing it). */
 const httpClient =
   process.env.STRIPE_HTTP_CLIENT === 'fetch'
     ? // Bound per call, not captured once. FetchHttpClient defaults to
@@ -99,10 +70,7 @@ const stripe = secretKey
 
 export const isConfigured = (): boolean => Boolean(stripe) || isSimulated();
 
-/**
- * Stripe bills in a currency's smallest unit, and the exponent is not always 2.
- * Getting this wrong overcharges JPY/KRW by 100x.
- */
+/** Stripe bills in a currency's smallest unit, and the exponent is not always 2. */
 const ZERO_DECIMAL = new Set([
   'BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA',
   'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF',
@@ -116,11 +84,7 @@ export const toMinorUnits = (amount: number, currency: string): number => {
   return Math.round(amount * 100);
 };
 
-/**
- * Stripe's own messages can carry configuration detail ("Invalid API Key
- * provided: sk_test_...") so nothing from the SDK is relayed verbatim. Card
- * errors map to this allowlist; everything else gets a correlation ID.
- */
+/** Error allowlist: nothing from the SDK is relayed verbatim, keeping configuration detail ("Invalid API Key provided: sk_test_...") out of responses. */
 const SAFE_DECLINE_MESSAGES: Record<string, string> = {
   card_declined: 'Your card was declined. Please try a different payment method.',
   expired_card: 'That card has expired. Please use a different card.',
@@ -155,10 +119,7 @@ export const toSafeError = (error: unknown): SafeError => {
 };
 
 export interface CheckoutSessionInput {
-  /**
-   * Correlation handle for this payment attempt. It is deliberately not a
-   * booking id: no row exists yet, and none will until the charge clears.
-   */
+  /** Correlation handle for this payment attempt. */
   clientReferenceId: string;
   /** Major units. Always server-derived — never accepted from a request body. */
   amount: number;
@@ -167,12 +128,7 @@ export interface CheckoutSessionInput {
   description: string;
   successUrl: string;
   cancelUrl: string;
-  /**
-   * The only channel that survives the trip out to the hosted page and back.
-   * Everything needed to write the booking rides here, because the booking
-   * itself cannot be persisted before payment. Stripe caps this at 50 keys and
-   * 500 characters per value; callers are responsible for staying under both.
-   */
+  /** The one channel that survives the round trip to the hosted page. */
   metadata: Record<string, string>;
 }
 
@@ -184,18 +140,10 @@ export interface CheckoutSessionResult {
 
 const SIM_SESSION_PREFIX = 'sim_sess_';
 
-/**
- * Simulate mode has no Stripe to read a session back from, so what was handed
- * to createCheckoutSession is held here for verifySession to return. Without it
- * the metadata carrying the guest and stay would evaporate at the redirect and
- * the simulated flow could never reach an insert.
- */
+/** Simulator session store: holds what createCheckoutSession was handed so verifySession can return it. */
 const simulatedSessions = new Map<string, CheckoutSessionInput>();
 
-/**
- * Sequence step 5. Creates the hosted payment page; no card data passes through
- * this process at any point.
- */
+/** Sequence step 5. */
 export const createCheckoutSession = async (
   input: CheckoutSessionInput
 ): Promise<CheckoutSessionResult> => {
@@ -256,28 +204,11 @@ export interface VerifiedPayment {
   clientReferenceId: string | null;
   /** What createCheckoutSession sent out, handed back after the redirect. */
   metadata: Record<string, string>;
-  /**
-   * True only when the simulator produced this, never merely because the process
-   * is in simulate mode.
-   *
-   * The two are not the same, and conflating them was a real bug: a genuine
-   * `pi_…` posted to a box running PAYMENTS_MODE=simulate *with* real
-   * credentials falls through to the live Stripe client and verifies for real,
-   * yet `isSimulated()` still reads true. Callers that relax a rule for demo
-   * payments — postConfirmBooking accepting a client-supplied card — must key
-   * off provenance, which is this field, not off the mode.
-   */
+  /** Provenance flag: true only when the simulator produced this payment, never merely because the process runs in simulate mode. */
   simulated: boolean;
 }
 
-/**
- * Authoritative check against Stripe. Callers must never infer payment state
- * from anything the browser sent them.
- *
- * Returns everything the bookings table needs, because the row is assembled
- * from this and nothing else: the charge, the payer, the card columns, and the
- * metadata that carried the guest and stay across the redirect.
- */
+/** Authoritative payment check against Stripe. */
 export const verifySession = async (sessionId: string): Promise<VerifiedPayment> => {
   if (isSimulated() && sessionId.startsWith(SIM_SESSION_PREFIX)) {
     const input = simulatedSessions.get(sessionId);
@@ -302,13 +233,7 @@ export const verifySession = async (sessionId: string): Promise<VerifiedPayment>
     throw new Error('PAYMENT_NOT_CONFIGURED');
   }
 
-  /**
-   * The card columns live two hops down (session → payment_intent →
-   * payment_method) and are absent from an unexpanded retrieve. Expanding is
-   * PCI-safe: brand, last four and expiry are the only card fields permitted in
-   * storage, and Stripe never returns the PAN or CVC to an API key at all — so
-   * nothing that would put this application in scope for SAQ D ever arrives.
-   */
+  /** Expand payment_method to reach the card columns (they live two hops down and are absent from a bare retrieve). */
   const session = await stripe.checkout.sessions.retrieve(sessionId, {
     expand: ['payment_intent.payment_method'],
   });
@@ -351,36 +276,9 @@ export interface PaymentIntentInput {
   currency: string;
   guestEmail: string;
   description: string;
-  /**
-   * Makes a repeated create return the intent it already made, instead of a new
-   * one.
-   *
-   * /payment mints an intent on mount, and a refresh or a second trip through
-   * checkout is a fresh mount — so without this, one booking attempt leaves a
-   * trail of abandoned intents at requires_payment_method. Observed: three
-   * intents for a single ibis Styles stay, two of them orphans.
-   *
-   * Stripe holds a key for 24 hours and replays the original response for it.
-   * The caller is responsible for varying the key when the amount does; see
-   * bookingController, which folds the priced total into it. A key that ignored
-   * the amount would trade duplicate intents for a stale one, which is far
-   * worse — the guest would be charged a price we no longer quote.
-   */
+  /** Idempotency key: a repeated create returns the intent already made instead of minting another (every page refresh is a fresh mount, and each would otherwise orphan an intent at requires_payment_method). */
   idempotencyKey?: string;
-  /**
-   * Attached to the intent as `shipping`, which is not the same thing as an AVS
-   * check and this comment used to claim it was.
-   *
-   * AVS runs against payment_method.billing_details, and in the Elements flow
-   * the payment method is created in the browser at confirm time — there is no
-   * server-side field on a PaymentIntent that sets it. Reaching a real AVS check
-   * means having the page pass billing details to confirmPayment, which is a
-   * change to PaymentPage, not to this call.
-   *
-   * `shipping` is still worth sending: it puts the address on the Stripe object
-   * where Radar can score it and support can read it — and since our own table
-   * stores no address, it is the only copy that exists anywhere.
-   */
+  /** Attached to the intent as `shipping`, which is not the same thing as an AVS check and this comment used to claim it was. */
   billing?: {
     name: string;
     line1: string;
@@ -396,27 +294,14 @@ export interface PaymentIntentInput {
 
 export interface PaymentIntentResult {
   paymentIntentId: string;
-  /**
-   * Handed to Stripe.js in the browser to mount Elements and confirm the
-   * charge. It authorises exactly one payment and nothing else — it is not a
-   * secret key, and it is safe to send to the client. That is the whole point:
-   * the card is confirmed browser→Stripe, so the PAN never reaches us.
-   */
+  /** Handed to Stripe.js in the browser to mount Elements and confirm the charge. */
   clientSecret: string;
 }
 
 /** Simulate mode has no Stripe to hold state for us, so it holds its own. */
 const simulatedIntents = new Map<string, PaymentIntentInput>();
 
-/**
- * Creates a PaymentIntent for the embedded Elements flow.
- *
- * The alternative, createCheckoutSession, redirects the customer to a
- * Stripe-hosted page. This one keeps them on ours: Stripe.js mounts the card
- * fields as cross-origin iframes, so the page is ours while the inputs are
- * Stripe's. Both keep the platform at PCI SAQ A; only this one puts a payment
- * page in our own application, which is what the UC4 diagrams draw.
- */
+/** Creates a PaymentIntent for the embedded Elements flow. */
 export const createPaymentIntent = async (
   input: PaymentIntentInput
 ): Promise<PaymentIntentResult> => {
@@ -469,13 +354,7 @@ export const createPaymentIntent = async (
   return { paymentIntentId: intent.id, clientSecret: intent.client_secret };
 };
 
-/**
- * Reads a PaymentIntent back after the browser confirmed it.
- *
- * Returns the same VerifiedPayment shape as verifySession on purpose:
- * recordPaidBooking consumes either without caring which flow produced it, so
- * the two payment paths cannot drift in how a booking gets written.
- */
+/** Reads a PaymentIntent back after the browser confirmed it. */
 export const verifyPaymentIntent = async (
   paymentIntentId: string
 ): Promise<VerifiedPayment> => {
@@ -546,22 +425,7 @@ export interface RefundResult {
   currency: string;
 }
 
-/**
- * Refunds a captured payment.
- *
- * Amount is optional on purpose: omitting it tells Stripe to refund the full
- * captured total, which is always correct. Passing a locally computed "full"
- * amount can drift from what was actually captured and leave a few cents
- * unrefunded.
- *
- * Idempotency is Stripe-side via the key derived from the intent, so a retried
- * call returns the original refund rather than issuing a second one.
- *
- * The returned refundId has nowhere to go: the bookings table has no refund
- * column and no status, so a refunded stay still reads as paid in our database
- * and Stripe remains the only record that the money went back. Callers should
- * log the id. See the charge.refunded branch in webhookController.
- */
+/** Refunds a captured payment. */
 export const refundPayment = async (input: RefundInput): Promise<RefundResult> => {
   if (isSimulated()) {
     return {
@@ -608,14 +472,6 @@ export const constructWebhookEvent = (
     throw new Error('WEBHOOK_NOT_CONFIGURED');
   }
 
-  /**
-   * The static, not the instance. Verification is an HMAC over bytes we already
-   * hold — no API key is involved and nothing leaves the process — so requiring
-   * a configured Stripe client to do it was an accident of where the method
-   * hangs, and it made the whole webhook path unreachable in simulate mode: no
-   * STRIPE_SECRET_KEY meant no client, which meant every delivery answered 503.
-   * That is the one path a demo most needs to exercise, because it is the only
-   * thing that turns a charge the customer walked away from into a booking.
-   */
+  /** The static, not the instance. */
   return Stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
 };

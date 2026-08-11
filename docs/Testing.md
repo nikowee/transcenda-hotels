@@ -42,6 +42,12 @@ real requests and parse real payloads. Nothing in `src/` knows it is under test,
 and the suite is offline: `globalSetup.ts` blocks outbound sockets outright, so a
 call that escapes its interceptor fails rather than quietly reaching production.
 
+The one exception is `src/tests/external/` — real-network tests that hit
+external API. They are excluded from the default `npm test` glob and run
+on demand with `npm run test:external`. `globalSetup.ts` detects those runs and
+skips the nock guard entirely (nock is imported lazily), letting the tests use a real socket with normal
+decompression.
+
 Every client suite lives in `client/src/tests/`; every server suite lives in
 `server/src/tests/`. Tests are not co-located with source — keeping them out of
 `src/pages` and `src/components` is also what keeps them out of the coverage
@@ -86,6 +92,9 @@ cd client && npm run test
 
 # Backend: 375 tests (+3 pending)
 cd server && npm run test
+
+# Backend: real-network Ascenda smoke tests (opt-in, hits the live API)
+cd server && npm run test:external
 
 # E2E: 22 tests, auto-starts Docker
 cd e2e_testing && npm ci && npx playwright install chromium && npx playwright test
@@ -327,7 +336,9 @@ transcenda-hotels/
 ├── server/
 │   ├── .mocharc.json                    # Loads tsx + the network guard, for every invocation
 │   └── src/tests/
-│       ├── globalSetup.ts               # Blocks outbound sockets except loopback
+│       ├── globalSetup.ts               # Blocks outbound sockets except loopback; skipped for external runs
+│       ├── external/                    # Real-network tests (npm run test:external)
+│       │   └── ascenda-api.test.ts      # Hits the live Ascenda API
 │       ├── env.ts                       # Test env defaults, imported before ../index
 │       ├── setup.ts                     # Exports the app for supertest
 │       ├── helpers/stripeNock.ts        # nock lifecycle + Stripe fixtures

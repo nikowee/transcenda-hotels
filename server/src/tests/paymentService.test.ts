@@ -4,15 +4,7 @@ import { expect } from 'chai';
 import Stripe from 'stripe';
 import { toMinorUnits, toSafeError } from '../services/paymentService.js';
 
-/**
- * Unit tests for the two pure helpers in paymentService.
- *
- * These are deliberately not driven through HTTP. An endpoint test asserts that
- * a redirect URL came back; it cannot see that the amount attached to the Stripe
- * line item was off by 100x, because the simulated gateway never looks at it.
- * The same applies to toSafeError — a 500 body looks identical whether or not
- * the API key leaked into it.
- */
+/** Unit tests for the two pure helpers in paymentService. */
 
 /** Silences the correlation-id log so a passing run stays readable. */
 const withSilencedErrorLog = <T>(fn: () => T): T => {

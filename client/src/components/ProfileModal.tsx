@@ -18,13 +18,7 @@ const formatStay = (startDate: string, endDate: string): string => {
   return `${format(startDate)} – ${format(endDate)}`;
 };
 
-/**
- * Past or upcoming, decided from the checkout date.
- *
- * Derived rather than stored: `bookings` has no status column — a row exists
- * only once the charge has cleared, so every booking here is by definition
- * paid, and the only thing left to distinguish is whether the stay has happened.
- */
+/** Past or upcoming, decided from the checkout date. */
 const stayStatus = (endDate: string): 'Upcoming' | 'Completed' =>
   new Date(endDate) >= new Date() ? 'Upcoming' : 'Completed';
 
@@ -74,11 +68,7 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
     }
   }, [userId]);
 
-  /**
-   * Fetches on first open of the tab and again whenever it is reopened, rather
-   * than once on mount: the modal outlives a booking made in the same session,
-   * so a cached list would be missing the trip the guest just paid for.
-   */
+  /** Fetches on first open of the tab and again whenever it is reopened, rather than once on mount: the modal outlives a booking made in the same session, so a cached list would be missing the trip the guest just paid for. */
   useEffect(() => {
     if (isOpen && activeTab === 'bookings') void loadBookings();
   }, [isOpen, activeTab, loadBookings]);

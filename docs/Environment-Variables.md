@@ -22,11 +22,6 @@ The backend requires a `.env` file located at `server/.env`. Below is the comple
 | `SUPABASE_SECRET_KEY` | ✅ Yes | Supabase service role (secret) key for admin operations | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` |
 | `STRIPE_SECRET_KEY` | ✅ Yes | Stripe secret key for server-side payments | `sk_live_51H3...` or `sk_test_51H3...` |
 | `PORT` | ❌ No | Backend server port (defaults to 5000) | `5000` |
-| `TRUST_PROXY_HOPS` | ❌ No | Proxy hops in front of the server (default 1). Rate limiters key on `req.ip`, derived by counting back this many hops in `X-Forwarded-For`. Too low: all users share the proxy's bucket. Too high: the counted value is client-forgeable. `0` when running bare on localhost | `1` |
-| `RESEND_API_KEY` | ❌ No | With `EMAIL_FROM`, sends real confirmation emails through Resend's HTTP API. Absent, confirmations are logged to the console (the dev/test default) | `re_123...` |
-| `EMAIL_FROM` | ❌ No | Verified sender address for confirmation emails; required alongside `RESEND_API_KEY` | `bookings@example.com` |
-| `REDIS_STARTUP_RETRIES` | ❌ No | Connection attempts before giving up on a Redis that never came up (default 5). The cache is optional; search works without it | `5` |
-| `WEBHOOK_TARGET` | ❌ No | Where `npm run stripe:send` delivers its signed test event (default `http://localhost:PORT`). Dev tooling only — the server never reads it | `https://tunnel.example.com` |
 
 ---
 

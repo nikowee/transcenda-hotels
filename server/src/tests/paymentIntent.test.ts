@@ -21,23 +21,7 @@ import {
   withSilencedErrorLog,
 } from './helpers/stripeNock.js';
 
-/**
- * UC4 — the embedded Stripe Elements flow, end to end over HTTP.
- *
- * This path was added alongside hosted Checkout, not instead of it: the browser
- * asks POST /payment-intent for a client secret, confirms the card directly with
- * Stripe from the page, then posts the intent id to the same /confirm endpoint
- * the redirect flow uses. Both funnel into recordPaidBooking, so the guarantee
- * worth testing is that they cannot drift — one repricing, one amount
- * cross-check, one insert, one shape of row.
- *
- * The other half of this file is about the demo card. With no Stripe
- * credentials there is no Elements to mount and no real card to report, so the
- * demo form derives brand and last four in the browser and sends only those.
- * That field is a write into NOT NULL columns from an untrusted body, and the
- * only thing keeping it honest is that it is discarded unless the server itself
- * is simulating. Most of what follows exists to hold that line.
- */
+/** UC4 — the embedded Stripe Elements flow, end to end over HTTP. */
 
 const VALID_GUEST = {
   salutation: 'Ms',
@@ -58,8 +42,7 @@ const VALID_STAY = {
   children: 0,
 };
 
-/** A complete billing address. Required by the payment endpoints now that Stripe
- *  runs an AVS check against it, so every payment fixture has to carry one. */
+/** A complete billing address. */
 const VALID_BILLING = {
   line1: '10 Bayfront Avenue',
   line2: '#12-34',
@@ -73,11 +56,7 @@ const VALID_BILLING = {
 const EXPECTED_TOTAL = 784.8;
 const EXPECTED_MINOR = 78480;
 
-/**
- * What the simulator reports for the NOT NULL card columns. SIMULATED_CARD is
- * module-private in paymentService, so this restates it; a fallback that stops
- * matching means a malformed demo card is no longer falling back to it.
- */
+/** What the simulator reports for the NOT NULL card columns. */
 const SIMULATED_CARD = { brand: 'visa', last4: '4242', expMonth: 12, expYear: 2030 };
 
 /** Mirrors toSessionMetadata, for the live-mode intents nock hands back. */
@@ -86,10 +65,7 @@ const METADATA = {
   stay: JSON.stringify(VALID_STAY),
 };
 
-/**
- * The confirmation email logs a line per booking, and this suite writes enough
- * of them to bury the reporter output.
- */
+/** The confirmation email logs a line per booking, and this suite writes enough of them to bury the reporter output. */
 const quietly = async <T>(fn: () => Promise<T>): Promise<T> => {
   const original = console.log;
   console.log = () => {};
@@ -100,11 +76,7 @@ const quietly = async <T>(fn: () => Promise<T>): Promise<T> => {
   }
 };
 
-/**
- * Every request resets the limiter first. /payment-intent is throttled to 10 a
- * minute per address and supertest reuses one loopback address, so without this
- * a test that makes eleven calls fails on the eleventh for the wrong reason.
- */
+/** Every request resets the limiter first. */
 const postIntent = async (body: Record<string, unknown> = {}, session?: FakeSession) => {
   resetRateLimits();
   const pending = request(app)
@@ -119,11 +91,7 @@ const postConfirm = async (body: Record<string, unknown>) => {
   return quietly(() => request(app).post('/api/bookings/confirm').send(body));
 };
 
-/**
- * For the refusals: the handler logs the reason it turned a charge away, which
- * is exactly right in production and pure noise in a run where the refusal is
- * the assertion. Silences console.error only, so an unexpected one still shows.
- */
+/** For the refusals: the handler logs the reason it turned a charge away, which is exactly right in production and pure noise in a run where the refusal is the assertion. */
 const postConfirmExpectingRefusal = async (body: Record<string, unknown>) =>
   withSilencedErrorLog(() => postConfirm(body));
 
@@ -236,11 +204,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
       expect(booking.pricePaid).to.equal(EXPECTED_TOTAL);
     });
 
-    /**
-     * `simulated` tells the page whether to mount Stripe Elements or the demo
-     * form, and the demo form is what makes demoCard honoured at all. If a
-     * client could ask for it, it could ask for it against live credentials.
-     */
+    /** `simulated` tells the page whether to mount Stripe Elements or the demo form, and the demo form is what makes demoCard honoured at all. */
     it('decides the simulated flag itself, whatever the client asks for', async () => {
       for (const asked of [false, 'false', null, 0]) {
         const response = await postIntent({ simulated: asked });
@@ -295,11 +259,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
       expect(response.body.error).to.contain('stay');
     });
 
-    /**
-     * Both payment endpoints share preparePayment, so the two must refuse the
-     * same bodies for the same reasons. A divergence here is a divergence in
-     * what gets charged versus what gets stored.
-     */
+    /** Both payment endpoints share preparePayment, so the two must refuse the same bodies for the same reasons. */
     it('refuses exactly what POST /payment refuses', async () => {
       // The unknown-room case below is put to the supplier by both endpoints.
       // Without this the two agree on 502 rather than on 400 — still equal, so
@@ -325,23 +285,8 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
       }
     });
 
-    /**
-     * The client secret is safe in the browser — it authorises one payment and
-     * nothing else — but the intent id is the reconciliation handle, and nothing
-     * else about the booking has any business in this response.
-     */
-    /**
-     * The unconfigured case cannot be reached in-process: paymentService builds
-     * its Stripe client once at module scope from STRIPE_SECRET_KEY, and
-     * ../env.ts supplies one before any test runs. Clearing the variable later
-     * changes nothing, and an ESM namespace cannot be stubbed. So the branch is
-     * exercised where it actually lives — in a process that started without
-     * credentials and without simulate mode.
-     *
-     * It matters because the alternative to 503 is worse than an outage: a
-     * missing key must never degrade into "every card succeeds", which is a
-     * payment bypass rather than a convenience.
-     */
+    /** The client secret is safe in the browser — it authorises one payment and nothing else — but the intent id is the reconciliation handle, and nothing else about the booking has any business in this response. */
+    /** The unconfigured case cannot be reached in-process: paymentService builds its Stripe client once at module scope from STRIPE_SECRET_KEY, and ../env.ts supplies one before any test runs. */
     it('answers 503 when neither credentials nor simulate mode are configured', async function () {
       this.timeout(60_000);
 
@@ -438,11 +383,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
       }
     });
 
-    /**
-     * Regression, in the shape it would take on this path: the payment endpoint
-     * must not be optional. Posting a plausible-looking intent id has to produce
-     * nothing, or /payment-intent is decorative and anyone can book for free.
-     */
+    /** Regression, in the shape it would take on this path: the payment endpoint must not be optional. */
     it('cannot be made to write a booking from a forged intent id', async () => {
       const forged = `sim_pi_${randomUUID()}`;
 
@@ -469,10 +410,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
       expect(await findByPaymentId('pi_totally_made_up')).to.equal(null);
     });
 
-    /**
-     * A guest refreshing the payment page after confirming replays this, and
-     * Stripe's webhook races it besides. One charge must stay one booking.
-     */
+    /** A guest refreshing the payment page after confirming replays this, and Stripe's webhook races it besides. */
     it('is idempotent across repeated confirmations of one intent', async () => {
       const paymentIntentId = await startIntent();
 
@@ -531,11 +469,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
     });
   });
 
-  /**
-   * The two flows exist to give the customer a choice of payment page, not two
-   * versions of a booking. Everything after verification is shared code, and
-   * these are what would fail if that stopped being true.
-   */
+  /** The two flows exist to give the customer a choice of payment page, not two versions of a booking. */
   describe('both payment paths converge on the same record', () => {
     it('produces the same booking shape whichever path wrote it', async () => {
       const viaSession = await bookViaSession();
@@ -568,10 +502,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
     });
   });
 
-  /**
-   * The demo card, which is the one place an untrusted body reaches the card
-   * columns at all.
-   */
+  /** The demo card, which is the one place an untrusted body reaches the card columns at all. */
   describe('demoCard while simulating', () => {
     it('honours a well-formed demo card so the booking shows what was typed', async () => {
       const booking = await bookViaIntent(
@@ -608,12 +539,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
       expect(booking.card.brand).to.have.length(20);
     });
 
-    /**
-     * Each of these is a value that would otherwise land in a NOT NULL column:
-     * an empty brand, a two-character last4 in a character(4), a month of 13.
-     * The fallback is what keeps the row honest — a demo booking that says visa
-     * 4242 is wrong about which card was typed, but it is not corrupt.
-     */
+    /** Each of these is a value that would otherwise land in a NOT NULL column: an empty brand, a two-character last4 in a character(4), a month of 13. */
     const malformed: Array<{ label: string; demoCard: unknown }> = [
       {
         label: 'a last4 that is not four digits',
@@ -666,12 +592,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
       });
     }
 
-    /**
-     * The demo form computes last4 in the browser precisely so the number itself
-     * never travels, and readDemoCard has no field that would accept one. This
-     * asserts the outcome rather than the shape: whatever a client sends, the
-     * persisted booking must contain nothing that could be a PAN.
-     */
+    /** The demo form computes last4 in the browser precisely so the number itself never travels, and readDemoCard has no field that would accept one. */
     it('has no path by which a card number could reach storage', async () => {
       const booking = await bookViaIntent(
         {},
@@ -720,14 +641,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
     });
   });
 
-  /**
-   * With real credentials the card comes from Stripe and demoCard has to be
-   * discarded outright — otherwise a genuine charge can be labelled with a card
-   * the payer never used, in the columns a dispute would be argued from.
-   *
-   * nock stands in for Stripe here; withLiveStripe clears PAYMENTS_MODE so
-   * isSimulated() is false for the duration of the request.
-   */
+  /** With real credentials the card comes from Stripe and demoCard has to be discarded outright — otherwise a genuine charge can be labelled with a card the payer never used, in the columns a dispute would be argued from. */
   describe('with real Stripe credentials', () => {
     useStripeNock();
 
@@ -916,19 +830,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
     });
   });
 
-  /**
-   * Regression: the demo card must be gated on where the payment CAME FROM, not
-   * on whether the process happens to be in simulate mode.
-   *
-   * Those two diverge. verifyPaymentIntent only short-circuits to the simulator
-   * when the id starts with sim_pi_, so a genuine `pi_...` posted to a box
-   * running PAYMENTS_MODE=simulate with real credentials verifies against live
-   * Stripe — while isSimulated() still reads true. Gating on the mode let a
-   * client-supplied card overwrite the real one on an actual charge.
-   *
-   * Deliberately does NOT use withLiveStripe: leaving simulate mode ON while the
-   * intent verifies for real is the entire point of the test.
-   */
+  /** Regression: the demo card must be gated on where the payment CAME FROM, not on whether the process happens to be in simulate mode. */
   describe('demoCard is gated on provenance, not on the process mode', () => {
     it('ignores demoCard on a genuine charge even while PAYMENTS_MODE=simulate', async () => {
       expect(process.env.PAYMENTS_MODE, 'the bug needs simulate mode active').to.equal('simulate');
@@ -981,24 +883,9 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
     });
   });
 
-  /**
-   * The billing address has to travel out to Stripe with the intent. Nothing
-   * else stores it, so if it does not travel it is simply lost, and a booking
-   * that was authorised against an address would have none recorded.
-   */
+  /** The billing address has to travel out to Stripe with the intent. */
   describe('billing address round trip', () => {
-    /**
-     * The Stripe object is the only place the address is recorded anywhere —
-     * our own table stores none of it — so "it reaches Stripe" stops being a
-     * nicety and becomes the whole of its persistence.
-     *
-     * Asserted on the wire because that is the only layer that can show it. The
-     * simulator never builds a request, which is exactly how the parameter came
-     * to sit unused at the call site without a single test noticing.
-     *
-     * It lands as `shipping`. That is not an AVS check — see paymentService for
-     * why one is not reachable from here.
-     */
+    /** The Stripe object is the only place the address is recorded anywhere — our own table stores none of it — so "it reaches Stripe" stops being a nicety and becomes the whole of its persistence. */
     it('puts the address on the intent it sends to Stripe', async () => {
       useStripeNock();
 
@@ -1021,16 +908,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
       expect(sent['shipping[name]']).to.equal('Jane Tan');
     });
 
-    /**
-     * /payment mints an intent on mount, and a refresh or a second trip through
-     * checkout is a fresh mount. Without an idempotency key each one created a
-     * new PaymentIntent and abandoned the last: three intents were observed in
-     * the dashboard for a single ibis Styles booking, two of them stranded at
-     * requires_payment_method.
-     *
-     * Asserted on the header, because that is where Stripe reads it and putting
-     * it in the params object instead does nothing at all — silently.
-     */
+    /** /payment mints an intent on mount, and a refresh or a second trip through checkout is a fresh mount. */
     it('sends the same idempotency key when the same stay is re-submitted', async () => {
       useStripeNock();
 
@@ -1056,11 +934,7 @@ describe('UC4 — Elements / PaymentIntent payment flow', () => {
       expect(keys[0], 'a re-submitted stay must reuse its key').to.equal(keys[1]);
     });
 
-    /**
-     * The other half. A key that ignored the price would hand back the old
-     * intent after a reprice and charge an amount this server no longer quotes —
-     * strictly worse than the duplicates it set out to prevent.
-     */
+    /** The other half. */
     it('changes the key when the stay prices differently', async () => {
       useStripeNock();
 

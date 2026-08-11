@@ -3,17 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import BookingEntry from '../pages/BookingEntry';
 
-/**
- * The seam between Feature 3 (hotel details) and UC4.
- *
- * RoomList and CheckoutPage were written on different branches and spell the
- * same stay differently, so this component is the only thing standing between a
- * guest picking a room and a checkout page that says the stay is invalid. It is
- * also the piece most likely to rot silently: nothing else fails if RoomList
- * renames a parameter, so these assertions pin RoomList's actual contract.
- *
- *     RoomList sends  /booking?hotel&dest&in&out&guests&key
- */
+/** The seam between Feature 3 (hotel details) and UC4. */
 
 function LocationProbe() {
   const location = useLocation();
@@ -58,11 +48,7 @@ describe('BookingEntry', () => {
     });
   });
 
-  /**
-   * hotelName is absent by design — RoomList does not have it. The server
-   * resolves it from the supplier, so forwarding an empty one would be worse
-   * than forwarding none.
-   */
+  /** hotelName is absent by design — RoomList does not have it. */
   it('forwards no hotel name and no price', () => {
     renderEntry(FROM_ROOM_LIST);
 
@@ -78,12 +64,7 @@ describe('BookingEntry', () => {
     expect(landedAt().searchParams.get('adults')).toBe('5');
   });
 
-  /**
-   * The failure that actually happens: ResultsPage links to /hotel/:id without
-   * `dest`, so HotelDetailsPage reads null and RoomList forwards an empty
-   * string. Naming the missing parameter is the difference between a fixable
-   * report and "checkout is broken".
-   */
+  /** The failure that actually happens: ResultsPage links to /hotel/:id without `dest`, so HotelDetailsPage reads null and RoomList forwards an empty string. */
   it('names the missing parameter instead of pricing an incomplete stay', () => {
     renderEntry(FROM_ROOM_LIST.replace('dest=WD0M', 'dest='));
 

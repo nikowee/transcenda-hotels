@@ -7,39 +7,10 @@ import { delay, http, HttpResponse } from 'msw';
 import { server } from './setup';
 import PaymentPage from '../pages/PaymentPage';
 
-/**
- * UC4 payment page — the step that used to be a redirect to Stripe.
- *
- * Unlike CheckoutPage, this page *does* render card inputs when the server
- * reports it is simulating, so "there is no card field" is not the invariant
- * that can be asserted here. The invariant that replaces it is stronger and is
- * what the bulk of this file is about: whatever is typed into those inputs must
- * never leave the browser. The form derives brand and last four locally and
- * sends only those, so the number itself is not on the wire, is not in a log,
- * and cannot be captured by anything downstream of this component.
- *
- * Every request the page makes is recorded off MSW's own lifecycle events
- * rather than off individual handlers, so a leak to an endpoint nobody thought
- * to mock is caught too — that is precisely the shape a card-data leak takes.
- *
- * Stripe is stubbed at the module boundary. Elements needs a live client secret
- * and a network round trip to stripe.com; the suite stays offline, so the parts
- * under test are our own — which branch mounts, what confirmPayment is asked
- * for, and where each outcome routes.
- *
- * Handlers use wildcard origins so the suite does not depend on VITE_API_URL
- * being present in a local .env.
- */
+/** UC4 payment page — the step that used to be a redirect to Stripe. */
 
 const stripeStub = vi.hoisted(() => {
-  /**
-   * PaymentPage decides at module scope whether Stripe is available at all, by
-   * reading VITE_STRIPE_PUBLISHABLE_KEY. Stubbing it before the import makes
-   * both branches reachable; which one actually mounts is then the server's
-   * call, carried on `simulated` in the intent response, exactly as in
-   * production. A client that could pick for itself could ask for the demo
-   * form against live Stripe.
-   */
+  /** PaymentPage decides at module scope whether Stripe is available at all, by reading VITE_STRIPE_PUBLISHABLE_KEY. */
   vi.stubEnv('VITE_STRIPE_PUBLISHABLE_KEY', 'pk_test_suite');
   return { confirmPayment: vi.fn() };
 });
@@ -52,14 +23,7 @@ vi.mock('@stripe/react-stripe-js', () => ({
   Elements: ({ children }: { children: ReactNode }) => (
     <div data-testid="stripe-elements">{children}</div>
   ),
-  /**
-   * Stands in for the cross-origin iframes. Their whole point is that nothing
-   * in our tree can read them, so there is nothing here worth simulating —
-   * except onReady, which the page now gates the Pay button on. The real
-   * element fires it once its iframes mount; a stub that never does would leave
-   * the button permanently disabled and make every payment test fail for a
-   * reason that has nothing to do with what it is testing.
-   */
+  /** Stands in for the cross-origin iframes. */
   PaymentElement: ({ onReady }: { onReady?: () => void }) => {
     useEffect(() => onReady?.(), [onReady]);
     return <div data-testid="stripe-payment-element" />;
@@ -92,25 +56,14 @@ const HANDOFF = {
   },
 };
 
-/**
- * The server's answer to POST /payment-intent. `amount` is display only — the
- * confirm step reprices from the intent's metadata — and `simulated` is what
- * chooses the card UI. No digit run in here is 13 long, so the PAN assertions
- * below cannot be satisfied by fixture noise.
- */
+/** The server's answer to POST /payment-intent. */
 const INTENT = {
   clientSecret: 'pi_sim_abc_secret_simulated',
   paymentIntentId: 'pi_sim_abc',
   amount: 1308,
   currency: 'SGD',
   simulated: true,
-  /**
-   * The priced stay behind `amount`, which the booking summary renders.
-   *
-   * Deliberately consistent with it — 240 × 5 nights = 1200, +9% = 1308 — because
-   * the whole point of taking the summary from the intent response rather than
-   * from the sessionStorage handoff is that the figures cannot disagree.
-   */
+  /** The priced stay behind `amount`, which the booking summary renders. */
   quote: {
     ...HANDOFF.stay,
     endDate: '2026-08-06',
@@ -279,30 +232,14 @@ describe('PaymentPage', () => {
       ).toBeInTheDocument();
       expect(requestsTo('/api/bookings')).toEqual([]);
 
-      /**
-       * Two links out: the persistent nav one and the error card's own recovery
-       * action, so the dead end is escapable without the back button.
-       *
-       * To search, not to details. This case *is* "there are no details" — the
-       * handoff is what /checkout would have been resumed from, and without it
-       * that page can only say the link is missing every parameter. Offering
-       * "back to details" here sent the customer from one dead end to another,
-       * which is why the destination is asserted and not just the count.
-       */
+      /** Two links out: the persistent nav one and the error card's own recovery action, so the dead end is escapable without the back button. */
       const escapes = screen.getAllByRole('link', { name: /back to search/i });
       expect(escapes).toHaveLength(2);
       escapes.forEach((link) => expect(link).toHaveAttribute('href', '/'));
       expect(screen.queryByRole('link', { name: /back to details/i })).toBeNull();
     });
 
-    /**
-     * "Back to details" has to carry the stay, or it is not a way back.
-     *
-     * /checkout reads its stay from the URL, so a bare link lands on "this
-     * checkout link is missing destinationId, hotelId, …" — the customer is off
-     * the payment page and cannot return to it. The query is what lets that page
-     * price the stay again and resume at the review step.
-     */
+    /** "Back to details" has to carry the stay, or it is not a way back. */
     it('links back to the details page with the stay it needs', async () => {
       renderPayment();
 
@@ -322,12 +259,7 @@ describe('PaymentPage', () => {
       });
     });
 
-    /**
-     * A stay object that is present but incomplete used to pass the handoff
-     * guard and then throw inside render when the back link was built. There is
-     * no ErrorBoundary in this bundle, so a throw during render unmounts the
-     * whole tree: the customer gets a blank white page, not an error.
-     */
+    /** A stay object that is present but incomplete used to pass the handoff guard and then throw inside render when the back link was built. */
     it('treats a handoff with an unusable stay as no handoff at all', async () => {
       sessionStorage.setItem(
         HANDOFF_KEY,
@@ -392,11 +324,7 @@ describe('PaymentPage', () => {
     });
   });
 
-  /**
-   * The last screen before money moves. Checkout showed the same stay, but the
-   * customer has crossed a page boundary since and is about to commit a card
-   * against it — a wrong-dates booking that survives this page is paid for.
-   */
+  /** The last screen before money moves. */
   describe('booking summary', () => {
     const summary = () => screen.getByRole('complementary', { name: /booking summary/i });
 
@@ -424,12 +352,7 @@ describe('PaymentPage', () => {
       expect(panel.getByText('SGD 1,308.00')).toBeInTheDocument();
     });
 
-    /**
-     * The summary must come from the intent response, not the handoff. The
-     * browser carries the stay across the two pages but never the price, and a
-     * summary assembled from sessionStorage could show a stay the server never
-     * priced.
-     */
+    /** The summary must come from the intent response, not the handoff. */
     it('renders the served quote even when it disagrees with the handoff', async () => {
       server.use(
         intentHandler({
@@ -447,12 +370,7 @@ describe('PaymentPage', () => {
       expect(panel.getByText('SGD 999.00')).toBeInTheDocument();
     });
 
-    /**
-     * A quote-less response is what an older server sends. Reading
-     * quote.currency off undefined throws during render, React unmounts the
-     * tree, and the customer gets a blank page with no error — the exact shape
-     * of the drift that blanked checkout once already.
-     */
+    /** A quote-less response is what an older server sends. */
     it('still renders the card form when the response carries no quote', async () => {
       const { quote: _omitted, ...withoutQuote } = INTENT;
       server.use(
@@ -522,14 +440,7 @@ describe('PaymentPage', () => {
       expect(screen.getByLabelText(/card number/i)).toHaveValue(expected);
     });
 
-    /**
-     * The property this whole page is judged on.
-     *
-     * The demo form has to accept a PAN — there is no Stripe iframe to take it
-     * — so the boundary moves from "no field exists" to "the field's contents
-     * never leave the tab". Asserted against everything the browser sent, not
-     * just the request we expected it to send.
-     */
+    /** The property this whole page is judged on. */
     it('never puts the card number on the wire', async () => {
       const typed = '4242424242424242';
       const user = userEvent.setup();
@@ -578,13 +489,7 @@ describe('PaymentPage', () => {
       ]);
     });
 
-    /**
-     * Guards the guard. Every PAN assertion above is a negative one, and a
-     * negative assertion passes just as happily when the recorder is empty or
-     * the pattern is wrong as when the code is clean. This drives a PAN through
-     * the same recorder deliberately and requires the detector to catch it, so
-     * "no card number was sent" cannot quietly become "nothing was inspected".
-     */
+    /** Guards the guard. */
     it('detects a card number on the wire when there is one to detect', async () => {
       const planted = '4242424242424242';
 

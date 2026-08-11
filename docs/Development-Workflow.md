@@ -115,6 +115,12 @@ The frontend starts at [http://localhost:3000](http://localhost:3000).
 | `dev` | `tsx watch src/index.ts` | Start dev server with hot reload |
 | `build` | `tsc` | Compile TypeScript to JavaScript |
 | `type-check` | `tsc --noEmit` | Check types without emitting files |
+| `test` | `mocha --exit -r tsx --spec src/tests/**/*.test.ts --exclude src/tests/external/**` | Run unit/integration suite (excludes real-network tests) |
+| `test:watch` | `mocha --exit -r tsx --watch --spec src/tests/**/*.test.ts --exclude src/tests/external/**` | Same, in watch mode |
+| `test:external` | `mocha --exit -r tsx --spec src/tests/external/**/*.test.ts` | Real-network Ascenda smoke tests (hits the live API) |
+| `test:all` | `mocha --exit -r tsx --spec src/tests/**/*.test.ts` | Everything, including external |
+| `stripe:secret` | `tsx src/scripts/stripeWebhook.ts secret` | Generate/write a Stripe webhook secret |
+| `stripe:send` | `tsx src/scripts/stripeWebhook.ts send` | Deliver a signed webhook by hand |
 
 ### Frontend (`client/package.json`)
 
@@ -135,6 +141,7 @@ The project has three test suites covering different layers of the stack:
 |-------|-------|---------|----------|
 | **Frontend Unit + Integration** | 10 | `cd client && npm run test` | `client/src/` |
 | **Backend API Integration** | 7 | `cd server && npm run test` | `server/src/tests/` |
+| **Backend External (real network)** | 4 | `cd server && npm run test:external` | `server/src/tests/external/` |
 | **E2E (auto-starts Docker)** | 5 | `cd e2e_testing && npx playwright test` | `e2e_testing/tests/` |
 
 ### Running Individual Suites
@@ -154,6 +161,9 @@ cd server && npm run test
 
 # Backend tests with watch mode
 cd server && npm run test:watch
+
+# Backend real-network smoke tests (hits the live Ascenda API)
+cd server && npm run test:external
 
 # E2E tests (Playwright — auto-starts Docker containers)
 cd e2e_testing && npx playwright test

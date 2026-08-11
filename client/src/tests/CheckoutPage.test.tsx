@@ -8,32 +8,9 @@ import CheckoutPage from '../pages/CheckoutPage';
 import type { CheckoutQuote } from '../types/booking';
 import * as checkoutHandoff from '../lib/checkoutHandoff';
 
-/**
- * UC4 checkout page.
- *
- * The most important assertion here is still a negative one: this page must
- * never render a card input. Card entry lives on /payment and nowhere else, so
- * the moment a PAN can be typed into *this* DOM the boundary has moved without
- * anyone deciding to move it.
- *
- * The second is that no amount travels out of the browser. The server prices
- * the stay from its own inventory when it mints the payment intent, so a total
- * appearing in the handoff would mean the price is negotiable.
- *
- * The pay button no longer talks to Stripe. It writes the guest and stay into
- * sessionStorage and routes to /payment, so the assertions below are about what
- * lands in storage and where the router ends up — not about a redirect URL.
- *
- * Handlers use wildcard origins so the suite does not depend on VITE_API_URL
- * being present in a local .env.
- */
+/** UC4 checkout page. */
 
-/**
- * Typed as CheckoutQuote so a change to the shared shape breaks the fixture
- * rather than the assertions — this is the exact body GET /checkout returns.
- * The page renders nightlyTotal (the whole stay's per-night cost), not a
- * per-room rate; nightlyRates is index-aligned with roomTypes.
- */
+/** Typed as CheckoutQuote so a change to the shared shape breaks the fixture rather than the assertions — this is the exact body GET /checkout returns. */
 const QUOTE: CheckoutQuote = {
   destinationId: 'dest-1',
   hotelId: 'marina-bay',
@@ -71,20 +48,8 @@ const GUEST = {
 const quoteHandler = (overrides: Partial<CheckoutQuote> = {}) =>
   http.get('*/api/bookings/checkout', () => HttpResponse.json({ ...QUOTE, ...overrides }));
 
-/**
- * /payment is stubbed rather than mounted. This suite's interest ends at "the
- * router arrived there with the handoff written"; what the payment page then
- * does with it is PaymentPage.test.tsx's problem.
- */
-/**
- * A complete stay, because the page no longer invents one.
- *
- * It used to fall back to 'demo-hotel' / 'Demo Hotel' / 'deluxe-king' when a
- * parameter was absent, so every case here could mount a bare '/checkout' and
- * still get a quote. That default was the bug behind "the payment page shows a
- * booking I never made": anything that failed to arrive was silently replaced
- * and priced. These entries now carry what the hotel page actually sends.
- */
+/** /payment is stubbed rather than mounted. */
+/** A complete stay, because the page no longer invents one. */
 const STAY_QUERY =
   'destinationId=dest-1&hotelId=marina-bay&hotelName=Marina%20Bay%20Sands' +
   '&roomTypes=deluxe-king&startDate=2026-08-01&endDate=2026-08-04&adults=2&children=1';
@@ -159,12 +124,7 @@ const readHandoff = () => {
   return raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
 };
 
-/**
- * Records any call to the endpoint the page used to hit. Registered on every
- * test rather than only where it is asserted: with a handler in place a stray
- * POST resolves quietly instead of tripping MSW's unhandled-request error, so
- * the only thing that can catch it is an explicit count.
- */
+/** Records any call to the endpoint the page used to hit. */
 const watchLegacyPaymentEndpoint = () => {
   const calls: string[] = [];
 
@@ -184,14 +144,7 @@ const watchLegacyPaymentEndpoint = () => {
 
 describe('CheckoutPage', () => {
   describe('resuming after a failed payment', () => {
-    /**
-     * The complaint this closes: a payment that did not go through dropped the
-     * customer back on an empty guest form and made them re-enter their name,
-     * email, phone and full billing address before they could try the card
-     * again — while the cancelled banner told them to "pick up where you left
-     * off". The handoff was in sessionStorage the whole time; the page simply
-     * never read it back.
-     */
+    /** The complaint this closes: a payment that did not go through dropped the customer back on an empty guest form and made them re-enter their name, email, phone and full billing address before they could try the card again — while the cancelled banner told them to "pick up where you left off". */
     const RESUMABLE = {
       guestDetails: {
         salutation: 'Dr',
@@ -226,11 +179,7 @@ describe('CheckoutPage', () => {
 
       renderCheckout();
 
-      /**
-       * /pay sgd/i, not /pay/i — the guest step's submit reads "Continue to
-       * payment", which a loose match also satisfies, so the looser assertion
-       * passed even with the page starting on step 1.
-       */
+      /** /pay sgd/i, not /pay/i — the guest step's submit reads "Continue to payment", which a loose match also satisfies, so the looser assertion passed even with the page starting on step 1. */
       expect(await screen.findByRole('button', { name: /pay sgd/i })).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /continue to payment/i })).toBeNull();
     });
@@ -265,14 +214,7 @@ describe('CheckoutPage', () => {
       ).toBeInTheDocument();
     });
 
-    /**
-     * The billing address is the half of the resume nothing was pinning.
-     *
-     * It is also the expensive half — six fields including a postal code — and
-     * it is invisible from the review step, so a regression that dropped it
-     * would have shown up as a 422 on the payment page rather than as anything
-     * wrong here. Stepping back to the form is the only way to see it.
-     */
+    /** The billing address is the half of the resume nothing was pinning. */
     it('keeps the billing address as well as the guest', async () => {
       sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(RESUMABLE));
 
@@ -285,13 +227,7 @@ describe('CheckoutPage', () => {
       expect(screen.getByDisplayValue('018989')).toBeInTheDocument();
     });
 
-    /**
-     * The wrong-guest bug. A handoff outlives the booking it was written for —
-     * nothing clears it on abandonment, by design — so a customer who walked
-     * away from paying for one stay and then started a different one had the
-     * first booking's guest seated on the second one's review step, one click
-     * from being confirmed and emailed under someone else's name.
-     */
+    /** The wrong-guest bug. */
     it('does not resume a handoff belonging to a different stay', async () => {
       sessionStorage.setItem(
         HANDOFF_KEY,
@@ -310,11 +246,7 @@ describe('CheckoutPage', () => {
       expect(screen.queryByRole('button', { name: /pay sgd/i })).toBeNull();
     });
 
-    /**
-     * A handoff with no address cannot pass the payment endpoint's billing
-     * validator, and step 2 has nowhere to enter one — so resuming onto it puts
-     * the customer in front of a Pay button that can only ever 422.
-     */
+    /** A handoff with no address cannot pass the payment endpoint's billing validator, and step 2 has nowhere to enter one — so resuming onto it puts the customer in front of a Pay button that can only ever 422. */
     it('starts at the form when the handoff carries no billing address', async () => {
       const { billingAddress: _dropped, ...withoutBilling } = RESUMABLE;
       sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(withoutBilling));
@@ -328,12 +260,7 @@ describe('CheckoutPage', () => {
       expect(screen.getByDisplayValue('jane@example.com')).toBeInTheDocument();
     });
 
-    /**
-     * A bare /checkout is what an old bookmark, or the browser's back button off
-     * a redirect, actually produces. The page reads its stay from the URL, so
-     * without the handoff filling in it would answer "this checkout link is
-     * missing destinationId, hotelId, …" about a stay sitting in storage.
-     */
+    /** A bare /checkout is what an old bookmark, or the browser's back button off a redirect, actually produces. */
     it('prices the stored stay when the link carries no parameters', async () => {
       sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(RESUMABLE));
 
@@ -343,10 +270,7 @@ describe('CheckoutPage', () => {
       expect(screen.queryByText(/this checkout link is missing/i)).toBeNull();
     });
 
-    /**
-     * Verbatim, because the E2E spec asserts this sentence case-sensitively and
-     * a reworded banner passed every unit test while breaking that run.
-     */
+    /** Verbatim, because the E2E spec asserts this sentence case-sensitively and a reworded banner passed every unit test while breaking that run. */
     it('says nothing was charged when the payment was cancelled', async () => {
       sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(RESUMABLE));
 
@@ -381,11 +305,7 @@ describe('CheckoutPage', () => {
     vi.restoreAllMocks();
   });
 
-  /**
-   * The bug this replaced: every parameter had a demo default, so a link that
-   * lost one still produced a quote — for a stay the guest never chose — and
-   * the payment page then showed that substitute back to them as their booking.
-   */
+  /** The bug this replaced: every parameter had a demo default, so a link that lost one still produced a quote — for a stay the guest never chose — and the payment page then showed that substitute back to them as their booking. */
   describe('an incomplete link', () => {
     it('refuses to price a stay rather than inventing one', async () => {
       renderCheckout('/checkout?hotelId=marina-bay&startDate=2026-08-01');
@@ -436,11 +356,7 @@ describe('CheckoutPage', () => {
     expect(screen.getByText('Deluxe King')).toBeInTheDocument();
   });
 
-  /**
-   * A supplier room id is an opaque UUID. Rendering roomTypes directly put one
-   * on screen where the room name belongs the moment a booking came from a real
-   * hotel instead of the demo catalogue.
-   */
+  /** A supplier room id is an opaque UUID. */
   it('shows the room name rather than the supplier id', async () => {
     server.use(
       http.get('*/api/bookings/checkout', () =>

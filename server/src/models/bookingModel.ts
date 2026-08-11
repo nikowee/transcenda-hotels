@@ -14,27 +14,12 @@ export type {
   StayDetails,
 } from './bookingTypes.js';
 
-/**
- * BookingModel — the «Database Model» box from the UC4 class diagram, written
- * against the deployed Supabase `bookings` table.
- *
- * The table has payment_id and price_paid NOT NULL and no status column, so a
- * booking cannot be represented before it is paid for. insertOne is therefore
- * only ever called after Stripe has confirmed the charge, and there is no
- * PENDING state to transition out of.
- *
- * The cost of that is stated plainly: if this insert fails, the customer has
- * been charged and no row exists. findByPaymentId plus the webhook retry are
- * the recovery path — see webhookController. A unique constraint on
- * payment_id is what would make that recovery airtight.
- */
+/** BookingModel — the «Database Model» box from the class diagram, written against the deployed Supabase `bookings` table. */
 
 const TABLE = 'bookings';
 
-/**
- * In-process fallback so the flow stays demoable without credentials. Single
- * process only, and cleared on restart.
- */
+// In-memory fallback store: keeps the whole flow demoable without Supabase
+// credentials (single process only, cleared on restart).
 const memoryStore = new Map<string, BookingRecord>();
 
 export const isSupabaseConfigured = (): boolean => {
@@ -42,7 +27,7 @@ export const isSupabaseConfigured = (): boolean => {
   return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY);
 };
 
-/** Lazy: ../lib/supabaseClient throws at module scope when env vars are absent. */
+/** Lazy import: supabaseClient throws at module scope when env vars are absent. */
 const getClient = async () => {
   const { supabaseAdmin } = await import('../lib/supabaseClient.js');
   return supabaseAdmin;
@@ -66,13 +51,7 @@ const toRow = (input: BookingInput) => ({
   guest_last_name: input.guest.lastName,
   guest_email: input.guest.email,
   guest_phone: input.guest.phone,
-  /**
-   * No billing_* columns are written: the deployed table does not have them,
-   * and PostgREST rejects an insert wholesale if any column in it is unknown —
-   * which would fail the entire booking after the charge has already been
-   * captured. The address still travels to Stripe in the PaymentIntent's
-   * billing_details for the AVS check, which is where it is used.
-   */
+  /** Safety guardrail: write no billing_* columns. */
   price_paid: input.pricePaid,
   payment_id: input.paymentId,
   payee_id: input.payeeId,
@@ -104,12 +83,7 @@ const fromRow = (row: BookingRow): BookingRecord => ({
     phone: row.guest_phone,
     specialRequests: row.special_requests,
   },
-  /**
-   * Tolerant read: a column that does not exist is simply absent from a
-   * `select('*')` response, so row.billing_line1 is undefined and this
-   * resolves to null — the deployed table has no billing_* columns, and the
-   * same answer covers any booking written before such columns exist.
-   */
+  /** Tolerant read: a column that does not exist is simply absent from the select('*') response, so billing resolves to null. */
   billing: row.billing_line1
     ? {
         line1: row.billing_line1,
@@ -133,59 +107,18 @@ const fromRow = (row: BookingRow): BookingRecord => ({
   createdAt: row.created_at,
 });
 
-/**
- * Writes in progress, keyed by payment_id.
- *
- * Three writers reach insertOne for a single charge: the browser posting
- * /confirm, the Stripe webhook recovering, and Stripe redelivering that webhook
- * when the first delivery is slow. They are concurrent requests, and they all
- * land in this one Express process.
- *
- * Without this map they interleave. `await findByPaymentId` yields, so every
- * one of them observes "no booking yet" before any of them has written, and
- * every one of them then writes. That is not theoretical: 7 of the 11 payments
- * in the development database had two or three rows each, written 9–164ms
- * apart. A read-then-write cannot fix itself — something has to serialise the
- * writers, and in a single-process deployment this is the cheapest thing that
- * can.
- *
- * Callers share the *promise*, so the second caller waits for the first write
- * and receives the row it produced rather than starting a second one.
- */
+/** Duplicate-write lock: writes in progress, keyed by payment_id. */
 const writesInFlight = new Map<string, Promise<BookingRecord>>();
 
 /**
- * Writes a paid booking.
- *
- * Idempotent by payment_id at three layers, because each closes a gap the one
- * below it cannot:
- *
- *   1. writesInFlight serialises concurrent writers inside this process. This
- *      is what stops the duplicates actually being produced today.
- *   2. findByPaymentId answers cheaply for a confirmation that arrives after
- *      an earlier one has already completed and left the map.
- *   3. A 23505 from Postgres catches a writer in *another* process — a second
- *      replica, or a restart mid-flight. That one needs a unique constraint
- *      on payment_id, which the deployed table does not have yet; until it
- *      does, layer 3 has nothing to catch and layers 1 and 2 are load-bearing.
- *
- * `onCreated` fires for the caller that actually wrote the row, and for nobody
- * else. Deduplicating the *write* is not enough on its own: two concurrent
- * confirmers are handed the same record and cannot tell from the return value
- * which of them produced it, so anything that must happen once per booking
- * rather than once per call — sending the confirmation email — would happen
- * twice. Passing it here is what makes "once" mean once.
+ * Idempotent by payment_id: the in-flight lock, then findByPaymentId, then
+ * Postgres 23505. onCreated fires only for the caller that wrote the row.
  */
 export const insertOne = async (
   input: BookingInput,
   onCreated?: (record: BookingRecord) => void | Promise<void>
 ): Promise<BookingRecord> => {
-  /**
-   * No await between the lookup and the set, so a second caller entering here
-   * cannot slip past before the first has registered its write. That ordering
-   * is the entire mechanism — introducing an await above the `set` below would
-   * silently restore the race this exists to close.
-   */
+  /** Ordering guardrail: no await between the lookup and the set, so a second caller cannot slip past before the first registers its write. */
   const inFlight = writesInFlight.get(input.paymentId);
   if (inFlight) return inFlight;
 
@@ -197,13 +130,7 @@ export const insertOne = async (
   return write;
 };
 
-/**
- * Runs onCreated without letting it affect the write.
- *
- * It executes inside the shared promise, so an exception here would reject that
- * promise for the losing caller too — turning a side effect into a failed
- * booking after the money is captured. Swallowed and logged instead.
- */
+/** Run onCreated without letting it affect the write. */
 const announceCreated = async (
   record: BookingRecord,
   onCreated?: (record: BookingRecord) => void | Promise<void>
@@ -244,19 +171,7 @@ const performWrite = async (
     .select()
     .single();
 
-  /**
-   * 23505 is Postgres' unique_violation: another request inserted this
-   * payment_id between the findByPaymentId above and this insert.
-   *
-   * That gap is real. The browser confirms while the webhook recovers, or the
-   * confirmation page mounts twice — both read no booking, both write one, and
-   * the guest ends up with two rows for one charge. Losing that race is the
-   * correct outcome, not an error: return whatever the winner wrote.
-   *
-   * This only bites once a unique constraint on payment_id exists in the
-   * database. Without it Postgres accepts both rows and there is nothing
-   * here to catch.
-   */
+  /** Race handler: 23505 is Postgres' unique_violation. */
   if (error) {
     if (error.code === '23505') {
       // Lost the race in another process: that writer created the row, and

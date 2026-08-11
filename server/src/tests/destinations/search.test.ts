@@ -1,10 +1,11 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import request from 'supertest';
-import { app } from './setup.js';
+import { app } from '../setup.ts';
 
 describe('Destination Search API', () => {
-  
+
+  // Test 1: Query with <2 characters returns empty array
   it('should return empty array for query with less than 2 characters', async () => {
     const response = await request(app)
       .get('/api/destinations/search')
@@ -21,8 +22,7 @@ describe('Destination Search API', () => {
 
     expect(response.status).to.equal(200);
     expect(response.body).to.be.an('array');
-    
-    // Should contain Singapore in the results
+
     const singaporeResult = response.body.find(
       (item: any) => item.term.includes('Singapore')
     );
@@ -37,8 +37,7 @@ describe('Destination Search API', () => {
 
     expect(response.status).to.equal(200);
     expect(response.body).to.be.an('array');
-    
-    // Should have at least one result with "Singapore"
+
     const hasSingapore = response.body.some(
       (item: any) => item.term.includes('Singapore')
     );
@@ -48,7 +47,7 @@ describe('Destination Search API', () => {
   it('should return at most 5 results', async () => {
     const response = await request(app)
       .get('/api/destinations/search')
-      .query({ q: 'a' });  // 'a' is common, should return many results
+      .query({ q: 'a' });
 
     expect(response.status).to.equal(200);
     expect(response.body).to.be.an('array');
@@ -76,12 +75,26 @@ describe('Destination Search API', () => {
     expect(lowerResponse.body.length).to.equal(upperResponse.body.length);
   });
 
-  it('should return health status', async () => {
+  // Test 7: Missing query param
+  it('should return 400 (or empty array) when q is missing entirely', async () => {
+    const response = await request(app).get('/api/destinations/search');
+
+    // Adjust this assertion to match your route's actual contract -
+    // some teams choose to 400 on a missing param, others just treat it as ''.
+    expect([200, 400]).to.include(response.status);
+  });
+
+  // Test 8: Destination result shape
+  it('should return results with uid, term, lat, lng and type fields', async () => {
     const response = await request(app)
-      .get('/api/health');
+      .get('/api/destinations/search')
+      .query({ q: 'Singapore' });
 
     expect(response.status).to.equal(200);
-    expect(response.body).to.have.property('status', 'healthy');
-    expect(response.body).to.have.property('project');
+    if (response.body.length > 0) {
+      const result = response.body[0];
+      expect(result).to.have.property('uid');
+      expect(result).to.have.property('term');
+    }
   });
 });

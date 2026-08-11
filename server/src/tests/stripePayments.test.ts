@@ -21,17 +21,7 @@ import {
   stripeError,
 } from './helpers/stripeNock.js';
 
-/**
- * Stripe payments over the live SDK path, with nock standing in for the API.
- *
- * These are the tests the simulator cannot give us. It short-circuits before any
- * request is built, so it can never catch a wrong parameter name, a wrong unit,
- * or a response field we misread — which is exactly how a PaymentIntent created
- * with `confirm: false` shipped while reporting every booking as PAID.
- *
- * Assertions here therefore check the *request Stripe receives*, not just the
- * value we hand back.
- */
+/** Stripe payments over the live SDK path, with nock standing in for the API. */
 
 const METADATA = {
   guest: JSON.stringify({
@@ -129,11 +119,7 @@ describe('Stripe payments (live SDK path via nock)', () => {
       expect(amountKeys).to.deep.equal(['line_items[0][price_data][unit_amount]']);
     });
 
-    /**
-     * Nothing is written before payment, so this metadata is the only record of
-     * what the customer asked for. If it does not reach Stripe, the charge
-     * clears and the booking can never be reconstructed from anything.
-     */
+    /** Nothing is written before payment, so this metadata is the only record of what the customer asked for. */
     it('carries the guest and stay out in the session metadata', async () => {
       let received: Record<string, string> = {};
 
@@ -285,12 +271,7 @@ describe('Stripe payments (live SDK path via nock)', () => {
       expect(result.metadata).to.deep.equal(METADATA);
     });
 
-    /**
-     * The card columns are NOT NULL and live two hops down the object graph, so
-     * an unexpanded retrieve produces a payment that can never be inserted.
-     * Asking Stripe to expand is the fix, and this asserts the request actually
-     * carries the parameter rather than trusting the fixture.
-     */
+    /** The card columns are NOT NULL and live two hops down the object graph, so an unexpanded retrieve produces a payment that can never be inserted. */
     it('asks Stripe to expand the payment method, or the card columns arrive empty', async () => {
       let expandParam: string | null = null;
 
@@ -516,17 +497,7 @@ describe('Stripe payments (live SDK path via nock)', () => {
     });
   });
 
-  /**
-   * Regression guard. FetchHttpClient captures globalThis.fetch in its
-   * constructor, so a client built before nock patched the global kept the
-   * pristine fetch and every "intercepted" call went to the real Stripe API —
-   * the suite was testing production over the network and reporting an invalid
-   * API key. paymentService now binds fetch per call; this proves it, by
-   * requiring that an unmocked request is refused rather than sent.
-   *
-   * If this test ever fails, nothing else in this file is testing what it says
-   * it is testing.
-   */
+  /** Regression guard. */
   describe('interception is actually in force', () => {
     it('blocks a Stripe request that has no interceptor', async function () {
       // The SDK retries a refused connection twice before giving up, which is
@@ -567,12 +538,7 @@ describe('Stripe payments (live SDK path via nock)', () => {
       expect(nock.pendingMocks()).to.have.length(0);
     });
 
-    /**
-     * The simulator holds what it was handed so verifySession can give it back.
-     * Without that the metadata carrying the guest and stay evaporates at the
-     * redirect and the simulated flow can never reach an insert — which makes
-     * every HTTP-level booking test in this suite unable to run.
-     */
+    /** The simulator holds what it was handed so verifySession can give it back. */
     it('hands the session metadata back after the redirect', async () => {
       const clientReferenceId = randomUUID();
 

@@ -7,23 +7,7 @@ import { server } from './setup';
 import ConfirmationPage from '../pages/ConfirmationPage';
 import type { BookingRecord } from '../types/booking';
 
-/**
- * UC4 confirmation page.
- *
- * Every case here renders inside <StrictMode> on purpose, because that is what
- * main.tsx does and it is what broke this page: React double-mounts in dev, so
- * any "run once" guard that skips the second mount strands the first mount's
- * fetch behind an already-tripped cancellation flag, and the page spins
- * forever. A test that mounts once cannot see that, so these must not be
- * "simplified" by dropping the wrapper.
- *
- * There is no payment status to assert. bookings has price_paid and payment_id
- * NOT NULL and no status column, so a record coming back at all is the proof
- * that the charge cleared — the only other outcome is that no record exists yet.
- *
- * Handlers use wildcard origins so the suite does not depend on VITE_API_URL
- * being present in a local .env.
- */
+/** UC4 confirmation page. */
 
 const BOOKING_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 const SESSION_ID = 'cs_test_1';
@@ -78,11 +62,7 @@ const renderConfirmation = (query: string) =>
 /** What hosted Checkout redirects back to: a session id and nothing else. */
 const RETURNED_FROM_STRIPE = `?session_id=${SESSION_ID}`;
 
-/**
- * What the embedded Elements page routes to instead. There is no hosted page to
- * come back from, so there is no session — the payment intent is the handle,
- * and it is equally worthless to a forger because the server still asks Stripe.
- */
+/** What the embedded Elements page routes to instead. */
 const RETURNED_FROM_ELEMENTS = `?payment_intent=${PAYMENT_INTENT_ID}`;
 
 /** A revisit from the confirmation email, long after the payment. */
@@ -109,16 +89,7 @@ describe('ConfirmationPage', () => {
     expect(screen.getAllByText('jane@example.com')).toHaveLength(2);
   });
 
-  /**
-   * The handoff has to die here, not only on the payment page.
-   *
-   * PaymentPage clears it in its success handler, which covers cards Stripe
-   * settles inline. A bank that demands a 3DS challenge takes the whole page
-   * away and returns the browser straight to this URL, so confirmPayment never
-   * resolves and that handler never runs. The handoff then survives a paid
-   * booking, and the customer's next visit to /checkout is auto-resumed onto
-   * the stay they have already paid for.
-   */
+  /** The handoff has to die here, not only on the payment page. */
   it('clears the checkout handoff once a booking is confirmed', async () => {
     sessionStorage.setItem(
       'transcenda:checkout',

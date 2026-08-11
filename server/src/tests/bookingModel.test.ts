@@ -12,15 +12,7 @@ import {
 } from '../models/bookingModel.js';
 import type { BookingInput } from '../models/bookingTypes.js';
 
-/**
- * The storage layer, tested directly.
- *
- * There is no status column and no booking_reference any more: a row exists
- * only because a charge cleared, and payment_id is the handle everything
- * reconciles against. The properties that matter here are therefore the ones
- * the HTTP tests cannot see — that insertOne refuses to write the same charge
- * twice, and that each lookup answers a different question about the same row.
- */
+/** The storage layer, tested directly. */
 
 const guest = {
   salutation: 'Ms',
@@ -42,11 +34,7 @@ const stay = {
   children: 1,
 };
 
-/**
- * Payment ids are derived from a per-call UUID rather than a shared constant.
- * The in-memory store lives for the whole run, so a reused id lets one test
- * resolve another test's booking — that has already caused a real failure.
- */
+/** Payment ids are derived from a per-call UUID rather than a shared constant. */
 const bookingInput = (overrides: Partial<BookingInput> = {}): BookingInput => ({
   userId: null,
   guest,
@@ -124,12 +112,7 @@ describe('bookingModel', () => {
       expect(record.guest.specialRequests).to.equal(null);
     });
 
-    /**
-     * The single most important property in this file. A retried /confirm and a
-     * redelivered webhook both land here with the same payment_id, and the
-     * database has no unique constraint on the column, so this read-then-write
-     * is the only thing stopping one charge becoming two bookings.
-     */
+    /** The single most important property in this file. */
     it('returns the existing booking instead of writing the same charge twice', async () => {
       const input = bookingInput();
 
@@ -139,20 +122,7 @@ describe('bookingModel', () => {
       expect(second.id).to.equal(first.id);
     });
 
-    /**
-     * The case the sequential test above cannot see, and the one that actually
-     * happened: 7 of 11 payments in the development database had between two
-     * and three rows, every set written 9–164ms apart.
-     *
-     * Three writers reach insertOne for one charge — the browser confirming,
-     * the Stripe webhook recovering, and Stripe redelivering that webhook —
-     * and they are concurrent, not sequential. `await findByPaymentId` yields,
-     * so all of them observe "no booking yet" before any of them has written,
-     * and all of them then write.
-     *
-     * Awaiting the two calls one after the other, as the test above does, is
-     * exactly the shape that never reproduces it.
-     */
+    /** The case the sequential test above cannot see, and the one that actually happened: 7 of 11 payments in the development database had between two and three rows, every set written 9–164ms apart. */
     it('writes one row when two callers confirm the same charge at once', async () => {
       const input = bookingInput();
 

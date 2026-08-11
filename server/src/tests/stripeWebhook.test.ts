@@ -8,21 +8,7 @@ import { findByPaymentId } from '../models/bookingModel.js';
 import { resetRateLimits } from '../middleware/rateLimit.js';
 import { signIn, useAuthNock, type FakeSession } from './helpers/authNock.js';
 
-/**
- * Webhook delivery end to end, with genuinely signed payloads.
- *
- * Signatures are produced by Stripe's own generateTestHeaderString against the
- * secret in ../env.ts, so these exercise the real constructEvent verification
- * rather than stubbing past it. That matters more than it used to: the handler
- * no longer flips a flag on an existing row, it *creates* the booking. An
- * anonymous POST that got past verification would mint paid reservations.
- *
- * The recovery path is the other half of this file. If the customer closes the
- * tab on Stripe's success page, or a 3DS challenge completes hours later, the
- * browser never calls /confirm and nothing has been persisted — the money is
- * captured and no record of the stay exists anywhere but Stripe. This handler
- * is the only thing that fixes that.
- */
+/** Webhook delivery end to end, with genuinely signed payloads. */
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET as string;
 
@@ -109,8 +95,7 @@ const VALID_STAY = {
   children: 0,
 };
 
-/** A complete billing address. Required by the payment endpoints now that Stripe
- *  runs an AVS check against it, so every payment fixture has to carry one. */
+/** A complete billing address. */
 const VALID_BILLING = {
   line1: '10 Bayfront Avenue',
   line2: '#12-34',
@@ -137,13 +122,7 @@ const quietly = async <T>(fn: () => Promise<T>): Promise<T> => {
   }
 };
 
-/**
- * Opens a real checkout session so the simulator holds its metadata, exactly as
- * a customer arriving at the hosted page would. The ids are derived from the
- * per-attempt UUID the controller mints, so every test gets its own payment
- * intent — the in-memory store lives for the whole run, and a shared id lets
- * one test resolve another test's booking.
- */
+/** Opens a real checkout session so the simulator holds its metadata, exactly as a customer arriving at the hosted page would. */
 const openCheckout = async (body: Record<string, unknown> = {}, session?: FakeSession) => {
   const pending = request(app)
     .post('/api/bookings/payment')
@@ -165,10 +144,7 @@ describe('Stripe webhook delivery', () => {
     resetRateLimits();
   });
 
-  /**
-   * Verification is the entire access control on this endpoint. Everything
-   * below it writes booking rows from an unauthenticated POST body.
-   */
+  /** Verification is the entire access control on this endpoint. */
   describe('signature verification', () => {
     it('rejects a payload with no signature header at all', async () => {
       const response = await request(app)
@@ -215,12 +191,7 @@ describe('Stripe webhook delivery', () => {
       expect(response.body.error).to.match(/signature/i);
     });
 
-    /**
-     * A missing secret is our fault, not the caller's. 503 keeps Stripe
-     * retrying so the event survives until the config is fixed; a 400 here
-     * would tell Stripe the event is bad and discard it permanently — and with
-     * it, the only recovery path for a charge that has already been captured.
-     */
+    /** A missing secret is our fault, not the caller's. */
     it('answers 503, not 400, when STRIPE_WEBHOOK_SECRET is missing', async () => {
       const previous = process.env.STRIPE_WEBHOOK_SECRET;
       delete process.env.STRIPE_WEBHOOK_SECRET;
@@ -247,11 +218,7 @@ describe('Stripe webhook delivery', () => {
     });
   });
 
-  /**
-   * The recovery path, and the reason this handler exists at all. Without it a
-   * customer who closes the tab on the success page has paid for a stay that
-   * exists nowhere in our system.
-   */
+  /** The recovery path, and the reason this handler exists at all. */
   describe('checkout.session.completed — recovery', () => {
     it('inserts the booking for a session the browser never confirmed', async () => {
       const { sessionId, paymentIntentId } = await openCheckout();
@@ -340,11 +307,7 @@ describe('Stripe webhook delivery', () => {
       expect(booking).to.not.equal(null);
     });
 
-    /**
-     * The race this whole design turns on: /confirm and the webhook both call
-     * recordPaidBooking, and either may arrive first. Whichever writes the row
-     * wins, and the loser must be a silent no-op — one booking, and one email.
-     */
+    /** The race this whole design turns on: /confirm and the webhook both call recordPaidBooking, and either may arrive first. */
     it('does not duplicate a booking the browser already confirmed', async () => {
       const { sessionId, paymentIntentId } = await openCheckout();
 

@@ -8,14 +8,7 @@ import { recordPaidBooking } from '../controllers/bookingController.js';
 import { __clearRateCache } from '../services/hotelRoomService.js';
 import { useHotelNock, mockRoomPrices, ascendaRoom, mockPriceFailure } from './helpers/hotelNock.js';
 
-/**
- * Booking a room the supplier priced, over HTTP.
- *
- * hotelRoomService.test.ts proves the mapping; this proves the money path uses
- * it — that a supplier rate reaches the charge and the stored row, and that the
- * amount the guest agreed to is the amount they are held to even when the
- * supplier moves its price mid-checkout.
- */
+/** Booking a room the supplier priced, over HTTP. */
 
 const ROOM_KEY = '2eb243ba-2f54-561b-8069-0db1439138f1';
 const HOTEL_ID = 'diH7';
@@ -110,17 +103,7 @@ describe('booking a supplier-priced room', () => {
     expect(confirmed.body.booking.roomTypes).to.deep.equal([ROOM_KEY]);
   });
 
-  /**
-   * The regression this whole quotedTotal mechanism exists for.
-   *
-   * A quote is priced once for display, again to mint the payment, and again to
-   * confirm it. Supplier rates move on their own schedule, so re-deriving the
-   * expected amount at confirm time means a rate that shifts between paying and
-   * returning reads as an amount mismatch — a 409 on a charge that already
-   * succeeded, leaving the guest billed with no booking. The price this server
-   * quoted rides in Stripe's metadata, where the browser cannot reach it, and
-   * that is what the captured amount is checked against.
-   */
+  /** The regression this whole quotedTotal mechanism exists for. */
   it('honours the quoted price when the supplier moves its rate mid-checkout', async () => {
     mockRoomPrices({ hotelId: HOTEL_ID, rooms: [ascendaRoom({ key: ROOM_KEY, total: 900, taxes: 100 })] });
     const sessionId = await startPayment();
@@ -137,16 +120,7 @@ describe('booking a supplier-priced room', () => {
     expect(confirmed.body.booking.pricePaid).to.equal(900);
   });
 
-  /**
-   * Ascenda scopes room keys to the price search that issued them: ask for the
-   * same hotel and dates twice and the same room comes back under a new uuid.
-   * Once the rate cache has expired, re-pricing a genuine booking therefore
-   * fails outright rather than returning a different number — which is what a
-   * webhook redelivered hours later runs into.
-   *
-   * Refusing the insert there would take the money and record nothing. The
-   * metadata already holds everything the row needs.
-   */
+  /** Ascenda scopes room keys to the price search that issued them: ask for the same hotel and dates twice and the same room comes back under a new uuid. */
   it('records the booking when the room key has rotated out of the supplier search', async () => {
     mockRoomPrices({ hotelId: HOTEL_ID, rooms: [ascendaRoom({ key: ROOM_KEY, total: 900, taxes: 100 })] });
     const sessionId = await startPayment();
@@ -168,11 +142,7 @@ describe('booking a supplier-priced room', () => {
     expect(confirmed.body.booking.roomTypes).to.deep.equal([ROOM_KEY]);
   });
 
-  /**
-   * The other side of that coin. Falling back to the metadata must not become a
-   * way to skip the amount check — a captured amount that matches neither the
-   * quote nor a reprice is still refused.
-   */
+  /** The other side of that coin. */
   it('still refuses a captured amount that does not match the quoted one', async () => {
     const outcome = await quietly(() =>
       recordPaidBooking({
@@ -224,11 +194,7 @@ describe('booking a supplier-priced room', () => {
     expect(response.body.totalPrice).to.equal(784.8);
   });
 
-  /**
-   * A stay with one real room and one demo slug still has to price both, which
-   * only works because the two tables are merged rather than one replacing the
-   * other.
-   */
+  /** A stay with one real room and one demo slug still has to price both, which only works because the two tables are merged rather than one replacing the other. */
   it('prices a mixed basket from both tables at once', async () => {
     mockRoomPrices({ hotelId: HOTEL_ID });
 

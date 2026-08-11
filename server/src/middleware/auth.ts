@@ -1,20 +1,6 @@
 import { type Request, type Response, type NextFunction } from 'express';
 
-/**
- * Turns the caller's Supabase access token into a verified user id.
- *
- * The point of this file is one distinction the rest of the codebase depends
- * on: a user id in a request body or a URL path is an *identifier*, not a
- * *credential*. Anyone can type a UUID. Only the holder of a signed session can
- * produce a token that verifies to it, so `req.auth.userId` — and nothing else
- * — is allowed to decide which account a booking belongs to.
- *
- * Verification goes through supabaseAdmin.auth.getUser, which checks the token
- * against Supabase rather than merely decoding it. That costs a round trip, but
- * it is the only form of the check that honours a signed-out or revoked
- * session; a locally-decoded JWT stays valid until it expires no matter what
- * the user has done since.
- */
+/** Turn the caller's Supabase access token into a verified user id. */
 
 export interface AuthenticatedUser {
   userId: string;
@@ -28,17 +14,7 @@ declare module 'express-serve-static-core' {
   }
 }
 
-/**
- * A signed-in guest hits /payment-intent and then /confirm seconds apart, and
- * the profile modal refetches on every open. Verifying the same token on each
- * is a round trip to Supabase in the middle of the payment funnel for an answer
- * that cannot have changed.
- *
- * Deliberately short: this is the window in which a signed-out session still
- * looks live, so it trades a bounded amount of staleness for the latency, and
- * the bound is the thing being tuned. Only successful verifications are cached
- * — a rejection is cheap to repeat and must not be sticky.
- */
+/** Verification cache: skip the Supabase round trip for a token verified moments ago (/payment-intent and /confirm land seconds apart, and the profile modal refetches on every open). */
 const CACHE_TTL_MS = 60_000;
 const CACHE_MAX_ENTRIES = 500;
 
@@ -60,9 +36,9 @@ const readCache = (token: string): AuthenticatedUser | null => {
 };
 
 const writeCache = (token: string, user: AuthenticatedUser): void => {
-  // Tokens rotate on refresh, so entries accumulate rather than being
-  // overwritten. Evicting oldest-first keeps the map bounded on a long-running
-  // process; Map preserves insertion order, so the first key is the oldest.
+  // Evict oldest-first once full, keeping the map bounded on a long-running
+  // process (tokens rotate on refresh, so entries accumulate — and Map
+  // preserves insertion order, so the first key is the oldest).
   if (verifiedTokens.size >= CACHE_MAX_ENTRIES) {
     const oldest = verifiedTokens.keys().next().value;
     if (oldest !== undefined) verifiedTokens.delete(oldest);
@@ -87,7 +63,7 @@ const readBearerToken = (req: Request): string | null => {
   return token.length > 0 ? token : null;
 };
 
-/** Lazy: ../lib/supabaseClient throws at module scope when env vars are absent. */
+/** Lazy import: supabaseClient throws at module scope when env vars are absent. */
 const getClient = async () => {
   const { supabaseAdmin } = await import('../lib/supabaseClient.js');
   return supabaseAdmin;
@@ -106,19 +82,14 @@ const verifyToken = async (token: string): Promise<VerifyOutcome> => {
   try {
     ({ data, error } = await (await getClient()).auth.getUser(token));
   } catch {
-    // getUser throws rather than returning an error for some transport
-    // failures. Either way the token was not rejected — we simply could not
-    // ask — so this must not read as "your session is invalid".
+    // Transport failure, not a rejection: getUser throws on some network
+    // errors, so answer 503 rather than letting an outage read as an
+    // invalid session.
     return { ok: false, status: 503, error: 'Could not verify your session. Please try again.' };
   }
 
   if (error) {
-    /**
-     * A 4xx from the auth API means the token really was rejected. Anything
-     * else — a timeout, DNS, a 5xx — means Supabase could not answer, and
-     * answering 401 there would sign a guest out in the middle of paying for a
-     * booking because of an outage on our side.
-     */
+    /** Status split: a 4xx from the auth API means the token really was rejected (401 back). */
     const status = (error as { status?: number }).status;
     if (typeof status === 'number' && status >= 400 && status < 500) {
       return { ok: false, status: 401, error: 'Your session has expired. Please sign in again.' };
@@ -138,15 +109,7 @@ const verifyToken = async (token: string): Promise<VerifyOutcome> => {
   return { ok: true, user };
 };
 
-/**
- * Optional authentication: populates req.auth when a token is presented, and
- * lets the request through untouched when none is.
- *
- * A *bad* token is still rejected. Falling through to anonymous would be worse
- * than failing: the guest believes they are signed in, so the booking would be
- * written with no user_id and then be missing from the history page they expect
- * to find it on, with nothing anywhere saying why.
- */
+/** Optional authentication: set req.auth when a token is presented, pass a guest with no token straight through, and still reject a bad token. */
 export const resolveUser = async (
   req: Request,
   res: Response,

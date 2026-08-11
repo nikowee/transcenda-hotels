@@ -1,20 +1,13 @@
 #!/usr/bin/env tsx
 /**
  * Local Stripe webhook tooling — a stand-in for `stripe listen` / `stripe
- * trigger` when the Stripe CLI is not installed and no Stripe account is
- * involved.
+ * trigger` when the Stripe CLI is not installed.
  *
- * The webhook is the only path that turns a captured charge into a booking when
- * the customer never comes back from the payment page, so it is the path most
- * worth exercising by hand and the one hardest to reach: you cannot make Stripe
- * deliver an event to localhost without the CLI's tunnel.
- *
- * You do not need one. A webhook signature is an HMAC-SHA256 over
- * `<timestamp>.<raw body>` keyed on the endpoint's signing secret — entirely
- * local arithmetic. Generate a secret, tell the server about it, and sign your
- * own deliveries with the same key. The server's verification code is untouched
- * and cannot tell the difference, which is the point: what gets tested is the
- * real handler, not a bypass.
+ * A webhook signature is an HMAC-SHA256 over `<timestamp>.<raw body>` keyed on
+ * the endpoint's signing secret — entirely local arithmetic. Generate a
+ * secret, tell the server about it, and sign your own deliveries with the same
+ * key: the server's verification code cannot tell the difference, so what gets
+ * tested is the real handler, not a bypass.
  *
  *   npm run stripe:secret              print a signing secret
  *   npm run stripe:secret -- --write   ...and write it into server/.env
@@ -40,19 +33,10 @@ const WEBHOOK_PATH = '/api/webhooks/stripe';
 
 // ── Secret generation ───────────────────────────────────────────────────────
 
-/**
- * Stripe's own secrets are `whsec_` followed by 32 random bytes in base64. The
- * prefix carries no meaning to the verifier — the secret is used as raw key
- * material — but matching the format means the value can be swapped for a real
- * one later without anything else changing.
- */
+/** Stripe's own secrets are `whsec_` followed by 32 random bytes in base64. */
 const generateSecret = (): string => `whsec_${randomBytes(32).toString('base64url')}`;
 
-/**
- * Rewrites STRIPE_WEBHOOK_SECRET in place, preserving the rest of the file.
- * A blind append would leave two assignments and dotenv silently keeps the
- * first, so the new secret would look written and have no effect.
- */
+/** Rewrites STRIPE_WEBHOOK_SECRET in place, preserving the rest of the file. */
 const writeSecretToEnv = (secret: string): void => {
   if (!existsSync(ENV_PATH)) {
     throw new Error(`No .env at ${ENV_PATH}. Copy .env.example to .env first.`);
@@ -83,11 +67,7 @@ const envelope = (type: string, object: Record<string, unknown>) => ({
   data: { object },
 });
 
-/**
- * The handler re-reads the session from the payment service rather than
- * trusting this payload, so only `id` and `payment_status` have to be right —
- * which is itself the property worth demonstrating.
- */
+/** The handler re-reads the session from the payment service rather than trusting this payload, so only `id` and `payment_status` have to be right. */
 const sessionCompleted = (sessionId: string, paymentIntentId: string) =>
   envelope('checkout.session.completed', {
     id: sessionId,
@@ -156,16 +136,7 @@ const deliver = async (event: unknown, secret: string, tamper: boolean): Promise
   return response.status;
 };
 
-/**
- * Mints a real checkout session through the API so the event refers to one the
- * server actually knows about.
- *
- * Simulate mode holds sessions in a process-local Map, so an invented id
- * verifies as paid but carries no metadata, and the handler correctly refuses to
- * build a booking from it. Booking first is what makes the recovery path
- * reachable — and it mirrors the real scenario exactly: the customer paid, then
- * closed the tab instead of returning to /confirmation.
- */
+/** Mints a real checkout session through the API so the event refers to one the server actually knows about. */
 const createSession = async (): Promise<{ sessionId: string; paymentIntentId: string }> => {
   const today = new Date();
   const start = new Date(today.getTime() + 30 * 86_400_000).toISOString().slice(0, 10);

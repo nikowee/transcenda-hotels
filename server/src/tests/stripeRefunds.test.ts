@@ -17,16 +17,7 @@ import {
   stripeError,
 } from './helpers/stripeNock.js';
 
-/**
- * Stripe refunds over the live SDK path, and what a refund does — and does not
- * — do to our own records.
- *
- * There is deliberately no refund endpoint. Issuing money back is a UC5
- * (Manage Booking) decision that needs an authenticated owner and a
- * cancellation policy; exposing it now would be an unauthenticated
- * "refund anyone's booking" route. What exists here is the service call, plus
- * the documented fact that the bookings table has nowhere to record the result.
- */
+/** Stripe refunds over the live SDK path, and what a refund does — and does not — do to our own records. */
 
 const decodeForm = (body: string): Record<string, string> =>
   Object.fromEntries(new URLSearchParams(body).entries());
@@ -187,16 +178,7 @@ describe('Stripe refunds (live SDK path via nock)', () => {
     });
   });
 
-  /**
-   * The reconciliation gap, pinned as a test rather than left as a comment.
-   *
-   * The bookings table has no refund_id, no refunded_at and no status column, so a
-   * refunded stay goes on reading as fully paid in our database and Stripe is
-   * the only system that knows otherwise. That is a deliberate, documented
-   * limitation of the current schema — this asserts its exact shape so that
-   * adding the column later breaks a test rather than passing unnoticed, and so
-   * nobody reads a paid-looking row as proof the money is still ours.
-   */
+  /** The reconciliation gap, pinned as a test rather than left as a comment. */
   describe('what a refund leaves behind in our own records', () => {
     const bookingInput = (): BookingInput => ({
       userId: null,

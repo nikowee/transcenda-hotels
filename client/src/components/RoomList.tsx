@@ -32,10 +32,6 @@ export default function RoomList({ rooms, hotelName }: { rooms: RoomOption[]; ho
             guests: searchParams.get('guests') ?? '',
             key: room.key,
         });
-        // The name is on this page already; carrying it saves the server a
-        // supplier round trip it cannot always win — a hotel the supplier's
-        // details endpoint does not know (the demo ids, a delisted property)
-        // would otherwise fail the quote for want of a display label.
         if (hotelName) params.set('name', hotelName);
         navigate(`/booking?${params.toString()}`);
     };

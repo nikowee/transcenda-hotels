@@ -2,31 +2,11 @@ import { before, after, afterEach } from 'mocha';
 import nock from 'nock';
 import { allowLoopbackOnly } from '../globalSetup.js';
 
-/**
- * nock harness for the live Stripe path.
- *
- * The simulator in paymentService proves our own branching; it cannot prove we
- * speak Stripe correctly, because it never builds a request or parses a
- * response. These helpers intercept at the socket instead, so the real SDK
- * serialises real parameters and deserialises real payloads — the layer where
- * `confirm: false` (a PaymentIntent that charged nothing) went unnoticed.
- *
- * Requires STRIPE_HTTP_CLIENT=fetch, set in ../env.ts. Stripe's default
- * NodeHttpClient waits for a `secureConnect` that nock's socket never emits, so
- * the request is written but never sent and the test hangs instead of failing.
- */
+/** nock harness for the live Stripe path. */
 
 export const STRIPE_API = 'https://api.stripe.com';
 
-/**
- * Suite-level interceptor lifecycle.
- *
- * The network block itself is global — see ../globalSetup.ts, loaded by mocha
- * via -r. This only reasserts it and clears interceptors between tests, so a
- * suite can never hand the next one a stray mock or an open network.
- *
- * Call inside describe(); it registers its own before/afterEach/after.
- */
+/** Suite-level interceptor lifecycle. */
 export const useStripeNock = (): void => {
   before(() => {
     if (!nock.isActive()) nock.activate();
@@ -46,14 +26,7 @@ export const useStripeNock = (): void => {
   });
 };
 
-/**
- * Runs fn with the simulator switched off so the real Stripe client is used.
- *
- * isSimulated() reads PAYMENTS_MODE per call while the client itself is built
- * once at import, so clearing the variable is enough to reach the live branch —
- * no module cache busting required. Restores the previous value even on throw,
- * or the next test silently runs against the wrong branch.
- */
+/** Runs fn with the simulator switched off so the real Stripe client is used. */
 export const withLiveStripe = async <T>(fn: () => Promise<T>): Promise<T> => {
   const previous = process.env.PAYMENTS_MODE;
   delete process.env.PAYMENTS_MODE;
@@ -68,11 +41,7 @@ export const withLiveStripe = async <T>(fn: () => Promise<T>): Promise<T> => {
   }
 };
 
-/**
- * Silences the correlation-id log while an expected failure is exercised, so a
- * passing run stays readable. Async counterpart of the sync helper in
- * paymentService.test.ts.
- */
+/** Silences the correlation-id log while an expected failure is exercised, so a passing run stays readable. */
 export const withSilencedErrorLog = async <T>(fn: () => Promise<T>): Promise<T> => {
   const original = console.error;
   console.error = () => {};
@@ -104,10 +73,7 @@ export interface SessionFixtureOptions {
   /** A bare id string, an expanded object, or null. verifySession reads all three. */
   paymentIntent?: string | Record<string, unknown> | null;
   url?: string | null;
-  /**
-   * The guest and stay ride here and nowhere else: nothing is written before
-   * payment, so a session with no metadata is a charge with no booking.
-   */
+  /** The guest and stay ride here and nowhere else: nothing is written before payment, so a session with no metadata is a charge with no booking. */
   metadata?: Record<string, string>;
   customer?: string | null;
   /** Guest checkout leaves `customer` null and reports the payer here instead. */
@@ -134,11 +100,7 @@ export const checkoutSession = (options: SessionFixtureOptions = {}) => ({
   livemode: false,
 });
 
-/**
- * An expanded payment_intent → payment_method → card, the two hops down where
- * the NOT NULL card columns actually live. An unexpanded retrieve carries none
- * of them, which is why verifySession asks Stripe to expand.
- */
+/** An expanded payment_intent → payment_method → card, the two hops down where the NOT NULL card columns actually live. */
 export const paymentIntentWithCard = (
   options: {
     id?: string;
@@ -159,13 +121,7 @@ export const paymentIntentWithCard = (
   }),
 });
 
-/**
- * The expanded payment_method a card charge carries.
- *
- * Brand, last four and expiry are the only card fields storage may hold, and
- * they are the only ones Stripe returns to an API key — there is no PAN here
- * because there is no PAN to be had.
- */
+/** The expanded payment_method a card charge carries. */
 export const cardPaymentMethod = (
   options: {
     // Explicitly `| undefined` so callers can forward their own optional fields
@@ -211,14 +167,7 @@ export interface PaymentIntentFixtureOptions {
   metadata?: Record<string, string> | null;
 }
 
-/**
- * A PaymentIntent as `paymentIntents.retrieve` returns it.
- *
- * Distinct from paymentIntentWithCard, which is only ever the nested object
- * hanging off an expanded Checkout Session. The Elements flow retrieves the
- * intent as a top-level resource, so verifyPaymentIntent reads amount, currency,
- * customer, receipt_email and metadata off it — none of which that fixture has.
- */
+/** A PaymentIntent as `paymentIntents.retrieve` returns it. */
 export const retrievedPaymentIntent = (options: PaymentIntentFixtureOptions = {}) => {
   const id = options.id ?? 'pi_test_intent';
   const amount = options.amount ?? 78480;

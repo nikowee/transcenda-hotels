@@ -1,25 +1,7 @@
 import { Navigate, useSearchParams, Link } from 'react-router';
 import { AlertCircle } from 'lucide-react';
 
-/**
- * `/booking` — the seam between hotel details and UC4.
- *
- * RoomList (Feature 3) navigates here when a guest picks a room, and it speaks a
- * different dialect from checkout:
- *
- *     RoomList sends   /booking?hotel&dest&in&out&guests&key
- *     Checkout wants   /checkout?hotelId&destinationId&startDate&endDate
- *                                &adults&children&roomTypes
- *
- * Translating in one component rather than teaching CheckoutPage a second set of
- * parameter names keeps the query contract of the booking flow single, and keeps
- * this adapter deletable the day the two agree.
- *
- * `hotelName` rides along when RoomList had it on screen (`name`), because the
- * server's supplier lookup cannot resolve a name for a hotel the details
- * endpoint does not know. Nothing priced is ever forwarded — /checkout
- * re-quotes from the supplier regardless.
- */
+/** `/booking` — the seam between hotel details and UC4. */
 export default function BookingEntry() {
   const [params] = useSearchParams();
 
@@ -29,12 +11,7 @@ export default function BookingEntry() {
   const endDate = params.get('out')?.trim() ?? '';
   const roomKey = params.get('key')?.trim() ?? '';
 
-  /**
-   * Search collects a single head-count and a room count; it has no separate
-   * children field, so every guest is an adult until one exists. Ascenda's
-   * pipe-per-room spelling ("2|2") can also reach us, and the total is what
-   * checkout wants.
-   */
+  /** Search collects a single head-count and a room count; it has no separate children field, so every guest is an adult until one exists. */
   const guestsRaw = params.get('guests')?.trim() ?? '';
   const adults = guestsRaw
     .split('|')
@@ -52,13 +29,7 @@ export default function BookingEntry() {
   ].filter(Boolean) as string[];
 
   if (missing.length > 0) {
-    /**
-     * Named rather than swallowed. `dest` is the one that actually goes missing:
-     * ResultsPage links to /hotel/:id without it, so HotelDetailsPage reads a
-     * null destination and RoomList forwards the empty string. Without this the
-     * guest would land on a checkout page that just says the stay is invalid,
-     * and the real cause is two navigations upstream.
-     */
+    /** Named rather than swallowed. */
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-900 px-4">
         <div className="max-w-md rounded-2xl bg-white p-8 text-center shadow-xl">

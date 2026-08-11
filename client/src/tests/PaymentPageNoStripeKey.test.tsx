@@ -5,21 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { http, HttpResponse } from 'msw';
 import { server } from './setup';
 
-/**
- * PaymentPage with no Stripe publishable key in the build.
- *
- * A separate file because the decision is made once, at module scope —
- * `PUBLISHABLE_KEY ? loadStripe(...) : null` — so it cannot be varied per test
- * inside PaymentPage.test.tsx, which stubs a key for the whole file.
- *
- * The case matters because it is a real dead end that cost real debugging time.
- * The page used to render the demo card form whenever Stripe.js was unavailable,
- * regardless of whether the payment was real. Against a live PaymentIntent that
- * form cannot work: it derives brand and last four and posts them, it never
- * confirms a card with Stripe, so the intent stays at requires_payment_method
- * and /confirm answers 402 for as long as anyone keeps pressing Pay. It looked
- * like a working form and was a trap.
- */
+/** PaymentPage with no Stripe publishable key in the build. */
 
 vi.hoisted(() => {
   // Explicit rather than relying on the key being absent from a developer's
@@ -124,11 +110,7 @@ describe('PaymentPage without a Stripe publishable key', () => {
       expect(screen.getByText(/nothing has been charged/i)).toBeInTheDocument();
     });
 
-    /**
-     * The specific regression. A demo card field here is not a cosmetic problem:
-     * every attempt to use it ends in 402 and the customer cannot get off this
-     * page.
-     */
+    /** The specific regression. */
     it('does not offer the demo card form against a real charge', async () => {
       renderPayment();
       await screen.findByText(/card entry is not configured/i);
@@ -156,11 +138,7 @@ describe('PaymentPage without a Stripe publishable key', () => {
     });
   });
 
-  /**
-   * The other half of the branch. With no key, a *simulated* payment is exactly
-   * what the demo form is for, and this is the normal local setup — breaking it
-   * would be a worse regression than the one being fixed.
-   */
+  /** The other half of the branch. */
   it('still mounts the demo form when the server says it is simulating', async () => {
     server.use(intentHandler(true));
     renderPayment();

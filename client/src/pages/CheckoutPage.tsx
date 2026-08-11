@@ -33,25 +33,7 @@ import { matchesStay, readHandoff, stayToParams, writeHandoff } from '../lib/che
 
 const API_URL = import.meta.env.VITE_API_URL;
 
-/**
- * «React Page» CheckoutPage — UC4 "Book & Make Payment".
- *
- * Replaces the checkout.ejs template from the class diagram: the diagram was
- * drawn against a server-rendered EJS monolith, while this codebase is a
- * decoupled SPA, so `render(page, data, errorMessage)` becomes local state.
- *
- * This page never collects card details. Payment happens on a Stripe-hosted
- * checkout page, so no PAN, expiry or CVC is ever entered into, stored by, or
- * transmitted through our client or server.
- *
- * Sequence steps map to:
- *   1-2  mount + GET /api/bookings/checkout   → priced quote (display only)
- *   3    submit guest details                 → POST /api/bookings/guest-details
- *   1a-3a invalid details                     → fieldErrors, stay on step 1
- *   4-5  confirm and pay                      → POST /api/bookings/payment
- *                                             → redirect to Stripe
- *   6-11 handled on return in ConfirmationPage, and by the webhook
- */
+/** «React Page» CheckoutPage — UC4 "Book & Make Payment". */
 
 type Step = 'guest' | 'review';
 
@@ -68,16 +50,8 @@ const emptyGuest: GuestDetails = {
   specialRequests: '',
 };
 
-/**
- * Defaults to SG because the platform prices in SGD. The field is still
- * editable — a card issued abroad has a foreign billing address, and AVS checks
- * against the issuer's record, not ours.
- */
-/**
- * Short list rather than all 249 codes: these cover the platform's actual
- * traffic, and a searchable full list is a component this form does not need
- * yet. The server validates any two-letter code, so widening it is data-only.
- */
+/** Defaults to SG because the platform prices in SGD. */
+/** Short list rather than all 249 codes: these cover the platform's actual traffic, and a searchable full list is a component this form does not need yet. */
 const COUNTRIES = [
   { code: 'SG', name: 'Singapore' },
   { code: 'MY', name: 'Malaysia' },
@@ -104,32 +78,10 @@ export default function CheckoutPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  /**
-   * A handoff left behind by a payment that did not complete.
-   *
-   * The payment page only clears it on success, so its presence means the
-   * customer got as far as the card form and came back — cancelled, declined,
-   * or by using the back link. Everything they typed is in it.
-   *
-   * Read once, lazily, rather than in an effect: hydrating after the first
-   * paint would flash an empty form and then fill it, and would briefly show
-   * step 1 before jumping to step 2.
-   */
+  /** A handoff left behind by a payment that did not complete. */
   const resumed = useMemo(() => readHandoff(), []);
 
-  /**
-   * The stay comes from the URL, and from the handoff only when the URL is bare.
-   *
-   * This used to fall back to 'demo-hotel' / 'Demo Hotel' / 'deluxe-king' and a
-   * near-term date range so /checkout could be opened directly before the
-   * results page existed. It exists now, and those defaults had become a real
-   * bug: any parameter that failed to arrive was silently replaced, the server
-   * dutifully priced the substitute, and the guest was shown a payment page for
-   * a stay they had never chosen. A missing parameter has to be visible.
-   *
-   * The alternate spellings stay — dest/in/out/guests are what the search and
-   * hotel-details pages emit — but nothing is invented.
-   */
+  /** Read the stay from the URL, inventing nothing. */
   const urlStay = useMemo(() => {
     const get = (...names: string[]) => {
       for (const name of names) {
@@ -157,17 +109,7 @@ export default function CheckoutPage() {
     };
   }, [searchParams]);
 
-  /**
-   * A bare /checkout with a handoff in storage is a resume, not a broken link.
-   *
-   * Anything that routes here without parameters — an old bookmark, a "back to
-   * details" link written before it carried a query, the browser's own back
-   * button off a redirect — would otherwise land on "this checkout link is
-   * missing destinationId, hotelId, …" while the stay it needs is sitting in
-   * sessionStorage. The stay is only borrowed when the URL supplies *nothing*:
-   * a link carrying some parameters is a link to a different stay, and filling
-   * in its gaps from a previous booking is how the substituted-stay bug worked.
-   */
+  /** A bare /checkout with a handoff in storage is a resume, not a broken link. */
   const stayParams = useMemo(
     () =>
       resumed && !urlStay.destinationId && !urlStay.hotelId && !urlStay.startDate
@@ -176,37 +118,12 @@ export default function CheckoutPage() {
     [resumed, urlStay]
   );
 
-  /**
-   * Resume only what belongs to the stay on screen.
-   *
-   * The handoff outlives the booking it was written for — the payment page
-   * clears it on success and nothing clears it on abandonment, which is the
-   * whole point. So a customer who walked away from paying for one hotel and
-   * came back to book a different one still has the first handoff in storage,
-   * and seating its guest on this stay's review step would mean confirming and
-   * emailing a booking under a previous, unrelated guest's name.
-   *
-   * The address is part of the gate as well as the values: a handoff without one
-   * cannot pass the payment endpoint's billing validator, and the only page that
-   * can collect it is step 1.
-   */
+  /** Resume gate: only a handoff that matches the stay on screen unlocks the review step. */
   const resumes = Boolean(
     resumed && resumed.billingAddress && matchesStay(resumed.stay, stayParams)
   );
 
-  /**
-   * Step 2, not step 1, when there is something to resume.
-   *
-   * A failed payment used to drop the customer back on an empty guest form and
-   * make them re-enter their name, email, phone and full billing address before
-   * they could try the card again — even though the cancelled banner already
-   * told them to "pick up where you left off". They had passed validation once;
-   * sending them through it a second time is the whole complaint.
-   *
-   * A handoff for a *different* stay still refills the form — those details are
-   * the same person's and retyping them is the annoyance being fixed — but it
-   * starts at step 1, where they are re-validated against the new booking.
-   */
+  /** Start at step 2 when there is something to resume. */
   const [step, setStep] = useState<Step>(resumes ? 'review' : 'guest');
   const [quote, setQuote] = useState<CheckoutQuote | null>(null);
   const [quoteError, setQuoteError] = useState('');
@@ -302,10 +219,7 @@ export default function CheckoutPage() {
     }
   };
 
-  /**
-   * Sequence steps 4-5. The server prices the stay itself and returns a
-   * Stripe-hosted URL; nothing about the amount is sent from here.
-   */
+  /** Sequence step 4. */
   const handlePay = async () => {
     if (!quote) return;
 
@@ -324,12 +238,7 @@ export default function CheckoutPage() {
     };
 
     try {
-      /**
-       * Handed over in sessionStorage rather than router state so refreshing
-       * /payment does not strand the customer with no booking to pay for. The
-       * payment page re-prices it against the server anyway — nothing here is
-       * trusted as an amount.
-       */
+      /** Hand over in sessionStorage rather than router state, so refreshing /payment keeps the booking. */
       writeHandoff({ guestDetails: guest, billingAddress: billing, stay });
 
       navigate('/payment');
@@ -373,9 +282,9 @@ export default function CheckoutPage() {
         {wasCancelled && (
           <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-200">
             <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-            {/* "Nothing was charged" is asserted verbatim by the E2E spec and
-                is the one sentence a customer needs first. The reassurance
-                after it is only true when there was something to resume. */}
+            {/* "Nothing was charged" is asserted verbatim by the E2E spec —
+                the reassurance after it is only true when there was something
+                to resume. */}
             <p>
               You cancelled the payment. Nothing was charged.
               {resumes
@@ -831,9 +740,9 @@ function ReviewAndPay({ guest, error, isSubmitting, total, canPay, onBack, onPay
           ) : (
             <>
               <ExternalLink className="h-4 w-4" />
-              {/* No total means the quote never loaded, and the reason is already
-                  on screen above. "Pay " with nothing after it reads as a
-                  rendering fault rather than a page waiting on a price. */}
+              {/* No total means the quote never loaded (the reason is already
+                  on screen) — "Pay " with nothing after it would read as a
+                  rendering fault. */}
               {total ? `Pay ${total}` : 'Pay'}
             </>
           )}

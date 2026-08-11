@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter} from 'react-router';
 import axios from 'axios';
-import ResultsPage from './ResultsPage';
+import ResultsPage from '../pages/ResultsPage';
 
 // Mock axios to prevent real API calls during tests
 vi.mock('axios');
@@ -201,9 +201,7 @@ describe('ResultsPage Component', () => {
       expect(screen.getByText('Marina Bay Sands')).toBeInTheDocument();
     });
 
-    // Find the 5-star button by its exact label. The buttons read "5★", not
-    // "5★+" — the filter is exact-match server-side (hotelController), and the
-    // label was aligned with that.
+    // Find the 5-star button
     const starButtons = screen.getAllByRole('button', { name: '5★' });
     await userEvent.click(starButtons[0]);
 
@@ -232,7 +230,7 @@ describe('ResultsPage Component', () => {
       expect(screen.getByText('Marina Bay Sands')).toBeInTheDocument();
     });
 
-    // Apply a filter first by clicking the 5-star button (exact label, no '+')
+    // Apply a filter first by clicking the 5-star button
     const starButtons = screen.getAllByRole('button', { name: '5★' });
     await userEvent.click(starButtons[0]);
 

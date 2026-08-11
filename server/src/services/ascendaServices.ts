@@ -10,11 +10,7 @@ interface PollOptions {
     maxAttempts?: number;
 }
 
-/**
- * Polls an API endpoint until `completed` is true or max attempts are reached.
- * The `fetcher` callback should return a response object containing a `completed` boolean.
- * Use this when you only need the final completed response (not accumulation across partial results).
- */
+/** Polls an API endpoint until `completed` is true or max attempts are reached. */
 async function pollUntilComplete<T extends { completed: boolean }>(
     fetcher: () => Promise<T>,
     options?: PollOptions
@@ -133,10 +129,24 @@ const transformCategories = (categories: any): string[] => {
         .map((c: { name: string }) => c.name);
 };
 
-// Helper: Strip HTML tags from description
+// Helper: Strip HTML tags from description.
+// Block-level tags become newlines first so paragraph breaks survive for
+// the frontend's whitespace-pre-line rendering, then entities are decoded.
 const cleanDescription = (description: string): string => {
     if (!description) return '';
-    return description.replace(/<[^>]*>/g, '').trim();
+    return description
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;|&apos;/gi, "'")
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/[ \t]+/g, ' ')
+        .trim();
 };
 
 // Helper function to simulate delay.
@@ -157,10 +167,7 @@ const constructImageUrls = (imageDetails: HotelDetails['image_details']): string
 
 const BASE_URL = 'https://hotelapi.loyalty.dev/api';
 
-/**
- * Fetches room prices for a specific hotel, polling until the API returns completed.
- * Used by GET /api/hotels/:id/price
- */
+/** Fetches room prices for a specific hotel, polling until the API returns completed. */
 export async function fetchRoomPrices(
     hotelId: string,
     params: {
@@ -195,25 +202,21 @@ export async function fetchRoomPrices(
     );
 }
 
-/**
- * Fetches details for a single hotel by its ID.
- * Used by GET /api/hotels/:id
- */
+/** Fetches details for a single hotel by its ID. */
 export async function fetchHotelById(id: string): Promise<HotelDetails> {
     try {
         const response = await axios.get<HotelDetails>(`${BASE_URL}/hotels/${id}`);
-        return response.data;
+        return {
+            ...response.data,
+            description: cleanDescription(response.data.description || ''),
+        };
     } catch (err) {
         console.error('Hotel detail API error:', err);
         throw new Error('Failed to fetch hotel details');
     }
 }
 
-/**
- * Calls the Ascendas API (hotels and prices) to search for hotels based off the provided search parameters,
- * and returns a list of hotels in the MergedHotel format, sorted by searchRank.
- * Used by GET /api/hotels/search
- */
+/** Calls the Ascendas API (hotels and prices) to search for hotels based off the provided search parameters, and returns a list of hotels in the MergedHotel format, sorted by searchRank. */
 export const searchHotels = async (params: SearchParams): Promise<MergedHotel[]> => {
     // Request params for Ascendas /api/hotels/prices endpoint.
     const requestParams = {

@@ -12,20 +12,7 @@ import {
 } from '../controllers/bookingController.js';
 import type { GuestDetails } from '../models/bookingTypes.js';
 
-/**
- * buildQuote and validateGuestDetails, exercised directly.
- *
- * These were previously reachable only through HTTP, which is why most of
- * buildQuote's outcomes had never been reached: each case cost a request, so
- * only the obvious ones got written. buildQuote is the entire price-integrity
- * guarantee — the function that stops a client sending its own totalPrice, and
- * the same function recordPaidBooking re-prices against before it will turn a
- * captured charge into a row — so every branch is worth an assertion.
- *
- * Boundaries are asserted against the exported constants rather than literals.
- * A test that hardcodes 31 stops testing the boundary the moment MAX_NIGHTS
- * changes.
- */
+/** buildQuote and validateGuestDetails, exercised directly. */
 
 /** deluxe-king is 240/night; 3 nights × 1 room = 720, +9% tax = 784.80 */
 const VALID = {
@@ -202,13 +189,7 @@ describe('buildQuote', () => {
       );
     });
 
-    /**
-     * A plain `ROOM_RATES[roomType]` returns a function for any key inherited
-     * from Object.prototype, so `=== undefined` waves it straight past the
-     * guard and it is multiplied into a NaN subtotal. Object.hasOwn is what
-     * refuses it here, with the right error, rather than letting the isFinite
-     * check at the bottom catch it by accident.
-     */
+    /** A plain `ROOM_RATES[roomType]` returns a function for any key inherited from Object.prototype, so `=== undefined` waves it straight past the guard and it is multiplied into a NaN subtotal. */
     it('does not treat inherited Object properties as room types', () => {
       for (const key of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf']) {
         expect(errorOf({ ...VALID, roomTypes: [key] }), key).to.match(/not available/i);
@@ -552,14 +533,7 @@ describe('validateGuestDetails', () => {
   });
 });
 
-/**
- * Billing address validation.
- *
- * Required at the form because Stripe runs an AVS check against it, with
- * nothing enforced at the database layer. That split is deliberate: a rejected
- * form costs a re-submit, whereas a NOT NULL column would turn any gap in the
- * metadata round trip into a captured charge with nowhere to record it.
- */
+/** Billing address validation. */
 describe('validateBillingAddress', () => {
   const VALID = {
     line1: '10 Bayfront Avenue',

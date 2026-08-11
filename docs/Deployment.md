@@ -8,7 +8,7 @@ it up.
 ## The shape
 
 ```
-Browser ── CloudFront/S3 or nginx container (client bundle)
+Browser ── Vercel (client bundle)
    │
    └── ALB ──► ECS Fargate: server image ──► Supabase (auth + Postgres, via PostgREST)
                     │                   ──► Stripe (payments + webhook back in)
@@ -52,9 +52,13 @@ Task definition env:
 
 | Source | Variables |
 |---|---|
-| **Secrets Manager** | `SUPABASE_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, (`RESEND_API_KEY`) |
-| **Plain env** | `NODE_ENV=production`, `PORT=5000`, `SUPABASE_URL`, `APP_URL` (public frontend URL — Stripe return URLs build from it), `CORS_ORIGINS` (deployed frontend origin), `TRUST_PROXY_HOPS=1` (per ALB hop — see `.env.example` for why both directions of wrong are bad), `REDIS_URL` (ElastiCache), `EMAIL_FROM` |
+| **Secrets Manager** | `SUPABASE_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
+| **Plain env** | `NODE_ENV=production`, `PORT=5000`, `SUPABASE_URL`, `APP_URL` (public frontend URL — Stripe return URLs build from it), `CORS_ORIGINS` (deployed frontend origin), `REDIS_URL` (ElastiCache) |
 | **Leave unset** | `BOOKINGS_STORAGE` (memory = bookings vanish per task), `PAYMENTS_MODE` (ignored in production anyway) |
+
+Trust-proxy depth is fixed at 1 hop in `server/src/index.ts` (the single-ALB
+shape); change the literal there if the topology ever differs. Confirmation
+email is log-only — no mail provider is configured.
 
 Boot refusals are deliberate: with `NODE_ENV=production` and no
 `STRIPE_SECRET_KEY` the process exits rather than silently accepting every
@@ -63,25 +67,23 @@ card — a crash loop right after launch usually means a missed secret.
 Networking: tasks make outbound calls to Supabase, Stripe, Ascenda and (if
 set) Resend — private subnets need a NAT gateway or VPC endpoints.
 
-## 3. Client bundle
+## 3. Client bundle → Vercel
 
-```bash
-docker build \
-  --build-arg VITE_API_URL=https://api.example.com \
-  --build-arg VITE_SUPABASE_URL=... \
-  --build-arg VITE_SUPABASE_PUBLISHABLE_KEY=... \
-  --build-arg VITE_STRIPE_PUBLISHABLE_KEY=pk_live_... \
-  -t transcenda-client client/
-```
+The client deploys to Vercel, not a container. Connect the GitHub repo, set
+the project root to `client/`, and put the `VITE_*` values in the Vercel
+project settings (Environment Variables). They are baked into the bundle at
+build time — there is no runtime injection into a static bundle, so **each
+environment needs its own build**.
 
-`VITE_*` values are baked at build time — there is no runtime injection into a
-static bundle, so **each environment needs its own build**. The build refuses
-to produce an image when the Supabase args are empty (it greps the bundle for
-`auth/v1`); without that guard the broken build is *smaller* and looks like an
-optimisation. The image is nginx with an SPA fallback (deep-link refreshes on
-/checkout etc. answer index.html, hashed assets cache immutable). Serving the
-same `dist/` from S3+CloudFront instead is equivalent — keep the fallback
-(403/404 → /index.html) and the no-cache rule for index.html.
+Vercel handles the two things the old nginx config did by hand:
+
+- **SPA fallback** — unknown routes (deep-link refreshes on /checkout etc.)
+  answer with `index.html` by default, so the router can take over.
+- **Caching** — hashed assets are served immutable; `index.html` is revalidated
+  so a deploy never pins users to a dead build.
+
+The client Dockerfile is dev-only now (single stage, no nginx): it exists for
+`docker-compose` local development and is not part of the production path.
 
 ## 4. Stripe webhook
 
@@ -108,7 +110,7 @@ encoded in the repo:
 - A search from the deployed frontend (CORS proves `CORS_ORIGINS`; results
   prove outbound to Ascenda; a repeat proves Redis if configured)
 - A full test-mode booking → confirmation page shows a booking id, exactly one
-  row in `bookings`, one confirmation email (or one log line if Resend unset)
+  row in `bookings`, one confirmation log line in the task logs
 - `stripe listen`/dashboard: webhook deliveries answering 200
 - Kill a task: draining, not 502s (SIGTERM handler)
 
