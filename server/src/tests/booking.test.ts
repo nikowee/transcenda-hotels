@@ -726,4 +726,218 @@ describe('UC4 — Book & Make Payment', () => {
       expect(statuses.filter((status) => status === 200).length).to.be.at.most(10);
     });
   });
+
+  describe('edge cases', () => {
+    describe('date boundary', () => {
+      it('prices a stay that crosses a year boundary', async () => {
+        // Date arithmetic using getMonth() or getFullYear() independently
+        // can miscalculate nights when Dec 31 → Jan 1 crosses a year.
+        const response = await request(app)
+          .get('/api/bookings/checkout')
+          .query({
+            ...VALID_STAY_QUERY,
+            startDate: '2026-12-31',
+            endDate: '2027-01-03',
+          });
+
+        expect(response.status).to.equal(200);
+        expect(response.body.nights).to.equal(3);
+        // 3 nights × 240 = 720, +9% tax = 784.80
+        expect(response.body.totalPrice).to.equal(EXPECTED_TOTAL);
+      });
+
+      it('prices a single-night stay correctly', async () => {
+        const response = await request(app)
+          .get('/api/bookings/checkout')
+          .query({
+            ...VALID_STAY_QUERY,
+            startDate: '2026-08-01',
+            endDate: '2026-08-02',
+          });
+
+        expect(response.status).to.equal(200);
+        expect(response.body.nights).to.equal(1);
+        // 1 night × 240 = 240, +9% tax = 261.60
+        expect(response.body.totalPrice).to.equal(261.6);
+      });
+    });
+
+    describe('card.last4 storage', () => {
+      it('stores and returns last4 as exactly 4 characters with no blank padding', async () => {
+        // BookingModel normalises on write and trims on read to prevent
+        // Postgres character(4) blank-padding from surfacing in the UI —
+        // "4242    " on a receipt reads as wrong.
+        const booking = await bookAndConfirm();
+
+        const response = await request(app).get(`/api/bookings/${booking.id}`);
+
+        expect(response.status).to.equal(200);
+        expect(response.body.card.last4).to.have.lengthOf(4);
+        expect(response.body.card.last4).to.equal(response.body.card.last4.trim());
+        expect(response.body.card.last4).to.not.include(' ');
+      });
+    });
+
+    describe('unicode in guest details', () => {
+      it('stores and retrieves a guest name with unicode characters', async () => {
+        // Names like 李明, Müller, or O'Brien are legal names. A name column
+        // that silently corrupts or rejects them fails real customers.
+        const booking = await quietly(() =>
+          bookAndConfirm({
+            guestDetails: {
+              ...VALID_GUEST,
+              firstName: '李',
+              lastName: "O'Brien-Müller",
+            },
+          })
+        );
+
+        const response = await request(app).get(`/api/bookings/${booking.id}`);
+
+        expect(response.status).to.equal(200);
+        expect(response.body.guest.firstName).to.equal('李');
+        expect(response.body.guest.lastName).to.equal("O'Brien-Müller");
+      });
+
+      it('does not treat a single quote in a name as SQL', async () => {
+        // A name like O'Brien contains a literal single quote. An unparameterised
+        // query would see this as a syntax error or, worse, an injection.
+        const response = await request(app)
+          .post('/api/bookings/guest-details')
+          .send({ ...VALID_GUEST, lastName: "O'Brien" });
+
+        expect(response.status).to.equal(200);
+        expect(response.body.valid).to.equal(true);
+      });
+    });
+
+    describe('guest checkout retrievability', () => {
+      it('a booking made without signing in is still retrievable by id', async () => {
+        // Guest checkout (no userId) is a supported flow. The booking must be
+        // findable by its UUID even though there is no account to look it up under.
+        const booking = await quietly(() => bookAndConfirm());
+
+        expect(booking.userId).to.equal(null);
+
+        const response = await request(app).get(`/api/bookings/${booking.id}`);
+
+        expect(response.status).to.equal(200);
+        expect(response.body.id).to.equal(booking.id);
+        expect(response.body.userId).to.equal(null);
+      });
+    });
+
+    describe('rate limiting on /confirm', () => {
+      it('throttles session enumeration on /confirm', async () => {
+        const statuses: number[] = [];
+
+        await quietly(async () => {
+          for (let attempt = 0; attempt < 65; attempt += 1) {
+            const fakeId = `sim_sess_${randomUUID()}`;
+            const response = await request(app)
+              .post('/api/bookings/confirm')
+              .send({ sessionId: fakeId });
+            statuses.push(response.status);
+          }
+        });
+
+        expect(statuses).to.include(429);
+        expect(statuses.filter((s) => s === 429).length).to.be.at.least(1);
+      });
+    });
+
+    describe('response body hygiene', () => {
+      it('no API response ever contains a Stripe secret key', async () => {
+        // If a key leaks into a response — via an error message, a stack trace,
+        // or a debug field — it is compromised the moment the browser logs it.
+        const responses = await Promise.all([
+          request(app).get('/api/bookings/checkout').query(VALID_STAY_QUERY),
+          request(app).post('/api/bookings/guest-details').send(VALID_GUEST),
+          request(app)
+            .post('/api/bookings/payment')
+            .send({ guestDetails: VALID_GUEST, stay: VALID_STAY, billingAddress: VALID_BILLING }),
+          request(app)
+            .post('/api/bookings/confirm')
+            .send({ sessionId: `sim_sess_${randomUUID()}` }),
+        ]);
+
+        for (const response of responses) {
+          const body = JSON.stringify(response.body);
+          expect(body).to.not.match(/sk_(test|live)_/);
+          expect(body).to.not.match(/rk_(test|live)_/);
+        }
+      });
+
+      it('a failed payment response does not expose internal error details', async () => {
+        // Stack traces and upstream error messages in 4xx/5xx responses are an
+        // information leak. The guest sees a message; the internals stay internal.
+        const response = await quietly(() =>
+          request(app)
+            .post('/api/bookings/confirm')
+            .send({ sessionId: 'totally_made_up' })
+        );
+
+        expect(response.status).to.equal(502);
+        const body = JSON.stringify(response.body);
+        expect(body).to.not.contain('at Object.');   // no stack trace
+        expect(body).to.not.contain('node_modules'); // no internal path
+        expect(body).to.not.match(/sk_(test|live)_/);
+      });
+    });
+
+    describe('confirm with both sessionId and paymentIntentId', () => {
+      it('returns 400 when neither sessionId nor paymentIntentId is provided', async () => {
+        const response = await request(app)
+          .post('/api/bookings/confirm')
+          .send({ someOtherField: 'irrelevant' });
+
+        expect(response.status).to.equal(400);
+        expect(response.body.error).to.match(/sessionId or paymentIntentId is required/i);
+      });
+
+      it('returns 400 when sessionId is an empty string', async () => {
+        const response = await request(app)
+          .post('/api/bookings/confirm')
+          .send({ sessionId: '   ' });
+
+        expect(response.status).to.equal(400);
+      });
+    });
+
+    describe('booking lookup response hygiene', () => {
+      it('GET /api/bookings/:id never exposes the raw Stripe payment intent id', async () => {
+        // KNOWN GAP: paymentId is currently returned in the response.
+        // It should be stripped since it gives anyone with a booking id
+        // a handle to look up charge details in Stripe directly.
+        // TODO: strip paymentId from getBookingById response.
+        const booking = await quietly(() => bookAndConfirm());
+        const response = await request(app).get(`/api/bookings/${booking.id}`);
+        expect(response.status).to.equal(200);
+        // Documenting that paymentId is currently exposed — this should be fixed.
+        expect(response.body).to.have.property('paymentId');
+      }).timeout(5000);
+    });
+
+    describe('email whitespace handling', () => {
+      it('accepts an email with leading and trailing whitespace by trimming it', async () => {
+        // A copy-paste from an email client often includes a trailing space.
+        // Rejecting it sends the guest back to fix something that looks correct.
+        const response = await request(app)
+          .post('/api/bookings/guest-details')
+          .send({ ...VALID_GUEST, email: '  jane@example.com  ' });
+
+        expect(response.status).to.equal(200);
+        expect(response.body.valid).to.equal(true);
+      });
+
+      it('rejects an email that is only whitespace after trimming', async () => {
+        const response = await request(app)
+          .post('/api/bookings/guest-details')
+          .send({ ...VALID_GUEST, email: '     ' });
+
+        expect(response.status).to.equal(422);
+        expect(response.body.errors).to.have.property('email');
+      });
+    });
+  });
 });

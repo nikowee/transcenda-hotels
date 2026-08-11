@@ -6,6 +6,7 @@ import { http, HttpResponse } from 'msw';
 import { server } from './setup';
 import CheckoutPage from '../pages/CheckoutPage';
 import type { CheckoutQuote } from '../types/booking';
+import * as checkoutHandoff from '../lib/checkoutHandoff';
 
 /** UC4 checkout page. */
 
@@ -579,10 +580,7 @@ describe('CheckoutPage', () => {
   });
 
   it('reports a handoff it could not write instead of routing to a dead page', async () => {
-    // sessionStorage throws in private-mode Safari and wherever site storage is
-    // switched off. Navigating anyway would land on /payment with nothing to
-    // pay for, which reads to the customer as a lost booking.
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    vi.spyOn(checkoutHandoff, 'writeHandoff').mockImplementation(() => {
       throw new DOMException('QuotaExceededError');
     });
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -597,7 +595,6 @@ describe('CheckoutPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/enable site storage/i);
     expect(screen.queryByText('payment page reached')).not.toBeInTheDocument();
 
-    // Still recoverable: the pay button comes back rather than staying spun.
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /pay sgd/i })).toBeEnabled()
     );
