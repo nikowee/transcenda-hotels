@@ -10,8 +10,8 @@ export const allowLoopbackOnly = (host: string): boolean =>
 const isExternalRun =
   process.env.npm_lifecycle_event === 'test:external' ||
   process.env.npm_lifecycle_event === 'test:all' ||
-  // The value after --exclude names the external tests in order to SKIP them,
-  // so matching it here disarms the guard for the run that most needs it.
+  // Skips the value after --exclude: that argument names the external tests in
+  // order to exclude them, so matching it disarms the guard for a normal run.
   process.argv.some(
     (arg, i) => arg.includes('src/tests/external') && process.argv[i - 1] !== '--exclude'
   );
