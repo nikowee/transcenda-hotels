@@ -19,12 +19,7 @@ const fuse = new Fuse(destinations, {
   threshold: 0.3,
 });
 
-/**
- * Safety guardrail: Fuse costs grow with the pattern, and fuse.search is
- * synchronous — a 5,000-character query blocks the event loop for ~65s, so one
- * unauthenticated GET could stall every other request. The longest term in the
- * dataset is 115 characters, so no real search loses a match to this cap.
- */
+/** Safety guardrail: fuse.search is synchronous and scales with the pattern, so an uncapped 5,000-character query blocked the event loop for 65s. The longest real term is 115 characters. */
 const MAX_QUERY_LENGTH = 128;
 
 export const searchDestinations = async (req: Request, res: Response): Promise<void> => {
