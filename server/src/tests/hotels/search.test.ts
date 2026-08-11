@@ -296,4 +296,183 @@ describe('Hotel Search API', () => {
       expect(hotel.rating).to.be.at.least(4);
     });
   });
+
+  // ── Robustness / boundary cases ──
+
+  it('should return an empty hotels array for a page beyond the last page', async () => {
+    nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+    nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
+
+    const response = await request(app)
+      .get('/api/hotels/search')
+      .query({
+        destination_id: 'RsBU',
+        checkin: '2026-08-15',
+        checkout: '2026-08-20',
+        guests: '2',
+        rooms: '1',
+        page: '999',
+        pageSize: '10',
+      });
+
+    expect(response.status).to.equal(200);
+    expect(response.body.hotels).to.be.an('array').that.is.empty;
+    expect(response.body.page).to.equal(999);
+  });
+
+  it('should return 200 (not 500) for page=0 and pageSize=0', async () => {
+    nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+    nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
+
+    const response = await request(app)
+      .get('/api/hotels/search')
+      .query({
+        destination_id: 'RsBU',
+        checkin: '2026-08-15',
+        checkout: '2026-08-20',
+        guests: '2',
+        rooms: '1',
+        page: '0',
+        pageSize: '0',
+      });
+
+    expect(response.status).to.equal(200);
+    expect(response.body).to.have.property('hotels').that.is.an('array');
+  });
+
+  it('should return 400 when rooms is missing entirely', async () => {
+    const response = await request(app)
+      .get('/api/hotels/search')
+      .query({
+        destination_id: 'RsBU',
+        checkin: '2026-08-15',
+        checkout: '2026-08-20',
+        guests: '2',
+        // rooms deliberately omitted
+      });
+
+    expect(response.status).to.equal(400);
+    expect(response.body).to.have.property('required');
+    expect(response.body.required).to.include('rooms');
+  });
+
+  it('should not crash for rooms=0 or rooms=-1', async () => {
+    for (const rooms of ['0', '-1']) {
+      nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+      nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
+
+      const response = await request(app)
+        .get('/api/hotels/search')
+        .query({
+          destination_id: 'RsBU',
+          checkin: '2026-08-15',
+          checkout: '2026-08-20',
+          guests: '2',
+          rooms,
+        });
+
+      // Either a 400 (validation), a 200 (tolerant handling), or a mapped
+      // gateway 5xx when the upstream rejects the odd param — never a 500.
+      expect([200, 400, 502, 504]).to.include(response.status);
+    }
+  });
+
+  it('should gracefully handle non-numeric guests', async () => {
+    nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+    nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
+
+    const response = await request(app)
+      .get('/api/hotels/search')
+      .query({
+        destination_id: 'RsBU',
+        checkin: '2026-08-15',
+        checkout: '2026-08-20',
+        guests: 'abc',
+        rooms: '1',
+      });
+
+    expect([200, 400]).to.include(response.status);
+    if (response.status === 200) {
+      expect(response.body).to.have.property('hotels').that.is.an('array');
+    }
+  });
+
+  it('should gracefully handle invalid date strings', async () => {
+    nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+    nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
+
+    const response = await request(app)
+      .get('/api/hotels/search')
+      .query({
+        destination_id: 'RsBU',
+        checkin: 'not-a-date',
+        checkout: '2026-99-99',
+        guests: '2',
+        rooms: '1',
+      });
+
+    // The gateway may forward to Ascenda (which can 200 or 5xx); what must
+    // never happen is a 500 from our own code with no gateway mapping.
+    expect([200, 400, 502, 504]).to.include(response.status);
+  });
+
+  it('should fall back to default sort for an unknown sortBy value', async () => {
+    nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+    nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
+
+    const response = await request(app)
+      .get('/api/hotels/search')
+      .query({
+        destination_id: 'RsBU',
+        checkin: '2026-08-15',
+        checkout: '2026-08-20',
+        guests: '2',
+        rooms: '1',
+        sortBy: 'garbage_sort',
+      });
+
+    expect(response.status).to.equal(200);
+    // Default is searchRank_asc: first hotel has the lowest searchRank (1).
+    expect(response.body.hotels[0].searchRank).to.equal(1);
+  });
+
+  it('should handle starRating out of range gracefully', async () => {
+    for (const starRating of ['6', '0']) {
+      nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+      nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
+
+      const response = await request(app)
+        .get('/api/hotels/search')
+        .query({
+          destination_id: 'RsBU',
+          checkin: '2026-08-15',
+          checkout: '2026-08-20',
+          guests: '2',
+          rooms: '1',
+          starRating,
+        });
+
+      expect(response.status).to.equal(200);
+      expect(response.body.hotels).to.be.an('array');
+    }
+  });
+
+  it('should handle whitespace and encoded destination ids without crashing', async () => {
+    nock(API_BASE).get(PRICES_PATH).query(true).reply(200, mockPriceResponse);
+    nock(API_BASE).get(HOTELS_PATH).query(true).reply(200, mockHotelDetails);
+
+    const response = await request(app)
+      .get('/api/hotels/search')
+      .query({
+        destination_id: ' ',
+        checkin: '2026-08-15',
+        checkout: '2026-08-20',
+        guests: '2',
+        rooms: '1',
+      });
+
+    // Whitespace destination id should not crash; a 200 (empty) or gateway 5xx
+    // are both acceptable, but never a 500 from our own code.
+    expect([200, 400, 502, 504]).to.include(response.status);
+  });
 });

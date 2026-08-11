@@ -298,4 +298,50 @@ describe('ResultsPage Component', () => {
       );
     });
   });
+
+  // ── Boundary / robustness ──
+
+  it('renders the search summary correctly when guests is 0', async () => {
+    vi.mocked(axios.get).mockResolvedValueOnce(mockSearchResponse);
+
+    renderWithParams('dest=dest-1&name=Singapore&in=2026-08-15&out=2026-08-20&guests=0&rooms=1');
+
+    await waitFor(() => {
+      expect(screen.getByText('Marina Bay Sands')).toBeInTheDocument();
+    });
+
+    // "0 guest" (no plural) appears in the results summary — the paragraph
+    // below the "Hotels in Singapore" heading.
+    const resultsSummary = screen.getByText(/hotels found/i);
+    expect(resultsSummary.textContent).toContain('0 guest');
+    expect(resultsSummary.textContent).toContain('1 room');
+  });
+
+  it('gracefully handles non-numeric guests in the URL', async () => {
+    vi.mocked(axios.get).mockResolvedValueOnce(mockSearchResponse);
+
+    renderWithParams('dest=dest-1&name=Singapore&in=2026-08-15&out=2026-08-20&guests=abc&rooms=1');
+
+    // The component only checks `!guests` for missing, so 'abc' is truthy and
+    // the fetch proceeds; the summary's parseInt('abc') is NaN but must not
+    // crash the render.
+    await waitFor(() => {
+      expect(screen.getByText('Marina Bay Sands')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/Hotels in Singapore/i)).toBeInTheDocument();
+  });
+
+  it('falls back to 1 room when the rooms param is missing', async () => {
+    vi.mocked(axios.get).mockResolvedValueOnce(mockSearchResponse);
+
+    renderWithParams('dest=dest-1&name=Singapore&in=2026-08-15&out=2026-08-20&guests=2');
+
+    await waitFor(() => {
+      expect(screen.getByText('Marina Bay Sands')).toBeInTheDocument();
+    });
+
+    // Defaults to 1 room → "1 room" (no plural suffix).
+    expect(screen.getByText(/1 room/i)).toBeInTheDocument();
+  });
 });
