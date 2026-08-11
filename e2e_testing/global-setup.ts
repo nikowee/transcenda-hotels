@@ -6,7 +6,7 @@ const BACKEND_PORT = 5000;
 const FRONTEND_PORT = 3000;
 
 /** Every route a spec navigates to. Add new ones here when adding a spec. */
-const ROUTES = ['/', '/booking', '/checkout', '/payment', '/confirmation'];
+const ROUTES = ['/', '/results', '/hotel/warmup', '/booking', '/checkout', '/payment', '/confirmation'];
 
 /**
  * Loads each route once in a real browser before any spec runs.
