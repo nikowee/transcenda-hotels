@@ -439,6 +439,13 @@ test.describe('Booking Flow', () => {
   });
 
   test('A declined card says so, books nothing and goes nowhere', async ({ page }) => {
+    // Two payment cycles, not one: a decline and then a recovery. Under Elements
+    // that is two round trips to Stripe on top of the checkout walk, which does
+    // not fit the 30s default — and the assertions below wait up to 60s each, so
+    // without this the test is killed before any of them can report what actually
+    // went wrong. Every failure here then reads as a bare harness timeout.
+    test.setTimeout(120_000);
+
     // Stripe's published decline number. The demo has no gateway to ask, so the
     // form recognises it locally — which means the failure has to be complete:
     // no confirm call, no navigation, and therefore no row. A decline that
