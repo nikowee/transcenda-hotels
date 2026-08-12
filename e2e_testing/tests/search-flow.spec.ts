@@ -1,3 +1,4 @@
+import { CHECK_IN, CHECK_OUT } from './fixtures/dates.js';
 import { test, expect } from '@playwright/test';
 
 test.describe('Search Flow', () => {
@@ -19,8 +20,8 @@ test.describe('Search Flow', () => {
     
     // ─── 5. Set dates ──────────────────────────────────────
     const dateInputs = page.locator('input[type="date"]');
-    await dateInputs.first().fill('2026-08-15');
-    await dateInputs.last().fill('2026-08-20');
+    await dateInputs.first().fill(CHECK_IN);
+    await dateInputs.last().fill(CHECK_OUT);
     
     // ─── 6. Set guests and rooms ────────────────────────────
     await page.selectOption('select:first-of-type', '2');

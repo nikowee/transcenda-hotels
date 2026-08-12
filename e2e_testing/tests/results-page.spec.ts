@@ -1,3 +1,4 @@
+import { CHECK_IN, CHECK_OUT } from './fixtures/dates.js';
 import { test, expect } from '@playwright/test';
 
 test.describe('Results Page', () => {
@@ -19,8 +20,8 @@ test.describe('Results Page', () => {
 
     // ─── 5. Set dates ──────────────────────────────────────
     const dateInputs = page.locator('input[type="date"]');
-    await dateInputs.first().fill('2026-08-15');
-    await dateInputs.last().fill('2026-08-20');
+    await dateInputs.first().fill(CHECK_IN);
+    await dateInputs.last().fill(CHECK_OUT);
 
     // ─── 6. Set guests and rooms ────────────────────────────
     await page.selectOption('select:first-of-type', '2');
@@ -53,7 +54,7 @@ test.describe('Results Page', () => {
 
   test('Displays hotel details when navigating with valid params', async ({ page }) => {
     // ─── 1. Navigate directly to results with valid params ──
-    await page.goto('/results?dest=RsBU&name=Singapore&in=2026-08-15&out=2026-08-20&guests=2&rooms=1');
+    await page.goto(`/results?dest=RsBU&name=Singapore&in=${CHECK_IN}&out=${CHECK_OUT}&guests=2&rooms=1`);
 
     // ─── 2. Verify search summary appears ────────────────────
     await expect(page.getByText(/Hotels in Singapore/i)).toBeVisible({ timeout: 30000 });
@@ -62,7 +63,7 @@ test.describe('Results Page', () => {
     await expect(page.getByText(/hotels found/i)).toBeVisible({ timeout: 30000 });
 
     // ─── 4. Verify dates are displayed ───────────────────────
-    await expect(page.getByText(/2026-08-15/i)).toBeVisible();
+    await expect(page.getByText(CHECK_IN, { exact: false })).toBeVisible();
 
     // ─── 5. Verify at least one hotel card is rendered ───────
     await expect(page.getByText(/Select Hotel/i).first()).toBeVisible({ timeout: 30000 });
