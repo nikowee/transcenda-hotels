@@ -1,60 +1,35 @@
-import { describe, it } from 'mocha';
-import { expect } from 'chai';
-import request from 'supertest';
-import { app } from '../setup.ts';
+/**
+ * Feature 4 (Booking data) — coverage index.
+ *
+ * This file began as a scaffold of `it.skip` placeholders written when UC4 had
+ * no backend tests. It has them now, so the placeholders are replaced by a map
+ * to the suites that actually assert each case. Skipped stubs cost nothing to
+ * keep and read, to anyone running `npm test`, as unfinished security work.
+ *
+ *   400 on missing guest information
+ *     → booking.test.ts  "returns field errors for missing details (alternative flow 1a)"
+ *
+ *   Creates a booking and returns a reference on valid input
+ *     → booking.test.ts        "is idempotent across repeated confirmations"
+ *     → recordPaidBooking.test.ts  writes the row and returns its id
+ *
+ *   Card number masked in stored and returned data
+ *     → booking.test.ts  "returns the booking and never exposes card data beyond the last four"
+ *     → stripePayments.test.ts  "reads the card brand, last four and expiry off the expanded payment method"
+ *
+ *   Raw CVV and full PAN never persisted
+ *     → PaymentPage.test.tsx (client)  "never renders a card input"
+ *     → booking-flow.spec.ts (e2e)  asserts no PAN, in any spelling, in anything the browser sent
+ *
+ *   Invalid or expired card rejected by the processor
+ *     → paymentIntent.test.ts  "surfaces a declined card as a safe message with no Stripe wording"
+ *     → booking-flow.spec.ts (e2e)  "A declined card says so, books nothing and goes nowhere"
+ *
+ *   GET /api/bookings/:id returns the confirmation details
+ *     → booking.test.ts  "returns the booking and never exposes card data beyond the last four"
+ *
+ * GDPR account deletion was the one case with no coverage anywhere. It now has
+ * its own suite: see `deleteAccount.test.ts`.
+ */
 
-// ────────────────────────────────────────────────────────────────────
-// TODO: Feature 4 (Booking data) currently has NO backend tests, and
-// no route/service code for it was available when this scaffold was
-// generated. Fill these in once POST /api/bookings (or equivalent)
-// exists. Suggested cases, based on the case study's requirements:
-// ────────────────────────────────────────────────────────────────────
-
-describe('Booking API', () => {
-  it.skip('should return 400 when required guest information is missing', async () => {
-    // Currently returns 404 - there's no /api/bookings route in index.ts
-    // yet. Un-skip this once that route exists.
-    const response = await request(app).post('/api/bookings').send({
-      // missing firstName, lastName, email, phone, payment info, etc.
-    });
-
-    expect(response.status).to.equal(400);
-  });
-
-  it.skip('should create a booking and return a booking reference on valid input', async () => {
-    // TODO: mock the Stripe API call (nock('https://api.stripe.com') ...)
-    // and assert the response includes a bookingReference, price,
-    // destination_id, hotel_id, and stay details.
-  });
-
-  it.skip('should mask the card number in stored/returned booking data', async () => {
-    // Per the spec: only the first 6 and last 4 digits of the card
-    // number should ever be persisted or displayed.
-    // e.g. expect(response.body.payeeInformation.cardNumber).to.match(/^\d{6}\*+\d{4}$/);
-  });
-
-  it.skip('should not persist raw CVV/CVC or full card number anywhere', async () => {
-    // TODO: inspect whatever your booking is stored in (DB call, mock, etc.)
-    // to assert the raw CVV/full PAN never reaches storage.
-  });
-
-  it.skip('should reject an invalid/expired card via the payment processor', async () => {
-    // TODO: mock a Stripe decline response and assert the booking is
-    // NOT created and a meaningful error is returned.
-  });
-
-  it.skip('GET /api/bookings/:id should return the confirmation details', async () => {
-    // TODO: once a booking exists, fetching it should return the same
-    // shape shown on the confirmation page (booking ref, stay dates,
-    // guest info, last 4 digits of card).
-  });
-});
-
-describe('GDPR - Delete Account API', () => {
-  it.skip('should delete all PII (name, email, phone, birth date) for a user on request', async () => {
-    // TODO: covers the "Delete Account" requirement in the non-functional
-    // requirements section. Assert the user's PII fields are gone/anonymized
-    // after calling the delete endpoint, while non-PII records (e.g.
-    // aggregate booking counts) can remain if your design keeps them.
-  });
-});
+export {};
