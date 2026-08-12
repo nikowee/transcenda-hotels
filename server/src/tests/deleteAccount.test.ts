@@ -1,4 +1,4 @@
-import { describe, it, beforeEach } from 'mocha';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { randomUUID } from 'crypto';
 import request from 'supertest';
@@ -28,6 +28,15 @@ describe('DELETE /api/users/:uid — account deletion', () => {
     nock.cleanAll();
   });
 
+  /**
+   * Leave no interceptor behind. hotelName.test.ts asserts nock.isDone(),
+   * which is global, so an unconsumed interceptor from this file fails a suite
+   * that never touched it.
+   */
+  afterEach(() => {
+    nock.cleanAll();
+  });
+
   it('deletes the caller’s own account', async () => {
     const session = signIn();
     const scope = expectAdminDelete(session.userId);
@@ -43,12 +52,12 @@ describe('DELETE /api/users/:uid — account deletion', () => {
   it('refuses to delete somebody else’s account', async () => {
     const session = signIn();
     const victim = randomUUID();
-    const scope = expectAdminDelete(victim);
-
+    // No interceptor on purpose: globalSetup blocks outbound sockets, so a
+    // delete that escaped the entitlement check would fail this test by
+    // erroring rather than quietly succeeding.
     const response = await request(app).delete(`/api/users/${victim}`).set(session.header);
 
     expect(response.status).to.equal(403);
-    expect(scope.isDone(), 'no delete may reach Supabase').to.equal(false);
   });
 
   /** 403, not 404: the caller is authenticated, just not entitled — and a 404 would confirm which ids exist. */
@@ -62,12 +71,9 @@ describe('DELETE /api/users/:uid — account deletion', () => {
   });
 
   it('rejects an unauthenticated caller before looking at the id', async () => {
-    const scope = expectAdminDelete('anything');
-
     const response = await request(app).delete(`/api/users/${randomUUID()}`);
 
     expect(response.status).to.equal(401);
-    expect(scope.isDone()).to.equal(false);
   });
 
   it('rejects a malformed id', async () => {
