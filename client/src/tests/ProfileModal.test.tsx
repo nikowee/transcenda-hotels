@@ -230,3 +230,62 @@ describe('ProfileModal — Booking History', () => {
     expect(await screen.findByText('Marina Bay Sands')).toBeInTheDocument();
   });
 });
+
+/**
+ * Account deletion — the most destructive request the client makes, and the
+ * one route where a missing credential is silent: the server answers 401 and
+ * the modal shows a generic "Error deleting account".
+ */
+describe('ProfileModal — Delete Account', () => {
+  beforeEach(() => {
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({
+      data: { session: { access_token: ACCESS_TOKEN, user: USER } },
+      error: null,
+    } as never);
+    vi.mocked(supabase.auth.signInWithPassword).mockResolvedValue({
+      data: { user: USER, session: null },
+      error: null,
+    } as never);
+    vi.mocked(supabase.auth.signOut).mockResolvedValue({ error: null } as never);
+  });
+
+  /** Opens the confirm dialog, enters the password and submits. */
+  const submitDeletion = async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole('button', { name: /delete account/i }));
+    // The password input has a placeholder, not a label.
+    await user.type(await screen.findByPlaceholderText(/enter your password/i), 'correct-horse');
+    await user.click(screen.getByRole('button', { name: /confirm deletion/i }));
+  };
+
+  it('sends the access token, so the server does not reject the deletion', async () => {
+    let authorization: string | null = 'never called';
+    server.use(
+      http.delete('*/api/users/:uid', ({ request }) => {
+        authorization = request.headers.get('authorization');
+        return HttpResponse.json({ success: true });
+      })
+    );
+
+    await submitDeletion();
+
+    // The route is behind requireUser. Without this header every deletion 401s,
+    // which is exactly how this shipped.
+    await waitFor(() => expect(authorization).toBe(`Bearer ${ACCESS_TOKEN}`));
+  });
+
+  it('deletes the signed-in account, not some other id', async () => {
+    let path = '';
+    server.use(
+      http.delete('*/api/users/:uid', ({ request }) => {
+        path = new URL(request.url).pathname;
+        return HttpResponse.json({ success: true });
+      })
+    );
+
+    await submitDeletion();
+
+    await waitFor(() => expect(path).toBe(`/api/users/${USER_ID}`));
+  });
+});
