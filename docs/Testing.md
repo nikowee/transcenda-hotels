@@ -14,19 +14,19 @@ This page documents the complete testing suite for Transcenda Hotels, covering a
 
 ```
                     ┌─────────────────────────────────────┐
-                    │        E2E Tests (22 tests)         │
+                    │        E2E Tests (35 tests)         │
                     │  Playwright — full system in Docker │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │       Backend (375 tests)           │
+                    │       Backend (446 tests)           │
                     │  Mocha + Chai + Supertest; nock     │
                     │  fakes Stripe and Ascenda at the    │
                     │  socket, network blocked outright   │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │      Frontend (166 tests)           │
+                    │      Frontend (193 tests)           │
                     │  Vitest + Testing Library, MSW      │
                     │  intercepting every request         │
                     └─────────────────────────────────────┘
@@ -95,49 +95,88 @@ Every client suite lives in `client/src/tests/`; every server suite lives in
 report, which excludes `src/tests/`.
 
 | Suite | Tests | Tools | Location |
-|-------|-------|-------|----------|
-| `SearchForm.test.tsx` | 6 | Vitest + RTL, `vi.mock('axios')` | `client/src/tests/` |
-| `SearchForm.integration.test.tsx` | 4 | MSW + Vitest | `client/src/tests/` |
-| `CheckoutPage.test.tsx` | 18 | MSW + Vitest | `client/src/tests/` |
-| `PaymentPage.test.tsx` | 39 | MSW + Vitest, mocked Stripe Elements | `client/src/tests/` |
-| `ConfirmationPage.test.tsx` | 17 | MSW + Vitest | `client/src/tests/` |
-| `PaymentPageNoStripeKey.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+|---|---|---|---|
+| `Auth.test.tsx` | 7 | Vitest + RTL | `client/src/tests/` |
 | `BookingEntry.test.tsx` | 6 | Vitest + RTL | `client/src/tests/` |
-| `destination.test.ts` | 7 | Mocha + Chai + Supertest | `server/src/tests/` |
-| `booking.test.ts` | 46 | Mocha + Chai + Supertest | `server/src/tests/` |
+| `CheckoutPage.test.tsx` | 27 | Vitest + RTL | `client/src/tests/` |
+| `ConfirmationPage.test.tsx` | 18 | Vitest + RTL | `client/src/tests/` |
+| `FilterPanel.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+| `HotelCard.test.tsx` | 6 | Vitest + RTL | `client/src/tests/` |
+| `HotelDetailsPage.integration.test.tsx` | 7 | Vitest + RTL | `client/src/tests/` |
+| `HotelDetailsPage.test.tsx` | 10 | Vitest + RTL | `client/src/tests/` |
+| `LoadingPage.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+| `Login.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+| `Navbar.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+| `Pagination.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+| `PaymentPage.test.tsx` | 28 | Vitest + RTL | `client/src/tests/` |
+| `PaymentPageNoStripeKey.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+| `ProfileModal.test.tsx` | 11 | Vitest + RTL | `client/src/tests/` |
+| `ResultsPage.integration.test.tsx` | 4 | Vitest + RTL | `client/src/tests/` |
+| `ResultsPage.test.tsx` | 13 | Vitest + RTL | `client/src/tests/` |
+| `RoomList.test.tsx` | 10 | Vitest + RTL | `client/src/tests/` |
+| `SearchForm.integration.test.tsx` | 4 | Vitest + RTL | `client/src/tests/` |
+| `SearchForm.test.tsx` | 14 | Vitest + RTL | `client/src/tests/` |
+| `Signup.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+| `amenityIcons.test.ts` | 3 | Vitest + RTL | `client/src/tests/` |
+| `booking.test.ts` | 62 | Mocha + Chai | `server/src/tests/` |
+| `bookingModel.test.ts` | 20 | Mocha + Chai | `server/src/tests/` |
+| `bookings/booking.test.ts` | 7 | Mocha + Chai | `server/src/tests/` |
 | `buildQuote.test.ts` | 59 | Mocha + Chai | `server/src/tests/` |
-| `bookingModel.test.ts` | 17 | Mocha + Chai | `server/src/tests/` |
-| `paymentIntent.test.ts` | 59 | Mocha + Chai + Supertest | `server/src/tests/` |
-| `recordPaidBooking.test.ts` | 21 | Mocha + Chai | `server/src/tests/` |
+| `destinations/search.test.ts` | 14 | Mocha + Chai | `server/src/tests/` |
+| `emailService.test.ts` | 10 | Mocha + Chai | `server/src/tests/` |
+| `external/ascenda-api.test.ts` | 4 | Mocha + Chai | `server/src/tests/` |
+| `external/search.integration.test.ts` | 5 | Mocha + Chai | `server/src/tests/` |
+| `fuzz/buildQuote.fuzz.test.ts` | 5 | Mocha + Chai | `server/src/tests/` |
+| `fuzz/hotelSearch.fuzz.test.ts` | 4 | Mocha + Chai | `server/src/tests/` |
+| `fuzz/validators.fuzz.test.ts` | 11 | Mocha + Chai | `server/src/tests/` |
+| `health.test.ts` | 1 | Mocha + Chai | `server/src/tests/` |
+| `hotelName.test.ts` | 7 | Mocha + Chai | `server/src/tests/` |
+| `hotelRoomService.test.ts` | 17 | Mocha + Chai | `server/src/tests/` |
+| `hotels/details.test.ts` | 8 | Mocha + Chai | `server/src/tests/` |
+| `hotels/price.test.ts` | 4 | Mocha + Chai | `server/src/tests/` |
+| `hotels/search.test.ts` | 18 | Mocha + Chai | `server/src/tests/` |
+| `paymentIntent.test.ts` | 46 | Mocha + Chai | `server/src/tests/` |
 | `paymentService.test.ts` | 14 | Mocha + Chai | `server/src/tests/` |
-| `rateLimit.test.ts` | 8 | Mocha + Chai | `server/src/tests/` |
-| `stripePayments.test.ts` | 25 | Mocha + Chai + **nock** | `server/src/tests/` |
-| `stripePaymentIntents.test.ts` | 25 | Mocha + Chai + **nock** | `server/src/tests/` |
-| `stripeRefunds.test.ts` | 11 | Mocha + Chai + **nock** | `server/src/tests/` |
-| `stripeWebhook.test.ts` | 21 | Mocha + Chai + Supertest | `server/src/tests/` |
-| `hotelRoomService.test.ts` | 17 | Mocha + Chai + **nock** | `server/src/tests/` |
-| `hotelName.test.ts` | 7 | Mocha + Chai + Supertest + **nock** | `server/src/tests/` |
-| `emailService.test.ts` | 6 | Mocha + Chai | `server/src/tests/` |
-| `supplierPricing.test.ts` | 8 | Mocha + Chai + Supertest + **nock** | `server/src/tests/` |
-| `booking-flow.spec.ts` | 11 | Playwright | `e2e_testing/tests/` |
-| `search-*.spec.ts` | 5 | Playwright | `e2e_testing/tests/` |
-| **Total** | **462** | — | — |
+| `rateLimit.test.ts` | 10 | Mocha + Chai | `server/src/tests/` |
+| `recordPaidBooking.test.ts` | 22 | Mocha + Chai | `server/src/tests/` |
+| `services/ascendaServices.test.ts` | 7 | Mocha + Chai | `server/src/tests/` |
+| `stripePaymentIntents.test.ts` | 25 | Mocha + Chai | `server/src/tests/` |
+| `stripePayments.test.ts` | 25 | Mocha + Chai | `server/src/tests/` |
+| `stripeRefunds.test.ts` | 11 | Mocha + Chai | `server/src/tests/` |
+| `stripeWebhook.test.ts` | 21 | Mocha + Chai | `server/src/tests/` |
+| `supplierPricing.test.ts` | 8 | Mocha + Chai | `server/src/tests/` |
+| `booking-flow.spec.ts` | 14 | Playwright | `e2e_testing/tests/` |
+| `hotel-details.spec.ts` | 9 | Playwright | `e2e_testing/tests/` |
+| `login.integration.spec.ts` | 2 | Playwright | `e2e_testing/tests/` |
+| `results-page.spec.ts` | 7 | Playwright | `e2e_testing/tests/` |
+| `search-error-handling.spec.ts` | 4 | Playwright | `e2e_testing/tests/` |
+| `search-flow.spec.ts` | 3 | Playwright | `e2e_testing/tests/` |
+| `security.integration.spec.ts` | 2 | Playwright | `e2e_testing/tests/` |
+| `signup.integration.spec.ts` | 2 | Playwright | `e2e_testing/tests/` |
+| **Total** | **691** | — | — |
+
+*Generated by counting `it(`/`test(` in source, so it is a **source-level**
+count. The runners report **674** — 446 server, 193 client, 35 E2E — and the
+two differ for two honest reasons: `external/ascenda-api.test.ts` (4 tests)
+hits the live supplier and is excluded from `npm test` by design, and a
+templated title inside a loop is one entry here but several tests at runtime.
+Regenerate rather than hand-edit; every count in this file drifted before.*
 
 ---
 
 ## 🚀 Quick Start
 
 ```bash
-# Frontend: 166 tests
+# Frontend: 193 tests
 cd client && npm run test
 
-# Backend: 375 tests (+3 pending)
+# Backend: 446 tests
 cd server && npm run test
 
 # Backend: real-network Ascenda smoke tests (opt-in, hits the live API)
 cd server && npm run test:external
 
-# E2E: 22 tests, auto-starts Docker
+# E2E: 35 tests, auto-starts Docker
 cd e2e_testing && npm ci && npx playwright install chromium && npx playwright test
 ```
 
