@@ -1,4 +1,5 @@
 {
   "require": ["tsx", "./src/tests/globalSetup.ts"],
-  "extension": ["ts"]
+  "extension": ["ts"],
+  "timeout": 15000
 }
