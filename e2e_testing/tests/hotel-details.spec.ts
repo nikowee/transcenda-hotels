@@ -1,6 +1,7 @@
+import { CHECK_IN, CHECK_OUT } from './fixtures/dates.js';
 import { test, expect, type Page } from '@playwright/test';
 
-const SEARCH_PARAMS = 'dest=RsBU&name=Singapore&in=2026-08-15&out=2026-08-20&guests=2&rooms=1';
+const SEARCH_PARAMS = `dest=RsBU&name=Singapore&in=${CHECK_IN}&out=${CHECK_OUT}&guests=2&rooms=1`;
 const DETAILS_URL = `/hotel/e2e-hotel?${SEARCH_PARAMS}`;
 
 //the live Ascenda search and room poll are slow, so the journey test needs
@@ -164,8 +165,8 @@ test.describe('Hotel Room Details', () => {
     await expect(page).toHaveURL(/\/checkout\?/);
     await expect(page).toHaveURL(/hotelId=e2e-hotel/);
     await expect(page).toHaveURL(/roomTypes=rate-deluxe/);
-    await expect(page).toHaveURL(/startDate=2026-08-15/);
-    await expect(page).toHaveURL(/endDate=2026-08-20/);
+    await expect(page).toHaveURL(new RegExp(`startDate=${CHECK_IN}`));
+    await expect(page).toHaveURL(new RegExp(`endDate=${CHECK_OUT}`));
     await expect(page).toHaveURL(/adults=2/);
   });
 

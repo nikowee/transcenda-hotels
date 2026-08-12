@@ -52,6 +52,15 @@ export default async function globalSetup() {
 
   console.log('🐳 Starting Docker containers...');
 
+  // Pin the expected payment UI from the server's own mode, so a stray Stripe
+  // key in server/.env cannot silently flip the suite onto live Stripe while
+  // the specs still believe they are driving the demo form. Not hardcoded in
+  // playwright.config.ts: server/.env is gitignored, and a teammate without
+  // Stripe keys is meant to run simulate.
+  const paymentsMode = process.env.PAYMENTS_MODE ?? '';
+  process.env.E2E_EXPECT_UI ??= paymentsMode === 'simulate' ? 'demo' : 'elements';
+  console.log(`💳 Payment UI pinned to: ${process.env.E2E_EXPECT_UI}`);
+
   // Start docker-compose (detached mode). 
   // Relaxed rate limits only here (defaults to false in docker-compose.yaml 
   // so normal dev runs retain the same prod limits)

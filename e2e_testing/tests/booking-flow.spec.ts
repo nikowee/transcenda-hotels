@@ -4,27 +4,21 @@ import { test, expect, type Page } from '@playwright/test';
 /**
  * UC4 — Book & Make Payment, end to end against the Dockerised stack.
  *
- * The server suites prove each layer in isolation and nock proves the Stripe
- * contract, but neither runs the browser. Only this level catches a route that
- * does not resolve, a redirect that lands nowhere, or an API the deployed client
- * cannot reach — the CORS allowlist regression that silently emptied the
- * destination dropdown was exactly that shape and no unit test could have seen it.
+ * Which card UI mounts follows PAYMENTS_MODE in server/.env, and the driver
+ * adapts rather than assuming:
  *
- * Runs against `PAYMENTS_MODE=simulate` from server/.env, so the intent the
- * server mints comes back with `simulated: true` and /payment renders the demo
- * card form rather than Stripe Elements — Elements cannot mount without a live
- * client secret, and there are no credentials here. The demo form is therefore
- * what a browser sees in this stack, and what these specs drive.
+ *   blank      real Stripe Elements. The card is typed into Stripe's own
+ *              cross-origin iframe and never reaches our server, so this is
+ *              the only level that exercises the real gateway end to end.
+ *   simulate   the in-app demo form. The browser derives brand, last four and
+ *              expiry itself, which is the mode where the PAN-derivation
+ *              assertions have teeth.
  *
- * That makes this the only level at which the card-number invariant can be
- * observed for real: the demo form takes a PAN, and the assertion is that the
- * PAN does not appear in anything the browser sends. Recorded off the wire, not
- * off a mock.
+ * Set E2E_EXPECT_UI=demo|elements to pin the mode; a mismatch fails loudly
+ * rather than silently testing the other stack.
  *
- * Every route these specs navigate to must also be listed in the ROUTES array in
- * global-setup.ts — /payment included. Vite transforms modules on demand, so the
- * first spec to reach a cold route gets a blank page and a timeout that reads as
- * flakiness.
+ * Only Stripe's published test card numbers are ever typed here. They cannot
+ * move money in either mode.
  */
 
 /** Mirrors CheckoutPage's fallbacks: hotelId, hotelName and roomTypes all default. */
@@ -131,6 +125,15 @@ const fillGuestDetails = async (page: Page, overrides: Partial<typeof GUEST> = {
   await page.getByRole('combobox', { name: /billing country/i }).selectOption(BILLING.country);
 };
 
+/**
+ * Elements mounts against live Stripe and its card iframe can take tens of
+ * seconds. Without this the 60000ms waits below are unreachable — playwright
+ * .config.ts caps each test at 30000ms, so the test is killed first and the
+ * call log reports a deadline it was never allowed to reach. Mirrors
+ * hotel-details.spec.ts's LIVE_JOURNEY_TIMEOUT.
+ */
+const ELEMENTS_JOURNEY_TIMEOUT = 90_000;
+
 /** Which card UI the server mounted: the demo form (PAYMENTS_MODE=simulate) or real Stripe Elements. */
 type PaymentUI = 'demo' | 'elements';
 
@@ -218,6 +221,7 @@ const reachPaymentPage = async (page: Page): Promise<PaymentUI> => {
 
 test.describe('Booking Flow', () => {
   test('User can search, book and reach a confirmed reservation', async ({ page }) => {
+    test.setTimeout(ELEMENTS_JOURNEY_TIMEOUT);
     const apiPosts = recordApiPosts(page);
 
     // ─── 1. Enter through the seam RoomList uses ────────────
@@ -430,24 +434,34 @@ test.describe('Booking Flow', () => {
     await page.getByRole('button', { name: /continue to payment/i }).click();
     await expect(page.getByRole('button', { name: /pay sgd/i })).toBeVisible();
 
+    // The id is part of the scan: the demo form's inputs carry only ids
+    // (#demo-card-number, #demo-cvc) and no name or placeholder, so a scan
+    // without it cannot see the very UI this repository ships.
     const cardish = await page.locator('input, select, textarea').evaluateAll((fields) =>
       fields
-        .map((field) => ({
-          name: field.getAttribute('name') ?? '',
-          autocomplete: field.getAttribute('autocomplete') ?? '',
-          placeholder: field.getAttribute('placeholder') ?? '',
-        }))
-        .filter(
-          (attrs) =>
-            /card|cvc|cvv|pan|expiry/i.test(`${attrs.name} ${attrs.placeholder}`) ||
-            /^cc-/i.test(attrs.autocomplete)
+        .map((field) =>
+          [
+            field.id,
+            field.getAttribute('name') ?? '',
+            field.getAttribute('placeholder') ?? '',
+            field.getAttribute('autocomplete') ?? '',
+          ].join(' ')
         )
+        .filter((attrs) => /card|cvc|cvv|pan|expiry|(^|\s)cc-/i.test(attrs))
     );
 
     expect(cardish).toEqual([]);
+
+    // Elements keeps its inputs cross-origin, so no DOM scan can ever reach
+    // them — the absence of the frame is the only observable that holds.
+    // STRIPE_FRAME is the same title detectPaymentUI and fillCard key on;
+    // matching js.stripe.com instead would fail everywhere, because Stripe.js
+    // boots two hidden controller frames on every route.
+    await expect(page.locator(STRIPE_FRAME)).toHaveCount(0);
   });
 
   test('A declined card says so, books nothing and goes nowhere', async ({ page }) => {
+    test.setTimeout(ELEMENTS_JOURNEY_TIMEOUT);
     // Stripe's published decline number. The demo has no gateway to ask, so the
     // form recognises it locally — which means the failure has to be complete:
     // no confirm call, no navigation, and therefore no row. A decline that
@@ -506,10 +520,18 @@ test.describe('Booking Flow', () => {
   });
 
   test('A cancelled payment says so and charges nothing', async ({ page }) => {
+    // The second half of the name needs a recorder, or the test only checks
+    // that the page says nothing was charged — not that nothing was.
+    const apiPosts = recordApiPosts(page);
+
     await page.goto('/checkout?cancelled=1');
 
     await expect(page.getByText(/You cancelled the payment/)).toBeVisible();
     await expect(page.getByText(/Nothing was charged/)).toBeVisible();
+
+    // Unwaited, this reads apiPosts before a late request could appear.
+    await page.waitForLoadState('networkidle');
+    expect(apiPosts.filter((post) => post.path.startsWith('/api/bookings'))).toHaveLength(0);
   });
 
   test('An unknown booking id reports not found, not an error page', async ({ page }) => {
@@ -574,8 +596,9 @@ test.describe('Booking Flow', () => {
     // A guest who cancels payment is dropped back on /checkout?cancelled=1.
     // Their details should still be in the form so they can retry without
     // re-entering everything — the handoff survives a cancellation by design.
+    const email = uniqueEmail();
     await page.goto(CHECKOUT_URL);
-    await fillGuestDetails(page);
+    await fillGuestDetails(page, { email });
     await page.getByRole('button', { name: /continue to payment/i }).click();
     await page.getByRole('button', { name: /pay sgd/i }).click();
     await expect(page).toHaveURL(/.*\/payment/, { timeout: 15000 });
@@ -585,9 +608,15 @@ test.describe('Booking Flow', () => {
 
     await expect(page.getByText(/Nothing was charged/)).toBeVisible();
 
-    // The form should be on the review step ready to retry, not empty step 1.
+    // Reaching the review step proves the resume gate opened: CheckoutPage
+    // requires the handoff to read back and its billing and stay to match.
     await expect(
       page.getByRole('button', { name: /pay sgd/i })
     ).toBeVisible({ timeout: 10000 });
+
+    // And the details are actually there. Without this the test passes on a
+    // review step rendering empty fields, which is not "pre-filled".
+    await expect(page.getByText('Dr Jane Tan')).toBeVisible();
+    await expect(page.getByText(email)).toBeVisible();
   });
 });

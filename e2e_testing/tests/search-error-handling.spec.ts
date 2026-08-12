@@ -1,25 +1,36 @@
 import { test, expect } from '@playwright/test';
+import { CHECK_IN, CHECK_OUT_TOO_EARLY } from './fixtures/dates.js';
 
 test.describe('Error Handling', () => {
   
   test('Shows validation errors for empty search', async ({ page }) => {
-    // ─── 1. Handle the alert dialog ──────────────────────────
+    // ─── 1. Capture the alert, assert in the body ────────────
+    // The handler must stay — registering a dialog listener disables
+    // auto-dismiss, so click() cannot resolve until something accepts. But an
+    // expectation *inside* it is silent when no dialog fires: the handler never
+    // runs, nothing is asserted, and the test reports green.
+    let alertMessage = '';
     page.once('dialog', async dialog => {
-      expect(dialog.message()).toContain('Please select a valid destination from the dropdown!');
+      alertMessage = dialog.message();
       await dialog.accept();
     });
-    
+
     // ─── 2. Navigate to home ───────────────────────────────
     await page.goto('/');
-    
+
     // ─── 3. Click search without selecting anything ──────────
     await page.getByRole('button', { name: /search/i }).click();
+
+    // ─── 4. The guard fired, and nothing navigated ───────────
+    expect(alertMessage).toContain('Please select a valid destination from the dropdown!');
+    await expect(page).not.toHaveURL(/\/results/);
   });
 
   test('Shows validation errors for invalid dates', async ({ page }) => {
     // ─── 1. Handle alert dialog ──────────────────────────────
+    let alertMessage = '';
     page.once('dialog', async dialog => {
-      expect(dialog.message()).toContain('Check-out date must be after Check-in date.');
+      alertMessage = dialog.message();
       await dialog.accept();
     });
     
@@ -34,11 +45,15 @@ test.describe('Error Handling', () => {
     
     // ─── 4. Set invalid dates (check-out before check-in) ──
     const dateInputs = page.locator('input[type="date"]');
-    await dateInputs.first().fill('2026-08-15');
-    await dateInputs.last().fill('2026-08-10');  // ❌ Before check-in
+    await dateInputs.first().fill(CHECK_IN);
+    await dateInputs.last().fill(CHECK_OUT_TOO_EARLY);  // ❌ Before check-in
     
     // ─── 5. Click search ────────────────────────────────────
     await page.getByRole('button', { name: /search/i }).click();
+
+    // ─── 6. The guard fired, and nothing navigated ───────────
+    expect(alertMessage).toContain('Check-out date must be after Check-in date.');
+    await expect(page).not.toHaveURL(/\/results/);
   });
 
   test('Login and Signup buttons redirect to respective pages', async ({ page }) => {
