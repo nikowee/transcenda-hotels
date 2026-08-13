@@ -22,7 +22,7 @@ import { rateLimit } from './middleware/rateLimit.js';
 import { resolveUser, requireUser } from './middleware/auth.js';
 /** Lazy import, deliberately: supabaseClient throws at module scope when the env vars are absent, and the server must still boot on the in-memory store with no database. */
 const supabaseLib = () => import('./lib/supabaseClient.js');
-import { isSupabaseConfigured } from './models/bookingModel.js';
+import { isSupabaseConfigured, anonymiseBookingsForUser } from './models/bookingModel.js';
 // Already loaded transitively via hotelController; imported here only so
 // shutdown can release the connection after the HTTP listener drains.
 import { redis } from './lib/redisClient.js';
@@ -178,9 +178,21 @@ app.delete('/api/users/:uid', lookupLimiter, requireUser, async (req, res) => {
       return res.status(403).json({ success: false, error: 'You can only delete your own account.' });
     }
 
+    // Personal data first, account second. A booking keeps the guest's name,
+    // email and phone, so deleting only the auth user leaves all of it behind
+    // — and if this order were reversed and the erasure then failed, the owner
+    // could no longer authenticate to retry, stranding the data permanently.
+    const anonymised = await anonymiseBookingsForUser(userId);
+
     const { deleteUser } = await supabaseLib();
     await deleteUser(userId);
-    res.status(200).json({ success: true, message: 'User deleted successfully' });
+
+    console.log(`Account ${userId} deleted; ${anonymised} booking(s) anonymised.`);
+    res.status(200).json({
+      success: true,
+      message: 'User deleted successfully',
+      bookingsAnonymised: anonymised,
+    });
 
   } catch (error: any) {
     /** The message came straight from Supabase, which is how a caller learns whether an id exists and what the admin API thinks of it. */

@@ -12,6 +12,19 @@ const mockSuggestions = [
   { uid: 'dest-2', term: 'Singapore, Malaysia' },
 ];
 
+/**
+ * Dates relative to the run. SearchForm sets the check-in input's `min` to
+ * today + 3, so a hardcoded literal ages into that boundary and the guard
+ * under test stops firing — which is exactly how this suite went red.
+ */
+const daysFromNow = (n: number): string => {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const CHECK_IN = daysFromNow(30);
+const CHECK_OUT_TOO_EARLY = daysFromNow(25);
+
 describe('SearchForm Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -96,9 +109,9 @@ describe('SearchForm Component', () => {
     const checkOutInput = dateInputs[1];
 
     await user.clear(checkInInput);
-    await user.type(checkInInput, '2026-08-15');
+    await user.type(checkInInput, CHECK_IN);
     await user.clear(checkOutInput);
-    await user.type(checkOutInput, '2026-08-10');
+    await user.type(checkOutInput, CHECK_OUT_TOO_EARLY);
 
     const button = screen.getByRole('button', { name: /search/i });
     await user.click(button);
