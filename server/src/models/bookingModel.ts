@@ -18,6 +18,9 @@ export type {
 
 const TABLE = 'bookings';
 
+/** Written over erased personal fields. A constant, not empty string, so a row that was anonymised is distinguishable from one that was never filled in. */
+const REDACTED = '[deleted]';
+
 // In-memory fallback store: keeps the whole flow demoable without Supabase
 // credentials (single process only, cleared on restart).
 const memoryStore = new Map<string, BookingRecord>();
@@ -241,6 +244,61 @@ export const findByUserId = async (userId: string): Promise<BookingRecord[]> => 
 
   if (error) throw new Error(`Booking lookup failed: ${error.message}`);
   return (rows as BookingRow[]).map(fromRow);
+};
+
+/**
+ * Erases the personal data on a user's bookings, keeping the financial record.
+ *
+ * Deleting the rows outright is the wrong answer: a booking is an accounting
+ * artefact, and the money moved. What has to go is everything identifying —
+ * name, email, phone, free-text requests, the Stripe payee handle, and the
+ * link back to the account. What stays is the stay, the amount, the payment id
+ * and the card's brand and expiry, none of which names anybody.
+ *
+ * Returns how many rows were anonymised, so the caller can log it.
+ */
+export const anonymiseBookingsForUser = async (userId: string): Promise<number> => {
+  if (!isSupabaseConfigured()) {
+    let count = 0;
+    for (const [id, record] of memoryStore) {
+      if (record.userId !== userId) continue;
+      memoryStore.set(id, {
+        ...record,
+        userId: null,
+        payeeId: REDACTED,
+        specialRequests: null,
+        guest: {
+          salutation: REDACTED,
+          firstName: REDACTED,
+          lastName: REDACTED,
+          email: REDACTED,
+          phone: REDACTED,
+          specialRequests: null,
+        },
+      });
+      count += 1;
+    }
+    return count;
+  }
+
+  const supabase = await getClient();
+  const { data: rows, error } = await supabase
+    .from(TABLE)
+    .update({
+      user_id: null,
+      payee_id: REDACTED,
+      special_requests: null,
+      guest_salutation: REDACTED,
+      guest_first_name: REDACTED,
+      guest_last_name: REDACTED,
+      guest_email: REDACTED,
+      guest_phone: REDACTED,
+    })
+    .eq('user_id', userId)
+    .select('id');
+
+  if (error) throw new Error(`Booking anonymisation failed: ${error.message}`);
+  return (rows ?? []).length;
 };
 
 /** Test seam: the in-process store outlives a single suite otherwise. */
