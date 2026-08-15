@@ -20,6 +20,8 @@ import {
 import { handleStripeWebhook } from './controllers/webhookController.js';
 import { rateLimit } from './middleware/rateLimit.js';
 import { resolveUser, requireUser } from './middleware/auth.js';
+// Safe at module scope: only our own supabaseClient throws without env vars.
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 /** Lazy import, deliberately: supabaseClient throws at module scope when the env vars are absent, and the server must still boot on the in-memory store with no database. */
 const supabaseLib = () => import('./lib/supabaseClient.js');
 import { isSupabaseConfigured, anonymiseBookingsForUser } from './models/bookingModel.js';
@@ -162,8 +164,19 @@ app.post('/api/bookings/confirm', confirmLimiter, postConfirmBooking);
 app.get('/api/bookings/user/:userId', lookupLimiter, requireUser, getBookingsByUser);
 app.get('/api/bookings/:id', lookupLimiter, getBookingById);
 
-/** Account deletion — the most destructive request this API accepts, since deleting an auth user cascades to their profile row. */
+/** Bounded: the admin API is one hop away, and a request already holding partial erasure must not hang. */
+const DELETE_USER_ATTEMPTS = 3;
+const DELETE_USER_RETRY_MS = 250;
+
+/**
+ * Account deletion — the most destructive request this API accepts. The
+ * profiles row is deleted explicitly rather than trusted to an ON DELETE
+ * CASCADE from auth.users: no migration on this branch defines it and it has
+ * not been verified against the deployed database.
+ */
 app.delete('/api/users/:uid', lookupLimiter, requireUser, async (req, res) => {
+  // Outside the try so the catch can report how far the erasure got.
+  let anonymised = 0;
   try {
     // Express 5 types a wildcard param as string | string[]; a repeated segment
     // would arrive as an array and must not be pattern-tested as one.
@@ -182,10 +195,30 @@ app.delete('/api/users/:uid', lookupLimiter, requireUser, async (req, res) => {
     // email and phone, so deleting only the auth user leaves all of it behind
     // — and if this order were reversed and the erasure then failed, the owner
     // could no longer authenticate to retry, stranding the data permanently.
-    const anonymised = await anonymiseBookingsForUser(userId);
+    anonymised = await anonymiseBookingsForUser(userId);
 
-    const { deleteUser } = await supabaseLib();
-    await deleteUser(userId);
+    const { deleteUser, supabaseAdmin } = await supabaseLib();
+
+    // Strictly after anonymisation: bookings.user_id cascades from profiles,
+    // so deleting the row while bookings still pointed at it would take the
+    // accounting records with it. The in-memory store has no database, hence
+    // no profiles table to clear.
+    if (isSupabaseConfigured()) {
+      const { error } = await supabaseAdmin.from('profiles').delete().eq('id', userId);
+      if (error) throw new Error(`Profile deletion failed: ${error.message}`);
+    }
+
+    // Retried because by now the erasure is committed and cannot be undone;
+    // only outages and 5xx are retried, an admin-API rejection is not.
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await deleteUser(userId);
+        break;
+      } catch (error) {
+        if (attempt >= DELETE_USER_ATTEMPTS || !isAuthRetryableFetchError(error)) throw error;
+        await new Promise((resolve) => setTimeout(resolve, DELETE_USER_RETRY_MS));
+      }
+    }
 
     console.log(`Account ${userId} deleted; ${anonymised} booking(s) anonymised.`);
     res.status(200).json({
@@ -197,8 +230,23 @@ app.delete('/api/users/:uid', lookupLimiter, requireUser, async (req, res) => {
   } catch (error: any) {
     /** The message came straight from Supabase, which is how a caller learns whether an id exists and what the admin API thinks of it. */
     const correlationId = `del_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-    console.error(`[delete ${correlationId}] user deletion failed:`, error.message);
-    res.status(500).json({ success: false, error: 'Could not delete that account.', correlationId });
+    // Status too: a Response body stringifies to "{}", which is all the message holds for a 5xx.
+    console.error(
+      `[delete ${correlationId}] user deletion failed (bookings anonymised: ${anonymised}, status: ${error?.status ?? 'n/a'}):`,
+      error?.message ?? error
+    );
+    // A generic message would imply nothing changed. Once bookings are
+    // anonymised the account is still live but its history is gone, and the
+    // only way to a consistent state is to retry.
+    res.status(500).json({
+      success: false,
+      error:
+        anonymised > 0
+          ? 'Your booking history was erased but the account could not be removed; please retry.'
+          : 'Could not delete that account.',
+      correlationId,
+      bookingsAnonymised: anonymised,
+    });
   }
 });
 

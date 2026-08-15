@@ -118,8 +118,8 @@ describe('searchHotels — fuzz / property tests', function () {
       ]);
   };
 
-  it('never throws, for any parameter shape including wrong types', () => {
-    fc.assert(
+  it('never throws, for any parameter shape including wrong types', async () => {
+    await fc.assert(
       fc.asyncProperty(garbageSearchParamsArb, async (input) => {
         mockSettledAscenda();
         const result = await searchHotels(input as never);
@@ -129,8 +129,8 @@ describe('searchHotels — fuzz / property tests', function () {
     );
   });
 
-  it('valid params always produce merged hotels with the full shape', () => {
-    fc.assert(
+  it('valid params always produce merged hotels with the full shape', async () => {
+    await fc.assert(
       fc.asyncProperty(validSearchParamsArb, async (input) => {
         mockSettledAscenda();
         const hotels = await searchHotels(input);
@@ -148,8 +148,8 @@ describe('searchHotels — fuzz / property tests', function () {
     );
   });
 
-  it('results are always sorted by searchRank ascending', () => {
-    fc.assert(
+  it('results are always sorted by searchRank ascending', async () => {
+    await fc.assert(
       fc.asyncProperty(validSearchParamsArb, async (input) => {
         mockSettledAscenda();
         const hotels = await searchHotels(input);
@@ -167,14 +167,7 @@ describe('searchHotels — fuzz / property tests', function () {
   it('may leave out hotels with no matching details, but never crashes', () => {
     // Price entry that has no matching entry in /api/hotels — the merging loop
     // must skip it rather than throwing on a missing map lookup.
-    //
-    // persist() because the property tests above poll, and a poll still in
-    // flight when their assertion resolved can land here and consume a
-    // single-use interceptor — leaving this test's own request unmatched.
-    // Observed as an intermittent "Nock: No match for /api/hotels" that never
-    // reproduced when the test ran alone.
     nock(HOTEL_API)
-      .persist()
       .get('/api/hotels/prices')
       .query(true)
       .reply(200, {
@@ -183,7 +176,6 @@ describe('searchHotels — fuzz / property tests', function () {
       });
 
     nock(HOTEL_API)
-      .persist()
       .get('/api/hotels')
       .query(true)
       .reply(200, [

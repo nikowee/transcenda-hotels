@@ -255,6 +255,11 @@ export const findByUserId = async (userId: string): Promise<BookingRecord[]> => 
  * link back to the account. What stays is the stay, the amount, the payment id
  * and the card's brand and expiry, none of which names anybody.
  *
+ * billing_* is deliberately not in the UPDATE: toRow never writes it, and the
+ * columns may be absent from the deployed table — PostgREST rejects an UPDATE
+ * naming a missing column, which would fail the whole erasure. Revisit if a
+ * writer for billing_* ever appears.
+ *
  * Returns how many rows were anonymised, so the caller can log it.
  */
 export const anonymiseBookingsForUser = async (userId: string): Promise<number> => {
@@ -267,6 +272,7 @@ export const anonymiseBookingsForUser = async (userId: string): Promise<number> 
         userId: null,
         payeeId: REDACTED,
         specialRequests: null,
+        billing: null,
         guest: {
           salutation: REDACTED,
           firstName: REDACTED,

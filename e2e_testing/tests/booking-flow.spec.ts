@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
+import { CHECK_IN, CHECK_OUT } from './fixtures/dates.js';
 
 /**
  * UC4 — Book & Make Payment, end to end against the Dockerised stack.
@@ -21,17 +22,20 @@ import { test, expect, type Page } from '@playwright/test';
  * move money in either mode.
  */
 
-/** Mirrors CheckoutPage's fallbacks: hotelId, hotelName and roomTypes all default. */
+/**
+ * Mirrors CheckoutPage's fallbacks: hotelId, hotelName and roomTypes all default.
+ * Same stay as ROOM_LIST_HANDOFF so both price to the 1,308.00 asserted below.
+ */
 const CHECKOUT_URL =
   '/checkout?destinationId=dest-1&hotelId=marina-bay&hotelName=Marina%20Bay%20Sands' +
-  '&roomTypes=deluxe-king&startDate=2026-08-01&endDate=2026-08-04&adults=2&children=1';
+  `&roomTypes=deluxe-king&startDate=${CHECK_IN}&endDate=${CHECK_OUT}&adults=2&children=1`;
 
 /**
  * Exactly what RoomList builds when a guest picks a room — see its handleSelect.
  * BookingEntry translates this into the checkout contract.
  */
 const ROOM_LIST_HANDOFF =
-  '/booking?hotel=marina-bay&dest=dest-1&in=2026-08-15&out=2026-08-20' +
+  `/booking?hotel=marina-bay&dest=dest-1&in=${CHECK_IN}&out=${CHECK_OUT}` +
   '&guests=2&key=deluxe-king&name=Marina%20Bay%20Sands';
 
 /** A well-formed UUID that no booking will ever have. */

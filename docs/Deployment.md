@@ -126,5 +126,5 @@ encoded in the repo:
 ## Related
 
 - `docs/Environment-Variables.md` — every variable the server and client read
-- `docs/Testing.md` — what green looks like (server 446,
-  client 193, E2E 35)
+- `docs/Testing.md` — what green looks like (server 460,
+  client 222, E2E 35)

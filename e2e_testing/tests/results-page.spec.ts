@@ -1,9 +1,15 @@
 import { CHECK_IN, CHECK_OUT } from './fixtures/dates.js';
 import { test, expect } from '@playwright/test';
 
+//every live Ascenda search below waits with { timeout: 30000 } after a goto,
+//which the 30s per-test budget in playwright.config.ts would kill first —
+//mirrors booking-flow.spec.ts's ELEMENTS_JOURNEY_TIMEOUT
+const LIVE_SEARCH_TIMEOUT = 90_000;
+
 test.describe('Results Page', () => {
 
   test('Full search flow leads to results page with hotels', async ({ page }) => {
+    test.setTimeout(LIVE_SEARCH_TIMEOUT);
     // ─── 1. Navigate to home page ──────────────────────────
     await page.goto('/');
 
@@ -53,6 +59,7 @@ test.describe('Results Page', () => {
   });
 
   test('Displays hotel details when navigating with valid params', async ({ page }) => {
+    test.setTimeout(LIVE_SEARCH_TIMEOUT);
     // ─── 1. Navigate directly to results with valid params ──
     await page.goto(`/results?dest=RsBU&name=Singapore&in=${CHECK_IN}&out=${CHECK_OUT}&guests=2&rooms=1`);
 
@@ -76,6 +83,7 @@ test.describe('Results Page', () => {
   });
 
   test('Apply a 5-star filter shows only 5-star hotels', async ({ page }) => {
+    test.setTimeout(LIVE_SEARCH_TIMEOUT);
     // ─── 1. Navigate to results with valid params ────────────
     await page.goto('/results?dest=RsBU&name=Singapore&in=2026-12-01&out=2026-12-07&guests=2&rooms=1');
 
@@ -105,6 +113,7 @@ test.describe('Results Page', () => {
   });
 
   test('Sort by Price Low to High orders the results', async ({ page }) => {
+    test.setTimeout(LIVE_SEARCH_TIMEOUT);
     // ─── 1. Navigate to results with valid params ────────────
     await page.goto('/results?dest=RsBU&name=Singapore&in=2026-12-01&out=2026-12-07&guests=2&rooms=1');
 
@@ -131,6 +140,7 @@ test.describe('Results Page', () => {
   });
 
   test('Pagination next button is present for multi-page results', async ({ page }) => {
+    test.setTimeout(LIVE_SEARCH_TIMEOUT);
     // ─── 1. Navigate to results with valid params ────────────
     await page.goto('/results?dest=RsBU&name=Singapore&in=2026-12-01&out=2026-12-07&guests=2&rooms=1');
 

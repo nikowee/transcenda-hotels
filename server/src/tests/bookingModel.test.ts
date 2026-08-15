@@ -250,7 +250,13 @@ describe('bookingModel', () => {
     });
 
     it('treats BOOKINGS_STORAGE=memory as authoritative over credentials', () => {
-      const previous = process.env.BOOKINGS_STORAGE;
+      // Restore all three: supabaseClient reads SUPABASE_URL at import, so a
+      // leaked value points later suites' nock interceptors at the wrong host.
+      const previous = {
+        BOOKINGS_STORAGE: process.env.BOOKINGS_STORAGE,
+        SUPABASE_URL: process.env.SUPABASE_URL,
+        SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY,
+      };
       try {
         process.env.BOOKINGS_STORAGE = 'memory';
         process.env.SUPABASE_URL = 'https://real.supabase.co';
@@ -260,7 +266,10 @@ describe('bookingModel', () => {
         // .env can still be writing to a store that vanishes on restart.
         expect(isSupabaseConfigured()).to.equal(false);
       } finally {
-        process.env.BOOKINGS_STORAGE = previous;
+        for (const [key, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
       }
     });
   });

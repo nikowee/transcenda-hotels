@@ -85,9 +85,12 @@ describe('DELETE /api/users/:uid — personal data erasure', () => {
     const booking = await insertOne(input);
     expectAdminDelete(session.userId);
 
-    await request(app).delete(`/api/users/${session.userId}`).set(session.header);
+    const response = await request(app).delete(`/api/users/${session.userId}`).set(session.header);
+    expect(response.status).to.equal(200);
 
     const after = await findById(booking.id);
+    // Erasure must have run, otherwise "preserved" proves nothing.
+    expect(after!.userId).to.equal(null);
     expect(after!.pricePaid).to.equal(784.8);
     expect(after!.paymentId).to.equal(input.paymentId);
     expect(after!.hotelName).to.equal('The Fullerton Hotel Singapore');

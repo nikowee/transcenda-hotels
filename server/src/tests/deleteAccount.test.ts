@@ -29,8 +29,8 @@ describe('DELETE /api/users/:uid — account deletion', () => {
   });
 
   /**
-   * Leave no interceptor behind. hotelName.test.ts asserts nock.isDone(),
-   * which is global, so an unconsumed interceptor from this file fails a suite
+   * Leave no interceptor behind. helpers/stripeNock.ts still checks the global
+   * nock.isDone(), so an unconsumed interceptor from this file fails a suite
    * that never touched it.
    */
   afterEach(() => {
@@ -82,7 +82,8 @@ describe('DELETE /api/users/:uid — account deletion', () => {
     for (const id of ['not-a-uuid', '../../etc/passwd', "' or 1=1", 'x'.repeat(4096)]) {
       resetRateLimits();
       const response = await request(app).delete(`/api/users/${encodeURIComponent(id)}`).set(session.header);
-      expect(response.status, `id=${id.slice(0, 24)}`).to.be.oneOf([400, 403, 404]);
+      // Exactly 400: a 403 would mean the id reached the entitlement check unvalidated.
+      expect(response.status, `id=${id.slice(0, 24)}`).to.equal(400);
     }
   });
 

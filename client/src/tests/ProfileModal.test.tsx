@@ -238,6 +238,7 @@ describe('ProfileModal — Booking History', () => {
  */
 describe('ProfileModal — Delete Account', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(supabase.auth.getSession).mockResolvedValue({
       data: { session: { access_token: ACCESS_TOKEN, user: USER } },
       error: null,
@@ -247,7 +248,16 @@ describe('ProfileModal — Delete Account', () => {
       error: null,
     } as never);
     vi.mocked(supabase.auth.signOut).mockResolvedValue({ error: null } as never);
+    // jsdom has no reload; the success path calls it right after signOut.
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, reload: vi.fn() },
+    });
   });
+
+  /** Refuses the deletion with the server's message and status. */
+  const refuseDeletion = (status: number, error: string) =>
+    http.delete('*/api/users/:uid', () => HttpResponse.json({ error }, { status }));
 
   /** Opens the confirm dialog, enters the password and submits. */
   const submitDeletion = async () => {
@@ -287,5 +297,51 @@ describe('ProfileModal — Delete Account', () => {
     await submitDeletion();
 
     await waitFor(() => expect(path).toBe(`/api/users/${USER_ID}`));
+  });
+
+  it('signs out once the server confirms the deletion', async () => {
+    server.use(http.delete('*/api/users/:uid', () => HttpResponse.json({ success: true })));
+
+    await submitDeletion();
+
+    await waitFor(() => expect(supabase.auth.signOut).toHaveBeenCalled());
+    expect(window.location.reload).toHaveBeenCalled();
+  });
+
+  it('never reaches the server when the password is wrong', async () => {
+    // Password re-entry is the only guard on this button; a failed sign-in must
+    // stop here, not fall through to a DELETE the server would honour.
+    vi.mocked(supabase.auth.signInWithPassword).mockResolvedValueOnce({
+      data: { user: null, session: null },
+      error: { message: 'Invalid login credentials' },
+    } as never);
+    let called = false;
+    server.use(
+      http.delete('*/api/users/:uid', () => {
+        called = true;
+        return HttpResponse.json({ success: true });
+      })
+    );
+
+    await submitDeletion();
+
+    expect(await screen.findByText(/incorrect password/i)).toBeInTheDocument();
+    expect(called).toBe(false);
+    expect(supabase.auth.signOut).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [401, 'Your session has expired. Please sign in again.', /session has expired/i],
+    [403, 'You can only delete your own account.', /only delete your own account/i],
+    [500, 'Could not delete that account.', /could not delete that account/i],
+  ])('surfaces the server\'s message on a %i, and stays signed in', async (status, error, shown) => {
+    // Before #52 every one of these read as "Error deleting account", which is
+    // how a missing header went unnoticed.
+    server.use(refuseDeletion(status, error));
+
+    await submitDeletion();
+
+    expect(await screen.findByText(shown)).toBeInTheDocument();
+    expect(supabase.auth.signOut).not.toHaveBeenCalled();
   });
 });
