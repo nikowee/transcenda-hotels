@@ -243,7 +243,7 @@ describe('hotelRoomService', () => {
 
     /** A stay is priced three times over one checkout — display, charge, confirm. */
     it('answers a repeat lookup for the same stay from cache', async () => {
-      mockRoomPrices();
+      const scope = mockRoomPrices();
 
       const first = await resolveRateTable(REQUEST, [ROOM_KEY]);
       const second = await resolveRateTable(REQUEST, [ROOM_KEY]);
@@ -251,9 +251,11 @@ describe('hotelRoomService', () => {
       expect(first.ok && second.ok).to.equal(true);
       if (!first.ok || !second.ok) return;
       expect(second.table[ROOM_KEY]?.total).to.equal(first.table[ROOM_KEY]?.total);
-      // One interceptor, two lookups, and nock is clean — the second never
-      // reached the network.
-      expect(nock.isDone()).to.equal(true);
+      // This scope's one interceptor was consumed, so the second lookup never
+      // reached the network. Asserted on the scope, not nock.isDone(): that is
+      // global, so an interceptor another suite legitimately holds fails a
+      // test that has nothing to do with it.
+      expect(scope.isDone()).to.equal(true);
     });
 
     it('does not serve one stay from another stay cache entry', async () => {

@@ -40,13 +40,17 @@ describe('hotel name resolution', () => {
 
   /** Held for the process lifetime rather than a TTL: unlike a rate, a hotel's name does not move, and re-fetching it would add a round trip to every quote for a value already known to be right. */
   it('asks the supplier once and remembers the answer', async () => {
-    mockHotel();
+    const scope = mockHotel();
 
     expect(await fetchHotelName(HOTEL_ID)).to.equal(NAME);
     expect(await fetchHotelName(HOTEL_ID)).to.equal(NAME);
 
-    // One interceptor, two calls, nock clean — the second never left the process.
-    expect(nock.isDone()).to.equal(true);
+    // This scope's one interceptor was consumed, so the second call never left
+    // the process. Asserted on the scope, not nock.isDone(): that is global,
+    // so any interceptor another suite legitimately keeps — a persist(), or one
+    // deliberately left unconsumed to prove a request was not made — fails a
+    // test that has nothing to do with it.
+    expect(scope.isDone()).to.equal(true);
   });
 
   /** A display string must never be the reason a bookable stay cannot be priced, so every failure mode resolves to null rather than throwing. */

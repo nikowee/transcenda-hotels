@@ -87,6 +87,7 @@ describe('searchHotels — fuzz / property tests', function () {
       });
 
     nock(HOTEL_API)
+      .persist()
       .get('/api/hotels')
       .query(true)
       .reply(200, [
@@ -166,7 +167,14 @@ describe('searchHotels — fuzz / property tests', function () {
   it('may leave out hotels with no matching details, but never crashes', () => {
     // Price entry that has no matching entry in /api/hotels — the merging loop
     // must skip it rather than throwing on a missing map lookup.
+    //
+    // persist() because the property tests above poll, and a poll still in
+    // flight when their assertion resolved can land here and consume a
+    // single-use interceptor — leaving this test's own request unmatched.
+    // Observed as an intermittent "Nock: No match for /api/hotels" that never
+    // reproduced when the test ran alone.
     nock(HOTEL_API)
+      .persist()
       .get('/api/hotels/prices')
       .query(true)
       .reply(200, {
@@ -175,6 +183,7 @@ describe('searchHotels — fuzz / property tests', function () {
       });
 
     nock(HOTEL_API)
+      .persist()
       .get('/api/hotels')
       .query(true)
       .reply(200, [
