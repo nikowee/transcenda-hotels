@@ -7,6 +7,17 @@ import SearchForm from '../components/SearchForm';
 
 vi.mock('axios');
 
+// Navigation is the only observable success signal — without it a "valid
+// submission" test passes even when the form silently rejects the input.
+const mockNavigate = vi.fn();
+vi.mock('react-router', async () => {
+  const actual = await vi.importActual('react-router');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
+
 const mockSuggestions = [
   { uid: 'dest-1', term: 'Singapore, Singapore' },
   { uid: 'dest-2', term: 'Singapore, Malaysia' },
@@ -23,6 +34,7 @@ const daysFromNow = (n: number): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const CHECK_IN = daysFromNow(30);
+const CHECK_OUT = daysFromNow(36);
 const CHECK_OUT_TOO_EARLY = daysFromNow(25);
 
 describe('SearchForm Component', () => {
@@ -348,7 +360,7 @@ describe('SearchForm Component', () => {
     );
   });
 
-  it('does not alert and passes validation on a valid search submission', async () => {
+  it('navigates to /results with the search params on a valid submission', async () => {
     const user = userEvent.setup();
     vi.mocked(axios.get).mockResolvedValue({ data: mockSuggestions });
     const alertMock = vi.fn();
@@ -367,17 +379,19 @@ describe('SearchForm Component', () => {
     }, { timeout: 500 });
     await user.click(screen.getByText('Singapore, Singapore'));
 
-    // Valid dates well in the future.
     const dateInputs = container.querySelectorAll('input[type="date"]');
     await user.clear(dateInputs[0]);
-    await user.type(dateInputs[0], '2026-12-01');
+    await user.type(dateInputs[0], CHECK_IN);
     await user.clear(dateInputs[1]);
-    await user.type(dateInputs[1], '2026-12-07');
+    await user.type(dateInputs[1], CHECK_OUT);
 
     const button = screen.getByRole('button', { name: /search/i });
     await user.click(button);
 
-    // No alert fires for a valid submission.
     expect(alertMock).not.toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith(
+      `/results?dest=dest-1&name=${encodeURIComponent('Singapore, Singapore')}` +
+        `&in=${CHECK_IN}&out=${CHECK_OUT}&guests=2&rooms=1`
+    );
   });
 });

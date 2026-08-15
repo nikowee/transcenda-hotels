@@ -125,11 +125,21 @@ const response = await fetch(\`<http://localhost:5000/api/users/\${user.id}\`>, 
 
 // 3. BACKEND: requireUser verifies the token against Supabase, then an ownership check rejects a verified caller acting on somebody else's account
 
-// 4. BACKEND: Only then does Express use the secure Service Role key to perform the deletion
+// 4. BACKEND: Personal data first — a booking keeps the guest's name, email and phone, and reversing this order would strand it behind an account the owner can no longer authenticate to retry with
+
+const anonymised = await anonymiseBookingsForUser(userId);
+
+// 5. BACKEND: The profiles row is deleted explicitly, not trusted to an ON DELETE CASCADE from auth.users — no migration on this branch defines one and it is unverified against the deployed database. Skipped on the in-memory store, which has no profiles table
+
+if (isSupabaseConfigured()) await supabaseAdmin.from('profiles').delete().eq('id', userId);
+
+// 6. BACKEND: Only then does Express use the secure Service Role key, retried up to 3 times on transient network or 5xx errors because the erasure above is already committed and cannot be undone
 
 await supabaseAdmin.auth.admin.deleteUser(userId);
 
-// 4. FRONTEND: Clear session and refresh
+// Both replies report bookingsAnonymised. A failure after step 4 returns 500 with "Your booking history was erased but the account could not be removed; please retry." plus a correlationId — a generic error would imply nothing changed
+
+// 7. FRONTEND: Clear session and refresh
 
 await supabase.auth.signOut();
 
@@ -196,7 +206,7 @@ app.delete('/api/users/:uid', lookupLimiter, requireUser, deleteHandler);
 | POST /api/bookings/payment       | resolveUser    | Guest checkout is supported; a signed-in booking records its user_id.   |
 | POST /api/bookings/payment-intent| resolveUser    | Same — identity attaches if present, guests proceed.                    |
 | GET /api/bookings/user/:userId   | requireUser    | Whole booking history; 403 when the token's subject is not :userId.     |
-| DELETE /api/users/:uid           | requireUser    | Account deletion; ownership check on top of verification.               |
+| DELETE /api/users/:uid           | requireUser    | Account deletion; ownership check on top of verification. Anonymises the caller's bookings and drops their profiles row before removing the auth user. |
 
 **🧩 Phase 5: Frontend Auth Flow — useAuth & authHeader**
 

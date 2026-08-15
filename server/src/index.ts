@@ -177,6 +177,8 @@ const DELETE_USER_RETRY_MS = 250;
 app.delete('/api/users/:uid', lookupLimiter, requireUser, async (req, res) => {
   // Outside the try so the catch can report how far the erasure got.
   let anonymised = 0;
+  /** Not `anonymised > 0`: a retry after a partial failure re-anonymises rows whose user_id is already null and counts 0, which would retract the honest message exactly when it still holds. */
+  let erased = false;
   try {
     // Express 5 types a wildcard param as string | string[]; a repeated segment
     // would arrive as an array and must not be pattern-tested as one.
@@ -196,13 +198,16 @@ app.delete('/api/users/:uid', lookupLimiter, requireUser, async (req, res) => {
     // — and if this order were reversed and the erasure then failed, the owner
     // could no longer authenticate to retry, stranding the data permanently.
     anonymised = await anonymiseBookingsForUser(userId);
+    erased = true;
 
     const { deleteUser, supabaseAdmin } = await supabaseLib();
 
     // Strictly after anonymisation: bookings.user_id cascades from profiles,
     // so deleting the row while bookings still pointed at it would take the
-    // accounting records with it. The in-memory store has no database, hence
-    // no profiles table to clear.
+    // accounting records with it. Gated on the same flag anonymisation reads,
+    // not on credentials: under BOOKINGS_STORAGE=memory the Supabase rows were
+    // never anonymised and the cascade would take them. The cost is an orphan
+    // profiles row when memory bookings are run against real auth.
     if (isSupabaseConfigured()) {
       const { error } = await supabaseAdmin.from('profiles').delete().eq('id', userId);
       if (error) throw new Error(`Profile deletion failed: ${error.message}`);
@@ -215,6 +220,9 @@ app.delete('/api/users/:uid', lookupLimiter, requireUser, async (req, res) => {
         await deleteUser(userId);
         break;
       } catch (error) {
+        // Idempotent: a 404 means the account is already gone — including when
+        // this call is chasing an earlier delete whose response was lost.
+        if ((error as { status?: number }).status === 404) break;
         if (attempt >= DELETE_USER_ATTEMPTS || !isAuthRetryableFetchError(error)) throw error;
         await new Promise((resolve) => setTimeout(resolve, DELETE_USER_RETRY_MS));
       }
@@ -240,10 +248,9 @@ app.delete('/api/users/:uid', lookupLimiter, requireUser, async (req, res) => {
     // only way to a consistent state is to retry.
     res.status(500).json({
       success: false,
-      error:
-        anonymised > 0
-          ? 'Your booking history was erased but the account could not be removed; please retry.'
-          : 'Could not delete that account.',
+      error: erased
+        ? 'Your booking history was erased but the account could not be removed; please retry.'
+        : 'Could not delete that account.',
       correlationId,
       bookingsAnonymised: anonymised,
     });

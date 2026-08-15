@@ -11,16 +11,19 @@ import { resetRateLimits } from '../middleware/rateLimit.js';
  * DELETE /api/users/:uid — the most destructive request this API accepts, and
  * until now the only route with no functional test of its own.
  *
- * Deleting the auth user cascades to their profile row, so the entitlement
- * check is the whole defence: an authenticated caller may delete themselves and
- * nobody else.
+ * The handler erases the profiles row itself rather than trust an unverified
+ * cascade from auth.users, so the entitlement check is the whole defence: an
+ * authenticated caller may delete themselves and nobody else.
  */
 
 const SUPABASE_URL = process.env.SUPABASE_URL ?? 'https://placeholder.supabase.co';
 
 /** Supabase's admin delete, faked at the socket like every other upstream. */
-const expectAdminDelete = (userId: string, status = 200) =>
-  nock(SUPABASE_URL).delete(`/auth/v1/admin/users/${userId}`).reply(status, status === 200 ? {} : { message: 'boom' });
+const expectAdminDelete = (userId: string, status = 200, times = 1) =>
+  nock(SUPABASE_URL)
+    .delete(`/auth/v1/admin/users/${userId}`)
+    .times(times)
+    .reply(status, status === 200 ? {} : { message: 'boom' });
 
 describe('DELETE /api/users/:uid — account deletion', () => {
   beforeEach(() => {
@@ -90,12 +93,43 @@ describe('DELETE /api/users/:uid — account deletion', () => {
   /** Supabase's own message names the id and what the admin API thinks of it, so it stays server-side. */
   it('withholds the upstream message when deletion fails, and returns a correlation id', async () => {
     const session = signIn();
-    expectAdminDelete(session.userId, 500);
+    // 400, not 5xx: a 5xx is retryable, so the loop would spend three attempts
+    // on one interceptor — and a 5xx Response stringifies to "{}", leaving no
+    // upstream message to withhold and nothing for the regex to catch.
+    const scope = expectAdminDelete(session.userId, 400);
 
     const response = await request(app).delete(`/api/users/${session.userId}`).set(session.header);
 
     expect(response.status).to.equal(500);
     expect(response.body.correlationId, 'a handle for the server log').to.be.a('string');
     expect(JSON.stringify(response.body)).to.not.match(/supabase|boom|auth\/v1/i);
+    expect(scope.isDone(), 'the failure must come from the upstream, not from an unreached mock').to.equal(true);
+  });
+
+  /** The erasure is already committed by this point, so a transient hop failure must not strand it. */
+  it('retries a transient 5xx and deletes on the second attempt', async () => {
+    const session = signIn();
+    const failed = expectAdminDelete(session.userId, 503);
+    const succeeded = expectAdminDelete(session.userId);
+
+    const response = await request(app).delete(`/api/users/${session.userId}`).set(session.header);
+
+    expect(response.status).to.equal(200);
+    expect(failed.isDone(), 'the first attempt must be the 503').to.equal(true);
+    expect(succeeded.isDone(), 'the retry must actually be issued').to.equal(true);
+  });
+
+  /** Bounded, not endless: the caller is holding a half-finished erasure while this loop runs. */
+  it('retries a 5xx to the attempt limit before giving up', async () => {
+    const session = signIn();
+    // times(3): with one interceptor, attempts 2-3 would fail on nock's
+    // no-match guard rather than on the mocked 500, and isDone() is the only
+    // thing proving the loop ran at all — a 5xx body stringifies to "{}".
+    const scope = expectAdminDelete(session.userId, 500, 3);
+
+    const response = await request(app).delete(`/api/users/${session.userId}`).set(session.header);
+
+    expect(response.status).to.equal(500);
+    expect(scope.isDone(), 'every attempt must reach the mocked 500').to.equal(true);
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, beforeEach } from 'mocha';
+import { describe, it, before, after, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { randomUUID } from 'crypto';
 import request from 'supertest';
@@ -117,5 +117,86 @@ describe('DELETE /api/users/:uid — personal data erasure', () => {
 
     expect(response.status).to.equal(200);
     expect(response.body.bookingsAnonymised).to.equal(0);
+  });
+});
+
+/**
+ * The deployed path. Everything above runs the in-memory branch, so the
+ * PostgREST UPDATE and the explicit profiles delete are otherwise unexercised.
+ */
+describe('DELETE /api/users/:uid — erasure against Supabase', () => {
+  let previousStorage: string | undefined;
+
+  // Only BOOKINGS_STORAGE: supabaseClient reads SUPABASE_URL at first import,
+  // so changing that here would point later suites' interceptors at another host.
+  before(() => {
+    previousStorage = process.env.BOOKINGS_STORAGE;
+    process.env.BOOKINGS_STORAGE = 'supabase';
+  });
+
+  after(() => {
+    if (previousStorage === undefined) delete process.env.BOOKINGS_STORAGE;
+    else process.env.BOOKINGS_STORAGE = previousStorage;
+  });
+
+  beforeEach(() => {
+    resetRateLimits();
+    nock.cleanAll();
+  });
+
+  afterEach(() => {
+    nock.cleanAll();
+  });
+
+  it('anonymises the bookings, drops the profile, then deletes the auth user', async () => {
+    const session = signIn();
+    const order: string[] = [];
+
+    // The body is matched whole: billing_* must never appear, since a column the
+    // deployed table lacks fails the entire UPDATE.
+    const bookings = nock(SUPABASE_URL)
+      .patch('/rest/v1/bookings', {
+        user_id: null,
+        payee_id: '[deleted]',
+        special_requests: null,
+        guest_salutation: '[deleted]',
+        guest_first_name: '[deleted]',
+        guest_last_name: '[deleted]',
+        guest_email: '[deleted]',
+        guest_phone: '[deleted]',
+      })
+      // select=id is in the URL because the count comes from the returned rows.
+      .query({ user_id: `eq.${session.userId}`, select: 'id' })
+      .reply(200, () => {
+        order.push('bookings');
+        return [{ id: randomUUID() }, { id: randomUUID() }];
+      });
+
+    const profiles = nock(SUPABASE_URL)
+      .delete('/rest/v1/profiles')
+      .query({ id: `eq.${session.userId}` })
+      .reply(204, () => {
+        order.push('profiles');
+        return '';
+      });
+
+    const authUser = nock(SUPABASE_URL)
+      .delete(`/auth/v1/admin/users/${session.userId}`)
+      .reply(200, () => {
+        order.push('authUser');
+        return {};
+      });
+
+    const response = await request(app).delete(`/api/users/${session.userId}`).set(session.header);
+
+    expect(response.status).to.equal(200);
+    // Counted from the UPDATE's own reply, not from anything the caller sent.
+    expect(response.body.bookingsAnonymised).to.equal(2);
+    expect(bookings.isDone(), 'the UPDATE must be issued').to.equal(true);
+    expect(profiles.isDone(), 'the profiles row is deleted, not left to a cascade').to.equal(true);
+    expect(authUser.isDone(), 'the admin delete must still run').to.equal(true);
+    // bookings.user_id cascades from profiles: deleting the row first would take
+    // the accounting records with it.
+    expect(order).to.deep.equal(['bookings', 'profiles', 'authUser']);
   });
 });

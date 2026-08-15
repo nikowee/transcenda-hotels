@@ -26,7 +26,7 @@ been retargeted, and — since the schema landed — the message ordering.
 | `insertOne(data)` | **Kept** — but now called *after* the charge | See below; the table cannot represent an unpaid booking |
 | `findOne(query)` | Split into `findById` / `findByPaymentId` / `findByUserId` | A generic query object over a typed Postgres row buys nothing; each caller wants one of exactly three lookups |
 | `PaymentService «External API»` | `«Stripe Checkout»` | The original signature required holding the card |
-| — | *(none)* | `bookings.user_id` references `profiles`, but no code reads that table — see below |
+| — | *(none)* | `bookings.user_id` references `profiles`, but only account deletion touches that table — see below |
 
 ### Why payment no longer follows the diagram literally
 
@@ -230,7 +230,7 @@ classDiagram
     class BookingModel {
         &laquo;Supabase Table&raquo;
         +UUID id
-        +UUID user_id « FK → profiles.id, ON DELETE CASCADE »
+        +UUID user_id « FK → profiles.id, ON DELETE CASCADE (schema-level, unverified) »
         +String destination_id
         +String hotel_id
         +String hotel_name
@@ -252,6 +252,7 @@ classDiagram
         +findById(id) BookingRecord
         +findByPaymentId(paymentId) BookingRecord
         +findByUserId(userId) BookingRecord[]
+        +anonymiseBookingsForUser(userId) number
         +isSupabaseConfigured() boolean
     }
 
@@ -279,11 +280,13 @@ classDiagram
     BookingController --> EmailService : sends confirmation
 ```
 
-Three things to read off this diagram.
+Four things to read off this diagram.
 
-**`BookingModel` has no mutators.** There is no `markPaid`, no state transition, no
-update of any kind — one write method and three reads. That is the schema's shape
-showing through: a row is created complete or not at all.
+**`BookingModel` has one mutator, and it is not a state transition.** There is no
+`markPaid`; `anonymiseBookingsForUser` overwrites the personal fields of an account's
+bookings and unlinks `user_id`, leaving the financial record intact. Otherwise it is
+one write and three reads — the schema's shape showing through: a row is created
+complete or not at all.
 
 **`WebhookController --> BookingModel` is a conditional insert, not an update.** In
 the previous revision that edge was a state change. It is now the recovery path
@@ -296,11 +299,12 @@ been deleted. `user_id` is checked for UUID shape and written straight through,
 so a malformed one still surfaces as a constraint violation *after* the card is
 charged rather than before — the gap the arrow implied was closed.
 
-**`bookings.user_id` is still `ON DELETE CASCADE` onto `profiles`.** The table and
-the constraint are real in the deployed schema, which is why the annotation sits on
-the field rather than on a class. Deleting an account deletes its bookings, which
-is discussed under [Data model](#data-model) and is not obviously what anyone
-wants.
+**`bookings.user_id` is declared `ON DELETE CASCADE` onto `profiles`.** No migration
+in this repo defines it and it has not been verified against the deployed database,
+which is why the annotation is hedged. The cascade no longer decides what account
+deletion means either way: `DELETE /api/users/:uid` anonymises the bookings and nulls
+`user_id` *before* it removes the `profiles` row, so nothing is cascaded away. See
+[Data model](#data-model).
 
 Method names are camelCase to match the existing `destinationController`:
 
@@ -521,18 +525,43 @@ would be the most misleading thing in this document.
   bookings depends on it.
 - **Refunds cannot be recorded.** A refunded booking reads as paid. Needs
   `refunded_at` and `refund_id`.
-- **`ON DELETE CASCADE` deletes paid booking history.** See below.
+- **The `profiles` cascade is declared, unverified, and still live at the schema
+  level.** Only the ordering inside `DELETE /api/users/:uid` keeps paid bookings;
+  deleting a `profiles` row by any other route — the Supabase dashboard included —
+  would still take the history with it. `ON DELETE SET NULL` is what would make that
+  safe, and it has not been applied. See below.
+- **Account erasure keys on `user_id` only.** `anonymiseBookingsForUser` redacts the
+  guest fields on rows the account owns; a booking made while signed out has
+  `user_id` null and keeps its name, email, phone and requests. `guest_email` is
+  unverified form text, so widening the match to it would let a new account scrub a
+  stranger's booking — what is missing is a verified-email link, not a wider `WHERE`.
+- **Account erasure stops at our database.** `anonymiseBookingsForUser` redacts the
+  guest columns and nulls `user_id`, but the row keeps `payment_id` — and the
+  PaymentIntent it points at still carries the guest's name, email and phone in
+  `metadata.guest`, the deleted account's UUID in `metadata.userId`, the email in
+  `receipt_email`, and the name and billing address in `shipping`. Anyone holding
+  an anonymised row can read the identity straight back out of the Stripe
+  dashboard. Clearing the metadata would need `metadata: null` — `{}` is accepted
+  and unsets nothing — and would still leave `receipt_email`, `shipping` and
+  Stripe's own event log, so the honest statement is that Stripe is a retention
+  boundary this application does not erase, not that one API call closes it.
+- **Erasure does not reach the mail path either.** Deleting an account redacts the
+  guest columns on the row, but the confirmation has already left the process:
+  log-only mode writes the guest's name and address to stdout
+  ([`emailService.ts`](../server/src/services/emailService.ts), `renderLogLine`), and
+  a live send hands both to Resend, which keeps its own message log. Neither is
+  reachable from `DELETE /api/users/:uid` — closing it is a log-retention and
+  Resend-retention decision, not a code change.
+- **Simulate mode keeps erased guests in process memory.** Under
+  `PAYMENTS_MODE=simulate`, [`paymentService.ts`](../server/src/services/paymentService.ts)
+  holds every intent and session in a module-level `Map` — guest name, email, phone,
+  billing address and `userId` — and nothing evicts them, so `DELETE /api/users/:uid`
+  redacts the booking store and leaves those copies untouched. Dev-only: `isSimulated()`
+  is false whenever `NODE_ENV=production`, and the maps die with the process. Evicting
+  on read is not the fix; the webhook re-verifies a session the confirm endpoint has
+  already read.
 - **The customer-facing handle is a UUID.** A real usability regression for phone
   and email support; needs a short human-readable reference if that workflow matters.
-- **The controller layer has not caught up with the model layer.**
-  [`bookingController.ts`](../server/src/controllers/bookingController.ts) and
-  [`webhookController.ts`](../server/src/controllers/webhookController.ts) still
-  import the pre-schema model API and still write a booking before redirecting to
-  Stripe. The schema, [`bookingTypes.ts`](../server/src/models/bookingTypes.ts),
-  [`bookingModel.ts`](../server/src/models/bookingModel.ts) and the client types are
-  on the new shape; the controllers are not. This document describes the design the
-  schema and models define, which is the target — read the controllers as work in
-  progress, not as a contradiction of the diagrams above.
 - **Single-booking lookup is unauthenticated.** `GET /api/bookings/:id` still
   relies on a UUID being unguessable, which is genuinely better than an enumerable
   reference but is not authentication. It is left open deliberately: the
@@ -600,19 +629,44 @@ New. One row per authenticated user, with `id` a foreign key onto `auth.users(id
 the application-visible half of a Supabase auth account, readable and joinable
 without reaching into the auth schema.
 
-`bookings.user_id` references it **`ON DELETE CASCADE`**.
+`bookings.user_id` references it **`ON DELETE CASCADE`** — declared, but unverified
+against the deployed database, and no migration in this repo defines it.
 
-That means deleting an account deletes that person's paid booking history along with
-it. This is the schema's stated intent and it is a defensible reading of a
-data-deletion request, but **paid bookings are financial records and usually need to
-outlive the account that created them** — for tax and accounting retention, for
-chargeback defence, and simply so a guest with a reservation next month still has one
-after closing their web login. The GDPR right to erasure has explicit carve-outs for
-legal-obligation retention; a blanket cascade does not use them.
+Account deletion therefore does not trust the cascade.
+[`DELETE /api/users/:uid`](../server/src/index.ts) runs in three ordered steps:
 
-`ON DELETE SET NULL` preserves the booking as an anonymous paid stay and is the
-usual answer. Worth settling before any account-deletion flow is built, because
-after that it is a data-loss bug rather than a schema choice.
+1. `anonymiseBookingsForUser` overwrites `guest_salutation`, `guest_first_name`,
+   `guest_last_name`, `guest_email`, `guest_phone` and `payee_id` with `[deleted]`,
+   nulls `special_requests`, and sets `user_id` to null. A constant rather than an
+   empty string, so an erased row is distinguishable from one never filled in.
+2. The `profiles` row is deleted explicitly, because a cascade from `auth.users` is
+   exactly what has not been verified.
+3. The auth user is deleted, retried up to three times on transport failure only — by
+   this point the erasure is committed and cannot be undone.
+
+Personal data goes first: a booking carries the guest's name, email and phone
+independently of the account, and if the order were reversed and the erasure then
+failed, the owner could no longer authenticate to retry.
+
+The flow is not atomic. A partial failure returns 500 carrying `bookingsAnonymised`
+and a correlation ID rather than a generic error, because by then the history really
+is erased and only a retry reaches a consistent state.
+
+What survives is the stay, `price_paid`, `payment_id` and the card's brand, last four
+and expiry — an accounting record whose columns name nobody, though `payment_id` still
+dereferences to a Stripe object that does; see [Still open](#still-open). **Paid
+bookings are financial records and usually need to outlive the account that created
+them** — for tax and accounting retention, for chargeback defence, and simply so a
+guest with a reservation next month still has one after closing their web login. That
+is the GDPR carve-out for legal-obligation retention, which a blanket cascade could
+not use in either direction.
+
+`ON DELETE SET NULL` preserves the booking as an anonymous paid stay and is the usual
+answer. Until the schema says so, `DELETE /api/users/:uid` does it in code: bookings
+are anonymised — `user_id` nulled, guest fields redacted — before the `profiles` row
+is deleted, so the cascade never fires. A workaround holding the schema decision open,
+not a replacement for it: a `profiles` row deleted by any other route, the Supabase
+dashboard included, would still take the history with it.
 
 **Deferred to UC5 (Manage Booking):** cancellation, amendment, and the authenticated
 ownership check that makes lookup by `id` safe to expose.

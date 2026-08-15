@@ -36,19 +36,20 @@ async function warmRoutes(): Promise<void> {
 
 /**
  * The backend container reads PAYMENTS_MODE from server/.env (compose
- * env_file), not from the shell that launched Playwright — so the pin must
- * come from the same file or it describes a server that is not running.
- * Returns undefined when neither source names a mode.
+ * env_file) and from nowhere else — compose hands it no shell variables beyond
+ * REDIS_URL and RATE_LIMIT_RELAXED. So the shell that launched Playwright is
+ * not a source: reading it would pin the suite to a mode the server never saw.
+ * Returns undefined when the file declares no mode (including the blank
+ * `PAYMENTS_MODE=` .env.example ships); E2E_EXPECT_UI is the manual override.
  */
 function readPaymentsMode(rootDir: string): string | undefined {
   try {
     const env = fs.readFileSync(path.join(rootDir, 'server', '.env'), 'utf8');
-    const fromFile = env.match(/^\s*(?:export\s+)?PAYMENTS_MODE\s*=\s*['"]?(\w+)/m)?.[1];
-    if (fromFile) return fromFile;
+    return env.match(/^\s*(?:export\s+)?PAYMENTS_MODE\s*=\s*['"]?(\w+)/m)?.[1];
   } catch {
-    // No server/.env: fall through to the shell env
+    // No server/.env: compose could not start the backend from it either.
+    return undefined;
   }
-  return process.env.PAYMENTS_MODE || undefined;
 }
 
 async function waitForServer(url: string, timeoutMs = 60000): Promise<void> {
@@ -74,7 +75,7 @@ export default async function globalSetup() {
   // key in server/.env cannot silently flip the suite onto live Stripe while
   // the specs still believe they are driving the demo form. Not hardcoded in
   // playwright.config.ts: server/.env is gitignored, and a teammate without
-  // Stripe keys is meant to run simulate. When no mode is declared anywhere,
+  // Stripe keys is meant to run simulate. When server/.env declares no mode,
   // leave the pin unset and let detectPaymentUI adapt to whatever mounts.
   const paymentsMode = readPaymentsMode(rootDir);
   if (paymentsMode) {
