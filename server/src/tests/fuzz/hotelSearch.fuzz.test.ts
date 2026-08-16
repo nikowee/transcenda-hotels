@@ -52,6 +52,9 @@ const validSearchParamsArb = fc.record({
   guests: fc.constantFrom('1', '2', '3', '4', '2|2', '2|2|2'),
 });
 
+/** Search ranks for the generated upstream payload — unique so the sorted order is unambiguous. */
+const ranksArb = fc.uniqueArray(fc.integer({ min: 1, max: 99 }), { minLength: 1, maxLength: 5 });
+
 describe('searchHotels — fuzz / property tests', function () {
   this.timeout(60_000);
 
@@ -117,8 +120,34 @@ describe('searchHotels — fuzz / property tests', function () {
       ]);
   };
 
-  it('never throws, for any parameter shape including wrong types', () => {
-    fc.assert(
+  /** Settled responses built from the generated input; ranks arrive unsorted so the sort is real work. */
+  const mockSettledFor = (input: { destination_id: string; guests: string }, ranks: number[]) => {
+    const ids = ranks.map((_, i) => `${input.destination_id}-h${i}`);
+
+    // Matching the query instead of .query(true) is what proves the generated
+    // params reach the upstream call — a mismatch surfaces as a throw.
+    nock(HOTEL_API)
+      .get('/api/hotels/prices')
+      .query((q) => q.destination_id === input.destination_id && q.guests === input.guests)
+      .reply(200, {
+        hotels: ranks.map((rank, i) => ({ id: ids[i], price: 100 + rank, searchRank: rank })),
+        completed: true,
+      });
+
+    // No .persist() — one call per iteration, and a persisted interceptor would
+    // shadow every later iteration's payload.
+    nock(HOTEL_API)
+      .get('/api/hotels')
+      .query((q) => q.destination_id === input.destination_id)
+      .reply(200, ids.map((id, i) => ({
+        id, name: `Hotel ${i}`, rating: 3, address: 'x', latitude: 0, longitude: 0,
+        description: '<p>x</p>', categories: { budget: { name: 'Budget' } }, amenities: { wifi: true },
+        image_details: { prefix: 'https://example.com/', suffix: '.jpg', count: 2 },
+      })));
+  };
+
+  it('never throws, for any parameter shape including wrong types', async () => {
+    await fc.assert(
       fc.asyncProperty(garbageSearchParamsArb, async (input) => {
         mockSettledAscenda();
         const result = await searchHotels(input as never);
@@ -128,16 +157,17 @@ describe('searchHotels — fuzz / property tests', function () {
     );
   });
 
-  it('valid params always produce merged hotels with the full shape', () => {
-    fc.assert(
-      fc.asyncProperty(validSearchParamsArb, async (input) => {
-        mockSettledAscenda();
+  it('valid params reach the upstream call and come back merged with the full shape', async () => {
+    await fc.assert(
+      fc.asyncProperty(validSearchParamsArb, ranksArb, async (input, ranks) => {
+        nock.cleanAll(); // beforeEach only fires per test, not per iteration
+        mockSettledFor(input, ranks);
         const hotels = await searchHotels(input);
+        expect(hotels).to.have.lengthOf(ranks.length);
         for (const hotel of hotels) {
-          expect(hotel).to.have.property('id').that.is.a('string');
+          expect(hotel.id).to.be.a('string').and.contain(input.destination_id);
           expect(hotel).to.have.property('name').that.is.a('string');
           expect(hotel).to.have.property('price').that.is.a('number');
-          expect(hotel).to.have.property('searchRank').that.is.a('number');
           expect(hotel).to.have.property('rating').that.is.a('number');
           expect(hotel).to.have.property('categories').that.is.an('array');
           expect(hotel).to.have.property('images').that.is.an('array');
@@ -147,17 +177,13 @@ describe('searchHotels — fuzz / property tests', function () {
     );
   });
 
-  it('results are always sorted by searchRank ascending', () => {
-    fc.assert(
-      fc.asyncProperty(validSearchParamsArb, async (input) => {
-        mockSettledAscenda();
+  it('results are always sorted by searchRank ascending', async () => {
+    await fc.assert(
+      fc.asyncProperty(validSearchParamsArb, ranksArb, async (input, ranks) => {
+        nock.cleanAll();
+        mockSettledFor(input, ranks);
         const hotels = await searchHotels(input);
-        const ranks = hotels.map((h) => h.searchRank);
-        for (let i = 1; i < ranks.length; i++) {
-          const curr = ranks[i] as number;
-          const prev = ranks[i - 1] as number;
-          expect(curr).to.be.at.least(prev);
-        }
+        expect(hotels.map((h) => h.searchRank)).to.deep.equal([...ranks].sort((a, b) => a - b));
       }),
       { numRuns: 25 }
     );

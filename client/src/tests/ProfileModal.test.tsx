@@ -230,3 +230,118 @@ describe('ProfileModal — Booking History', () => {
     expect(await screen.findByText('Marina Bay Sands')).toBeInTheDocument();
   });
 });
+
+/**
+ * Account deletion — the most destructive request the client makes, and the
+ * one route where a missing credential is silent: the server answers 401 and
+ * the modal shows a generic "Error deleting account".
+ */
+describe('ProfileModal — Delete Account', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({
+      data: { session: { access_token: ACCESS_TOKEN, user: USER } },
+      error: null,
+    } as never);
+    vi.mocked(supabase.auth.signInWithPassword).mockResolvedValue({
+      data: { user: USER, session: null },
+      error: null,
+    } as never);
+    vi.mocked(supabase.auth.signOut).mockResolvedValue({ error: null } as never);
+    // jsdom has no reload; the success path calls it right after signOut.
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, reload: vi.fn() },
+    });
+  });
+
+  /** Refuses the deletion with the server's message and status. */
+  const refuseDeletion = (status: number, error: string) =>
+    http.delete('*/api/users/:uid', () => HttpResponse.json({ error }, { status }));
+
+  /** Opens the confirm dialog, enters the password and submits. */
+  const submitDeletion = async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole('button', { name: /delete account/i }));
+    // The password input has a placeholder, not a label.
+    await user.type(await screen.findByPlaceholderText(/enter your password/i), 'correct-horse');
+    await user.click(screen.getByRole('button', { name: /confirm deletion/i }));
+  };
+
+  it('sends the access token, so the server does not reject the deletion', async () => {
+    let authorization: string | null = 'never called';
+    server.use(
+      http.delete('*/api/users/:uid', ({ request }) => {
+        authorization = request.headers.get('authorization');
+        return HttpResponse.json({ success: true });
+      })
+    );
+
+    await submitDeletion();
+
+    // The route is behind requireUser. Without this header every deletion 401s,
+    // which is exactly how this shipped.
+    await waitFor(() => expect(authorization).toBe(`Bearer ${ACCESS_TOKEN}`));
+  });
+
+  it('deletes the signed-in account, not some other id', async () => {
+    let path = '';
+    server.use(
+      http.delete('*/api/users/:uid', ({ request }) => {
+        path = new URL(request.url).pathname;
+        return HttpResponse.json({ success: true });
+      })
+    );
+
+    await submitDeletion();
+
+    await waitFor(() => expect(path).toBe(`/api/users/${USER_ID}`));
+  });
+
+  it('signs out once the server confirms the deletion', async () => {
+    server.use(http.delete('*/api/users/:uid', () => HttpResponse.json({ success: true })));
+
+    await submitDeletion();
+
+    await waitFor(() => expect(supabase.auth.signOut).toHaveBeenCalled());
+    expect(window.location.reload).toHaveBeenCalled();
+  });
+
+  it('never reaches the server when the password is wrong', async () => {
+    // Password re-entry is the only guard on this button; a failed sign-in must
+    // stop here, not fall through to a DELETE the server would honour.
+    vi.mocked(supabase.auth.signInWithPassword).mockResolvedValueOnce({
+      data: { user: null, session: null },
+      error: { message: 'Invalid login credentials' },
+    } as never);
+    let called = false;
+    server.use(
+      http.delete('*/api/users/:uid', () => {
+        called = true;
+        return HttpResponse.json({ success: true });
+      })
+    );
+
+    await submitDeletion();
+
+    expect(await screen.findByText(/incorrect password/i)).toBeInTheDocument();
+    expect(called).toBe(false);
+    expect(supabase.auth.signOut).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [401, 'Your session has expired. Please sign in again.', /session has expired/i],
+    [403, 'You can only delete your own account.', /only delete your own account/i],
+    [500, 'Could not delete that account.', /could not delete that account/i],
+  ])('surfaces the server\'s message on a %i, and stays signed in', async (status, error, shown) => {
+    // Before #52 every one of these read as "Error deleting account", which is
+    // how a missing header went unnoticed.
+    server.use(refuseDeletion(status, error));
+
+    await submitDeletion();
+
+    expect(await screen.findByText(shown)).toBeInTheDocument();
+    expect(supabase.auth.signOut).not.toHaveBeenCalled();
+  });
+});

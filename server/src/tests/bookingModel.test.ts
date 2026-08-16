@@ -9,6 +9,7 @@ import {
   findByUserId,
   isSupabaseConfigured,
   __clearMemoryStore,
+  anonymiseBookingsForUser,
 } from '../models/bookingModel.js';
 import type { BookingInput } from '../models/bookingTypes.js';
 
@@ -249,7 +250,13 @@ describe('bookingModel', () => {
     });
 
     it('treats BOOKINGS_STORAGE=memory as authoritative over credentials', () => {
-      const previous = process.env.BOOKINGS_STORAGE;
+      // Restore all three: supabaseClient reads SUPABASE_URL at import, so a
+      // leaked value points later suites' nock interceptors at the wrong host.
+      const previous = {
+        BOOKINGS_STORAGE: process.env.BOOKINGS_STORAGE,
+        SUPABASE_URL: process.env.SUPABASE_URL,
+        SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY,
+      };
       try {
         process.env.BOOKINGS_STORAGE = 'memory';
         process.env.SUPABASE_URL = 'https://real.supabase.co';
@@ -259,7 +266,10 @@ describe('bookingModel', () => {
         // .env can still be writing to a store that vanishes on restart.
         expect(isSupabaseConfigured()).to.equal(false);
       } finally {
-        process.env.BOOKINGS_STORAGE = previous;
+        for (const [key, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
       }
     });
   });
@@ -273,6 +283,64 @@ describe('bookingModel', () => {
 
       expect(await findById(written.id)).to.equal(null);
       expect(await findByPaymentId(written.paymentId)).to.equal(null);
+    });
+  });
+
+  /**
+   * The erasure half of account deletion. A booking is an accounting artefact
+   * and the money moved, so the rows stay — what has to go is everything that
+   * names a person.
+   */
+  describe('anonymiseBookingsForUser', () => {
+    const OWNER = randomUUID();
+
+    it('erases every identifying field on the user\'s bookings', async () => {
+      const written = await insertOne(bookingInput({ userId: OWNER }));
+
+      const count = await anonymiseBookingsForUser(OWNER);
+      expect(count).to.equal(1);
+
+      const after = await findById(written.id);
+      expect(after, 'the row itself must survive').to.not.equal(null);
+      expect(after!.guest.firstName).to.not.equal('Jane');
+      expect(after!.guest.lastName).to.not.equal('Tan');
+      expect(after!.guest.email).to.not.equal('jane@example.com');
+      expect(after!.guest.phone).to.not.equal('+65 9123 4567');
+      expect(after!.specialRequests).to.equal(null);
+      expect(after!.payeeId).to.not.equal('cus_test_model');
+      // Unlinked, so the row cannot be traced back to the deleted account.
+      expect(after!.userId).to.equal(null);
+    });
+
+    it('keeps the financial record intact', async () => {
+      const input = bookingInput({ userId: OWNER });
+      const written = await insertOne(input);
+
+      await anonymiseBookingsForUser(OWNER);
+
+      const after = await findById(written.id);
+      expect(after!.pricePaid).to.equal(784.8);
+      expect(after!.paymentId).to.equal(input.paymentId);
+      expect(after!.startDate).to.equal('2026-08-01');
+      expect(after!.endDate).to.equal('2026-08-04');
+      expect(after!.hotelName).to.equal(written.hotelName);
+      // Brand and expiry name nobody; the last four are already all that is kept.
+      expect(after!.card.brand).to.equal('visa');
+      expect(after!.card.expYear).to.equal(2030);
+    });
+
+    it('leaves other users\' bookings alone', async () => {
+      const mine = await insertOne(bookingInput({ userId: OWNER }));
+      const theirs = await insertOne(bookingInput({ userId: randomUUID() }));
+
+      await anonymiseBookingsForUser(OWNER);
+
+      expect((await findById(mine.id))!.guest.email).to.not.equal('jane@example.com');
+      expect((await findById(theirs.id))!.guest.email).to.equal('jane@example.com');
+    });
+
+    it('reports zero for a user who never booked, rather than throwing', async () => {
+      expect(await anonymiseBookingsForUser(randomUUID())).to.equal(0);
     });
   });
 });

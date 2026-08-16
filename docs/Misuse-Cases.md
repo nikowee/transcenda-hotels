@@ -11,8 +11,9 @@ mitigation «mitigates» a misuse case.
 
 Everything on this page is real. Each misuse case below was either a live
 defect in this codebase or an attack the design deliberately anticipated, and
-each mitigation is pinned by a named test that fails if the defence is removed.
-The final column of the traceability table is the receipt.
+each mitigation is pinned by a named test that fails if the defence is removed,
+except where a row below says the defence has not landed yet. The final column
+of the traceability table is the receipt.
 
 Read alongside:
 
@@ -155,11 +156,11 @@ flowchart LR
 |---|---|
 | **Misuser** | Network Attacker |
 | **Threatens** | UC1 Search destinations (and, through the event loop, every other use case) |
-| **Attack path** | `GET /api/destinations/search?q=<5000 characters>`. `fuse.search` is synchronous and its cost grows with the pattern length, so a single unauthenticated request occupied the event loop for **65 seconds** — during which the process served nobody. The endpoint capped the *minimum* query length and nothing else, and was the only public route with no rate limiter. |
+| **Attack path** | `GET /api/destinations/search?q=<5000 characters>`. `fuse.search` is synchronous and its cost grows with the pattern length, so a single unauthenticated request occupied the event loop for **65 seconds** — during which the process served nobody. The endpoint caps the *minimum* query length and nothing else, and — like the other public search routes — has no rate limiter. |
 | **Discovery** | Found by the seeded fuzzer, not by review. No hand-written test would have tried a 5,000-character search term, because no person would type one. |
-| **Mitigation** | The pattern is capped at 128 characters — the longest real destination name in the dataset is 115, so no legitimate search loses a match — and the route is rate-limited. Worst case fell from 65 s to 1.86 s and is now flat with respect to input length. Node's own 16 KB header limit answers `431` above that. |
-| **Evidence** | `answers a 5,000-character query in about the time a capped one takes` and `still matches the longest real destination name in full` — a two-sided boundary pair, so the cap cannot later be tightened into a false negative — plus the endpoint fuzzer in `fuzz.test.ts`. **These land with the `test/fuzzing-and-boundaries` branch; on `development` alone the mitigation and its tests are not yet present.** |
-| **Residual risk** | Bounded, not eliminated: a 115-character pattern still costs about 2 s of event loop, and the limiter permits 120 requests per minute per address. Closing it properly means moving the index off the main thread. |
+| **Mitigation** | **Not on this branch.** Here the endpoint bounds only the *minimum* query length (2 characters) and carries no rate limiter at all. The fix — `MAX_QUERY_LENGTH = 128` (the longest real destination name is 115, so no legitimate search loses a match) plus a 120/min limiter on the route — is implemented on `fix/search-query-cap`, ported from `test/fuzzing-and-boundaries`, and is pending merge. There it takes the worst case from 65 s to 1.86 s, flat with respect to input length. Node's own 16 KB header limit answers `431` above that. |
+| **Evidence** | On `fix/search-query-cap`: `answers a 5,000-character query in about the time a capped one takes` and `still matches the longest real destination name in full` — a two-sided boundary pair, so the cap cannot later be tightened into a false negative. The endpoint fuzzer in `fuzz.test.ts` is on `test/fuzzing-and-boundaries` only. **None of these run on this branch.** |
+| **Residual risk** | Open here: an uncapped 5,000-character query still blocks the event loop. Once the fix merges it is bounded, not eliminated — a 115-character pattern still costs about 2 s of event loop, and the limiter permits 120 requests per minute per address. Closing it properly means moving the index off the main thread. |
 
 ### M6 — Harvest card-testing results
 
@@ -181,20 +182,24 @@ flowchart LR
 | M2 | Book without paying | UC4 | Verify with Stripe; HMAC over raw bytes | 7 tests |
 | M3 | Charged/refunded twice | UC5 | Idempotency on `payment_id`, two in-process layers | 5 tests — **single-instance only** |
 | M4 | Read others' bookings | UC7 | Token ownership check on the API path only | 2 tests — **direct database path open** |
-| M5 | Exhaust the server | UC1 | Input cap + rate limit | 2 boundary tests + fuzzer |
+| M5 | Exhaust the server | UC1 | Input cap + rate limit | **not on this branch** — implemented on `fix/search-query-cap`, pending merge |
 | M6 | Card-testing oracle | UC4 | Tight limits, opaque errors, no card input | 3 tests |
 
 ## What this diagram deliberately does not claim
 
-**Two misuse cases are not fully closed, and both need a database-level
-control this repository does not carry.**
+**Three misuse cases are not fully closed. Two need a database-level control
+this repository does not carry; the third is fixed on a branch that has not
+merged.**
 
 M4 is open at the direct-database path: the publishable key is world-readable
 by design, and only Row Level Security can deny it. M3's guard is real but
 per-process; a unique constraint on `bookings.payment_id` is what would make it
 hold across replicas, and without one `bookingModel`'s `23505` handler catches
-nothing.
+nothing. M5 is open here for a different reason: the 128-character cap and the
+search limiter exist on `fix/search-query-cap`, so on this branch
+`/api/destinations/search` is still uncapped and unthrottled.
 
-Both are stated rather than glossed. A misuse-case model that quietly assumes
-its own mitigations exist is worth less than one that says which do not — and
-these two are the difference between "safe today at one instance" and "safe".
+All three are stated rather than glossed. A misuse-case model that quietly
+assumes its own mitigations exist is worth less than one that says which do
+not — and these three are the difference between "safe at one instance, once a
+branch lands" and "safe".

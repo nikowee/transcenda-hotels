@@ -10,7 +10,7 @@ import { buildQuote, MAX_NIGHTS, MAX_ROOMS, MAX_GUESTS, CURRENCY } from '../../c
  * input space, including inputs no one thought to write by hand.
  *
  * Run standalone: npm run test:fuzz
- * Each property runs 1000 random cases by default (fast-check's numRuns).
+ * Each property runs fast-check's default 100 random cases.
  */
 
 const DEMO_ROOM_KEYS = ['standard-queen', 'deluxe-king', 'executive-suite'];
@@ -39,6 +39,26 @@ const stayInputArb = fc.record({
   children: fc.oneof(fc.integer({ min: -5, max: 30 }), fc.constant(undefined)),
 });
 
+/** A stay built to actually price, for the success branch: random inputs land there roughly once in 15 000. */
+const pricedStayArb = fc
+  .record({
+    destinationId: fc.string({ minLength: 1, maxLength: 60 }).filter((s) => s.trim().length > 0),
+    hotelId: fc.string({ minLength: 1, maxLength: 60 }).filter((s) => s.trim().length > 0),
+    hotelName: fc.string({ minLength: 1, maxLength: 190 }).filter((s) => s.trim().length > 0),
+    roomTypes: fc.array(fc.constantFrom(...DEMO_ROOM_KEYS), { minLength: 1, maxLength: MAX_ROOMS }),
+    startDate: isoDateArb,
+    nights: fc.integer({ min: 1, max: MAX_NIGHTS }),
+    adults: fc.integer({ min: 1, max: MAX_GUESTS }),
+    children: fc.integer({ min: 0, max: MAX_GUESTS }),
+  })
+  .map(({ nights, adults, children, ...stay }) => ({
+    ...stay,
+    // Date.parse of YYYY-MM-DD is UTC, so the offset lands on exactly `nights`.
+    endDate: new Date(Date.parse(stay.startDate) + nights * 86_400_000).toISOString().slice(0, 10),
+    adults,
+    children: Math.min(children, MAX_GUESTS - adults),
+  }));
+
 describe('buildQuote — fuzz / property tests', function () {
   this.timeout(30_000);
 
@@ -63,9 +83,10 @@ describe('buildQuote — fuzz / property tests', function () {
 
   it('every successful quote satisfies its own numeric invariants', () => {
     fc.assert(
-      fc.property(stayInputArb, (input) => {
+      fc.property(pricedStayArb, (input) => {
         const result = buildQuote(input);
-        if (!('quote' in result)) return; // only check the success branch
+        // A priceable stay must price, or the invariants below check nothing.
+        if (!('quote' in result)) expect.fail(`priceable stay rejected: ${result.error}`);
 
         const { quote } = result;
 

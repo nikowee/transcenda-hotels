@@ -14,19 +14,19 @@ This page documents the complete testing suite for Transcenda Hotels, covering a
 
 ```
                     ┌─────────────────────────────────────┐
-                    │        E2E Tests (22 tests)         │
+                    │        E2E Tests (35 tests)         │
                     │  Playwright — full system in Docker │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │       Backend (375 tests)           │
+                    │       Backend (460 tests)           │
                     │  Mocha + Chai + Supertest; nock     │
                     │  fakes Stripe and Ascenda at the    │
                     │  socket, network blocked outright   │
                     └─────────────────────────────────────┘
                                         ▲
                     ┌─────────────────────────────────────┐
-                    │      Frontend (166 tests)           │
+                    │      Frontend (227 tests)           │
                     │  Vitest + Testing Library, MSW      │
                     │  intercepting every request         │
                     └─────────────────────────────────────┘
@@ -71,7 +71,7 @@ each rubric claim is backed by more than one layer:
   dates, unknown `sortBy` fallback, out-of-range `starRating`, whitespace
   `destination_id`.
 - **`destinations/search.test.ts`** now also covers: missing `q`, whitespace-only
-  `q`, 10k-char query, unicode/emoji, SQL-injection/XSS payloads, and the 5-result cap.
+  `q`, 100-char query, unicode/emoji, SQL-injection/XSS payloads, and the 5-result cap.
 
 ### Frontend unit/boundary additions
 
@@ -95,49 +95,93 @@ Every client suite lives in `client/src/tests/`; every server suite lives in
 report, which excludes `src/tests/`.
 
 | Suite | Tests | Tools | Location |
-|-------|-------|-------|----------|
-| `SearchForm.test.tsx` | 6 | Vitest + RTL, `vi.mock('axios')` | `client/src/tests/` |
-| `SearchForm.integration.test.tsx` | 4 | MSW + Vitest | `client/src/tests/` |
-| `CheckoutPage.test.tsx` | 18 | MSW + Vitest | `client/src/tests/` |
-| `PaymentPage.test.tsx` | 39 | MSW + Vitest, mocked Stripe Elements | `client/src/tests/` |
-| `ConfirmationPage.test.tsx` | 17 | MSW + Vitest | `client/src/tests/` |
-| `PaymentPageNoStripeKey.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+|---|---|---|---|
+| `Auth.test.tsx` | 7 | Vitest + RTL | `client/src/tests/` |
 | `BookingEntry.test.tsx` | 6 | Vitest + RTL | `client/src/tests/` |
-| `destination.test.ts` | 7 | Mocha + Chai + Supertest | `server/src/tests/` |
-| `booking.test.ts` | 46 | Mocha + Chai + Supertest | `server/src/tests/` |
+| `CheckoutPage.test.tsx` | 27 | Vitest + RTL | `client/src/tests/` |
+| `ConfirmationPage.test.tsx` | 18 | Vitest + RTL | `client/src/tests/` |
+| `FilterPanel.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+| `HotelCard.test.tsx` | 6 | Vitest + RTL | `client/src/tests/` |
+| `HotelDetailsPage.integration.test.tsx` | 7 | Vitest + RTL | `client/src/tests/` |
+| `HotelDetailsPage.test.tsx` | 10 | Vitest + RTL | `client/src/tests/` |
+| `LoadingPage.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+| `Login.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+| `Navbar.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+| `Pagination.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+| `PaymentPage.test.tsx` | 28 | Vitest + RTL | `client/src/tests/` |
+| `PaymentPageNoStripeKey.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+| `ProfileModal.test.tsx` | 15 | Vitest + RTL | `client/src/tests/` |
+| `ResultsPage.integration.test.tsx` | 4 | Vitest + RTL | `client/src/tests/` |
+| `ResultsPage.test.tsx` | 13 | Vitest + RTL | `client/src/tests/` |
+| `RoomList.test.tsx` | 10 | Vitest + RTL | `client/src/tests/` |
+| `SearchForm.integration.test.tsx` | 4 | Vitest + RTL | `client/src/tests/` |
+| `SearchForm.test.tsx` | 14 | Vitest + RTL | `client/src/tests/` |
+| `Signup.test.tsx` | 5 | Vitest + RTL | `client/src/tests/` |
+| `amenityIcons.test.ts` | 3 | Vitest + RTL | `client/src/tests/` |
+| `accountErasure.test.ts` | 4 | Mocha + Chai | `server/src/tests/` |
+| `booking.test.ts` | 62 | Mocha + Chai | `server/src/tests/` |
+| `bookingModel.test.ts` | 24 | Mocha + Chai | `server/src/tests/` |
 | `buildQuote.test.ts` | 59 | Mocha + Chai | `server/src/tests/` |
-| `bookingModel.test.ts` | 17 | Mocha + Chai | `server/src/tests/` |
-| `paymentIntent.test.ts` | 59 | Mocha + Chai + Supertest | `server/src/tests/` |
-| `recordPaidBooking.test.ts` | 21 | Mocha + Chai | `server/src/tests/` |
+| `deleteAccount.test.ts` | 6 | Mocha + Chai | `server/src/tests/` |
+| `destinations/search.test.ts` | 14 | Mocha + Chai | `server/src/tests/` |
+| `emailService.test.ts` | 10 | Mocha + Chai | `server/src/tests/` |
+| `external/ascenda-api.test.ts` | 4 | Mocha + Chai | `server/src/tests/` |
+| `external/search.integration.test.ts` | 5 | Mocha + Chai | `server/src/tests/` |
+| `fuzz/buildQuote.fuzz.test.ts` | 5 | Mocha + Chai | `server/src/tests/` |
+| `fuzz/hotelSearch.fuzz.test.ts` | 4 | Mocha + Chai | `server/src/tests/` |
+| `fuzz/validators.fuzz.test.ts` | 11 | Mocha + Chai | `server/src/tests/` |
+| `health.test.ts` | 1 | Mocha + Chai | `server/src/tests/` |
+| `hotelName.test.ts` | 7 | Mocha + Chai | `server/src/tests/` |
+| `hotelRoomService.test.ts` | 17 | Mocha + Chai | `server/src/tests/` |
+| `hotels/details.test.ts` | 8 | Mocha + Chai | `server/src/tests/` |
+| `hotels/price.test.ts` | 4 | Mocha + Chai | `server/src/tests/` |
+| `hotels/search.test.ts` | 18 | Mocha + Chai | `server/src/tests/` |
+| `paymentIntent.test.ts` | 46 | Mocha + Chai | `server/src/tests/` |
 | `paymentService.test.ts` | 14 | Mocha + Chai | `server/src/tests/` |
-| `rateLimit.test.ts` | 8 | Mocha + Chai | `server/src/tests/` |
-| `stripePayments.test.ts` | 25 | Mocha + Chai + **nock** | `server/src/tests/` |
-| `stripePaymentIntents.test.ts` | 25 | Mocha + Chai + **nock** | `server/src/tests/` |
-| `stripeRefunds.test.ts` | 11 | Mocha + Chai + **nock** | `server/src/tests/` |
-| `stripeWebhook.test.ts` | 21 | Mocha + Chai + Supertest | `server/src/tests/` |
-| `hotelRoomService.test.ts` | 17 | Mocha + Chai + **nock** | `server/src/tests/` |
-| `hotelName.test.ts` | 7 | Mocha + Chai + Supertest + **nock** | `server/src/tests/` |
-| `emailService.test.ts` | 6 | Mocha + Chai | `server/src/tests/` |
-| `supplierPricing.test.ts` | 8 | Mocha + Chai + Supertest + **nock** | `server/src/tests/` |
-| `booking-flow.spec.ts` | 11 | Playwright | `e2e_testing/tests/` |
-| `search-*.spec.ts` | 5 | Playwright | `e2e_testing/tests/` |
-| **Total** | **462** | — | — |
+| `rateLimit.test.ts` | 10 | Mocha + Chai | `server/src/tests/` |
+| `recordPaidBooking.test.ts` | 22 | Mocha + Chai | `server/src/tests/` |
+| `services/ascendaServices.test.ts` | 7 | Mocha + Chai | `server/src/tests/` |
+| `stripePaymentIntents.test.ts` | 25 | Mocha + Chai | `server/src/tests/` |
+| `stripePayments.test.ts` | 25 | Mocha + Chai | `server/src/tests/` |
+| `stripeRefunds.test.ts` | 11 | Mocha + Chai | `server/src/tests/` |
+| `stripeWebhook.test.ts` | 21 | Mocha + Chai | `server/src/tests/` |
+| `supplierPricing.test.ts` | 8 | Mocha + Chai | `server/src/tests/` |
+| `booking-flow.spec.ts` | 13 | Playwright | `e2e_testing/tests/` |
+| `hotel-details.spec.ts` | 8 | Playwright | `e2e_testing/tests/` |
+| `login.integration.spec.ts` | 1 | Playwright | `e2e_testing/tests/` |
+| `results-page.spec.ts` | 6 | Playwright | `e2e_testing/tests/` |
+| `search-error-handling.spec.ts` | 3 | Playwright | `e2e_testing/tests/` |
+| `search-flow.spec.ts` | 2 | Playwright | `e2e_testing/tests/` |
+| `security.integration.spec.ts` | 1 | Playwright | `e2e_testing/tests/` |
+| `signup.integration.spec.ts` | 1 | Playwright | `e2e_testing/tests/` |
+| **Total** | **694** | — | — |
+
+*Generated by counting `it(`/`test(` in source (`gen_test_map.py`), so it is a
+**source-level** count: 452 server, 207 client, 35 E2E. The runners report
+**722** — 460 server, 227 client, 35 E2E — and the two reconcile exactly:
+`external/` (9 tests: `ascenda-api` 4, `search.integration` 5) hits the live
+supplier and is excluded from `npm test` by design (452 − 9 = 443); a templated
+title inside a `for` loop is one entry here but one test per iteration at
+runtime — the CORS origins and malformed-`demoCard` loops add 17 (443 + 17 =
+460); and `it.each` tables are not counted here at all — `CheckoutPage` (1),
+`PaymentPage` (3) and `ProfileModal` (1) expand to 20 cases (207 + 20 = 227).
+Regenerate rather than hand-edit; every count in this file drifted before.*
 
 ---
 
 ## 🚀 Quick Start
 
 ```bash
-# Frontend: 166 tests
+# Frontend: 227 tests
 cd client && npm run test
 
-# Backend: 375 tests (+3 pending)
+# Backend: 460 tests
 cd server && npm run test
 
 # Backend: real-network Ascenda smoke tests (opt-in, hits the live API)
 cd server && npm run test:external
 
-# E2E: 22 tests, auto-starts Docker
+# E2E: 35 tests, auto-starts Docker
 cd e2e_testing && npm ci && npx playwright install chromium && npx playwright test
 ```
 
@@ -259,23 +303,21 @@ attacker is trying to achieve and names the residual risks:
 | `ignores a client-supplied amount` | Price set from the request body |
 | `ignores a price smuggled inside the stay object` | Same, via a nested field |
 | `refuses to price an unknown room type` | Rate invented from an arbitrary `roomId` |
-| `rejects a forged session id` | Payment step bypassed entirely |
+| `cannot be made to write a booking from a forged session id` | Payment step bypassed entirely |
 | `is idempotent across repeated confirmations` | Double booking / double email |
-| `never accepts an unverified payload` | Spoofed Stripe webhook |
+| `rejects a payload with no signature header at all` | Spoofed Stripe webhook |
 | `throttles repeated payment attempts` | Card-testing oracle |
 | `never renders a card input` (client) | PCI SAQ D scope creep |
 | `sends the amount in minor units` | Charging 1/100th of the price |
 | `does not scale a zero-decimal currency` | Charging JPY/KRW 100× |
 | `withholds detail from a Stripe authentication failure` | Key prefix rendered into the payment form |
 | `rejects a body altered after signing` | Forged webhook mutating a booking |
-| `refuses to refund a booking that was never paid` | Refunding money never captured |
 | `sends an idempotency key so a retry cannot refund twice` | Double refund |
 | `blocks a Stripe request that has no interceptor` | Test suite silently calling the real API |
 | `ignores any price fields present on the input` | Price contributed by the caller |
 | `does not treat inherited Object properties as room types` | `roomId=constructor` pricing to NaN |
 | `never returns a non-finite or non-positive total` | A booking written with a NaN price |
-| `will not resurrect a FAILED booking` | A late success reviving an expired session |
-| `No card field is ever rendered` (E2E) | PCI SAQ D scope creep, in a real browser |
+| `Checkout renders no card field of any kind` (E2E) | PCI SAQ D scope creep, in a real browser |
 | `CORS in development` (4 origin variants) | Allowlist pinned to one spelling |
 
 ---
@@ -391,10 +433,12 @@ transcenda-hotels/
 │       ├── paymentService.test.ts       #  │
 │       ├── rateLimit.test.ts            #  │
 │       ├── recordPaidBooking.test.ts    # ─┘
-│       ├── destination.test.ts          # ─┐
-│       ├── booking.test.ts              #  │ integration
-│       ├── paymentIntent.test.ts        #  │
-│       ├── stripeWebhook.test.ts        # ─┘
+│       ├── destinations/search.test.ts  # ─┐
+│       ├── booking.test.ts              #  │
+│       ├── paymentIntent.test.ts        #  │ integration
+│       ├── stripeWebhook.test.ts        #  │
+│       ├── deleteAccount.test.ts        #  │ DELETE /api/users/:uid entitlement
+│       ├── accountErasure.test.ts       # ─┘ booking PII erased before the auth user
 │       ├── stripePayments.test.ts       # ─┐ contract (nock)
 │       ├── stripePaymentIntents.test.ts #  │
 │       └── stripeRefunds.test.ts        # ─┘
@@ -452,7 +496,7 @@ and the suite table at the top of this page is the authoritative tally.
 
 ## 🧩 Phase 1: Unit Tests
 
-**Location:** `client/src/components/SearchForm.test.tsx`
+**Location:** `client/src/tests/SearchForm.test.tsx`
 **Tools:** Vitest + React Testing Library + `vi.mock('axios')`
 
 These tests validate the `SearchForm` component in isolation — no real API calls, no browser.
@@ -479,7 +523,7 @@ These tests validate the `SearchForm` component in isolation — no real API cal
 
 ## 🧩 Phase 1.5: ResultsPage Unit Tests
 
-**Location:** `client/src/pages/ResultsPage.test.tsx`
+**Location:** `client/src/tests/ResultsPage.test.tsx`
 **Tools:** Vitest + React Testing Library + `vi.mock('axios')`
 
 These tests validate the `ResultsPage` component in isolation — no real API calls, no browser.
@@ -586,7 +630,7 @@ These tests verify the `ResultsPage` component with MSW intercepting API calls a
 
 ## 🧩 Phase 3: Backend Integration Tests
 
-**Location:** `server/src/tests/destination.test.ts` and `server/src/tests/hotel.test.ts`
+**Location:** `server/src/tests/destinations/search.test.ts` and `server/src/tests/hotels/search.test.ts`
 **Tools:** Mocha + Chai + Supertest + nock
 
 These tests send real HTTP requests to the Express app without starting a server — Supertest binds the app to a temporary port. The `nock` library intercepts outbound HTTP calls to the Ascenda API at the network level.
@@ -647,11 +691,11 @@ These tests send real HTTP requests to the Express app without starting a server
 ### Test Structure
 
 ```typescript
-// server/src/tests/destination.test.ts
+// server/src/tests/destinations/search.test.ts
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import request from 'supertest';
-import { app } from './setup';
+import { app } from '../setup.ts';
 
 describe('Destination Search API', () => {
   it('should return empty array for query with less than 2 characters', async () => {
@@ -767,24 +811,21 @@ src/tests/
 transcenda-hotels/
 ├── client/
 │   ├── src/
-│   │   ├── components/
-│   │   │   └── SearchForm.test.tsx          # Unit tests (Vitest)
 │   │   ├── mocks/
-│   │   │   ├── handlers.ts                  # MSW request handlers
-│   │   │   └── browser.ts                   # MSW browser setup
-│   │   ├── pages/
-│   │   │   └── ResultsPage.test.tsx         # ResultsPage unit tests (Vitest)
+│   │   │   └── handlers.ts                  # MSW request handlers
 │   │   └── tests/
 │   │       ├── setup.ts                     # MSW server lifecycle
+│   │       ├── SearchForm.test.tsx          # Unit tests (Vitest)
 │   │       ├── SearchForm.integration.test.tsx  # SearchForm integration (MSW)
+│   │       ├── ResultsPage.test.tsx         # ResultsPage unit tests (Vitest)
 │   │       └── ResultsPage.integration.test.tsx # ResultsPage integration (MSW)
 │   └── vite.config.ts                       # Vitest configuration
 ├── server/
 │   └── src/
 │       └── tests/
 │           ├── setup.ts                     # Test lifecycle hooks
-│           ├── destination.test.ts          # Destination API tests (Mocha)
-│           └── hotel.test.ts                # Hotel search API tests (Mocha + nock)
+│           ├── destinations/search.test.ts  # Destination API tests (Mocha)
+│           └── hotels/search.test.ts        # Hotel search API tests (Mocha + nock)
 ├── e2e_testing/
 │   ├── global-setup.ts                      # Starts Docker containers
 │   ├── global-teardown.ts                   # Stops Docker containers

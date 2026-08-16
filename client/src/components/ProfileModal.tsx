@@ -111,10 +111,14 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
 
       // 2. Call your backend server route to delete the user via admin API using VITE_API_URL
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      // The route is behind requireUser, so without the bearer token this
+      // 401s every time. The same helper is already used to load the booking
+      // history above; this call was hand-rolled and never got it.
       const response = await fetch(`${apiUrl}/api/users/${user.id}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
+          ...(await authHeader()),
         },
       });
 
