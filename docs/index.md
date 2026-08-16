@@ -20,6 +20,9 @@ Welcome to the official documentation for the Transcenda Hotels booking platform
 | [Frontend Dependencies](frontend-dependencies) | React, Vite, Tailwind, and frontend packages |
 | [Backend Dependencies](backend-dependencies) | Express, Supabase, Stripe, and backend packages |
 | [Environment Variables](environment-variables) | Required env vars for Supabase and Stripe |
+| [UC4 — Book & Make Payment](uc4-book-and-make-payment) | Booking flow diagrams and security properties |
+| [Testing](testing) | Test suites, how to run them, security regressions |
+| [Deployment](deployment) | AWS + Supabase: images, secrets, webhook, scale rules |
 | [Troubleshooting](troubleshooting) | Common issues and how to fix them |
 | [Contributing](contributing) | Branching, commits, code style, and PR process |
 

@@ -135,8 +135,6 @@ curl "http://localhost:5000/api/destinations/search?q=R"
 - Results are limited to the **top 5** matches to keep the network payload small.
 - The destination data is loaded from `server/src/data/destinations.json` at server startup.
 
----
-
 ## Error Codes
 
 | Status Code | Meaning |

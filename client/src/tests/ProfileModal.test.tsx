@@ -1,0 +1,347 @@
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { http, HttpResponse } from 'msw';
+import { server } from './setup';
+import ProfileModal from '../components/ProfileModal';
+import { supabase } from '../lib/supabaseClient';
+import type { BookingRecord } from '../types/booking';
+import type { User } from '@supabase/supabase-js';
+
+/** ProfileModal — the Booking History tab. */
+
+vi.mock('../lib/supabaseClient', () => ({
+  supabase: {
+    auth: {
+      getSession: vi.fn(),
+      updateUser: vi.fn(),
+      signInWithPassword: vi.fn(),
+      signOut: vi.fn(),
+    },
+  },
+}));
+
+const USER_ID = '11111111-2222-3333-4444-555555555555';
+const ACCESS_TOKEN = 'test-access-token';
+
+const USER = { id: USER_ID, email: 'jane@example.com' } as User;
+
+const booking = (overrides: Partial<BookingRecord> = {}): BookingRecord => ({
+  id: 'bk-1',
+  userId: USER_ID,
+  destinationId: 'RsBU',
+  hotelId: 'marina-bay',
+  hotelName: 'Marina Bay Sands',
+  roomTypes: ['deluxe-king'],
+  startDate: '2099-08-12',
+  endDate: '2099-08-15',
+  nights: 3,
+  adults: 2,
+  children: 0,
+  specialRequests: null,
+  guest: {
+    salutation: 'Ms',
+    firstName: 'Jane',
+    lastName: 'Tan',
+    email: 'jane@example.com',
+    phone: '+65 9123 4567',
+  },
+  billing: null,
+  pricePaid: 784.8,
+  paymentId: 'pi_test',
+  payeeId: 'acct_test',
+  card: { brand: 'visa', last4: '4242', expMonth: 12, expYear: 2030 },
+  createdAt: '2026-01-01T00:00:00.000Z',
+  ...overrides,
+});
+
+/** Answers the history endpoint for this user, capturing what it was sent. */
+const historyHandler = (
+  bookings: BookingRecord[],
+  onRequest?: (request: Request) => void
+) =>
+  http.get('*/api/bookings/user/:userId', ({ request }) => {
+    onRequest?.(request);
+    return HttpResponse.json({ bookings });
+  });
+
+const openBookingsTab = async () => {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: /booking history/i }));
+  return user;
+};
+
+const renderModal = () =>
+  render(<ProfileModal isOpen onClose={vi.fn()} user={USER} />);
+
+describe('ProfileModal — Booking History', () => {
+  beforeEach(() => {
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({
+      data: { session: { access_token: ACCESS_TOKEN, user: USER } },
+      error: null,
+    } as never);
+  });
+
+  it('does not fetch anything until the tab is opened', async () => {
+    let called = false;
+    server.use(historyHandler([], () => { called = true; }));
+
+    renderModal();
+    // Account Details is the default tab; give any stray effect a chance to run.
+    await screen.findByText('jane@example.com');
+
+    expect(called).to.equal(false);
+  });
+
+  it('sends the access token as a bearer credential', async () => {
+    // The whole authorisation story depends on this header arriving: without
+    // it the server answers 401, and with someone else's it answers 403.
+    let authorization: string | null = null;
+    server.use(
+      historyHandler([], (request) => {
+        authorization = request.headers.get('authorization');
+      })
+    );
+
+    renderModal();
+    await openBookingsTab();
+
+    await waitFor(() => expect(authorization).to.equal(`Bearer ${ACCESS_TOKEN}`));
+  });
+
+  it('requests the signed-in account, not some other one', async () => {
+    let requestedPath: string | null = null;
+    server.use(
+      historyHandler([], (request) => {
+        requestedPath = new URL(request.url).pathname;
+      })
+    );
+
+    renderModal();
+    await openBookingsTab();
+
+    await waitFor(() =>
+      expect(requestedPath).to.equal(`/api/bookings/user/${USER_ID}`)
+    );
+  });
+
+  it('shows a loading state while the request is in flight', async () => {
+    server.use(
+      http.get('*/api/bookings/user/:userId', async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return HttpResponse.json({ bookings: [] });
+      })
+    );
+
+    renderModal();
+    await openBookingsTab();
+
+    expect(screen.getByText(/loading your bookings/i)).toBeInTheDocument();
+  });
+
+  it('renders a returned booking', async () => {
+    server.use(historyHandler([booking()]));
+
+    renderModal();
+    await openBookingsTab();
+
+    expect(await screen.findByText('Marina Bay Sands')).toBeInTheDocument();
+    expect(screen.getByText('S$784.80')).toBeInTheDocument();
+    expect(screen.getByText(/3 nights · 1 room/)).toBeInTheDocument();
+  });
+
+  it('labels a stay that has already ended as completed', async () => {
+    // Derived from the checkout date rather than stored: bookings has no status
+    // column, because a row only exists once the charge has cleared.
+    server.use(
+      historyHandler([booking({ startDate: '2020-01-01', endDate: '2020-01-04' })])
+    );
+
+    renderModal();
+    await openBookingsTab();
+
+    expect(await screen.findByText('Completed')).toBeInTheDocument();
+  });
+
+  it('labels a future stay as upcoming', async () => {
+    server.use(historyHandler([booking()]));
+
+    renderModal();
+    await openBookingsTab();
+
+    expect(await screen.findByText('Upcoming')).toBeInTheDocument();
+  });
+
+  it('says so when there are no bookings, rather than showing nothing', async () => {
+    server.use(historyHandler([]));
+
+    renderModal();
+    await openBookingsTab();
+
+    expect(await screen.findByText(/no bookings found yet/i)).toBeInTheDocument();
+  });
+
+  it('surfaces the server\'s message when the read is refused', async () => {
+    // A 403 here means the token and the path disagree, which is a real bug
+    // worth showing rather than rendering as an empty history.
+    server.use(
+      http.get('*/api/bookings/user/:userId', () =>
+        HttpResponse.json({ error: 'You can only view your own bookings.' }, { status: 403 })
+      )
+    );
+
+    renderModal();
+    await openBookingsTab();
+
+    expect(await screen.findByText(/only view your own bookings/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no bookings found yet/i)).to.equal(null);
+  });
+
+  it('does not report an empty history when the request failed', async () => {
+    // The distinction that matters: "you have no bookings" and "we could not
+    // ask" must never look the same, or an outage reads as data loss.
+    server.use(
+      http.get('*/api/bookings/user/:userId', () => HttpResponse.error())
+    );
+
+    renderModal();
+    await openBookingsTab();
+
+    expect(await screen.findByRole('button', { name: /try again/i })).toBeInTheDocument();
+    expect(screen.queryByText(/no bookings found yet/i)).to.equal(null);
+  });
+
+  it('retries after a failure', async () => {
+    let attempts = 0;
+    server.use(
+      http.get('*/api/bookings/user/:userId', () => {
+        attempts += 1;
+        return attempts === 1
+          ? HttpResponse.error()
+          : HttpResponse.json({ bookings: [booking()] });
+      })
+    );
+
+    renderModal();
+    const user = await openBookingsTab();
+
+    await user.click(await screen.findByRole('button', { name: /try again/i }));
+
+    expect(await screen.findByText('Marina Bay Sands')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Account deletion — the most destructive request the client makes, and the
+ * one route where a missing credential is silent: the server answers 401 and
+ * the modal shows a generic "Error deleting account".
+ */
+describe('ProfileModal — Delete Account', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({
+      data: { session: { access_token: ACCESS_TOKEN, user: USER } },
+      error: null,
+    } as never);
+    vi.mocked(supabase.auth.signInWithPassword).mockResolvedValue({
+      data: { user: USER, session: null },
+      error: null,
+    } as never);
+    vi.mocked(supabase.auth.signOut).mockResolvedValue({ error: null } as never);
+    // jsdom has no reload; the success path calls it right after signOut.
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, reload: vi.fn() },
+    });
+  });
+
+  /** Refuses the deletion with the server's message and status. */
+  const refuseDeletion = (status: number, error: string) =>
+    http.delete('*/api/users/:uid', () => HttpResponse.json({ error }, { status }));
+
+  /** Opens the confirm dialog, enters the password and submits. */
+  const submitDeletion = async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole('button', { name: /delete account/i }));
+    // The password input has a placeholder, not a label.
+    await user.type(await screen.findByPlaceholderText(/enter your password/i), 'correct-horse');
+    await user.click(screen.getByRole('button', { name: /confirm deletion/i }));
+  };
+
+  it('sends the access token, so the server does not reject the deletion', async () => {
+    let authorization: string | null = 'never called';
+    server.use(
+      http.delete('*/api/users/:uid', ({ request }) => {
+        authorization = request.headers.get('authorization');
+        return HttpResponse.json({ success: true });
+      })
+    );
+
+    await submitDeletion();
+
+    // The route is behind requireUser. Without this header every deletion 401s,
+    // which is exactly how this shipped.
+    await waitFor(() => expect(authorization).toBe(`Bearer ${ACCESS_TOKEN}`));
+  });
+
+  it('deletes the signed-in account, not some other id', async () => {
+    let path = '';
+    server.use(
+      http.delete('*/api/users/:uid', ({ request }) => {
+        path = new URL(request.url).pathname;
+        return HttpResponse.json({ success: true });
+      })
+    );
+
+    await submitDeletion();
+
+    await waitFor(() => expect(path).toBe(`/api/users/${USER_ID}`));
+  });
+
+  it('signs out once the server confirms the deletion', async () => {
+    server.use(http.delete('*/api/users/:uid', () => HttpResponse.json({ success: true })));
+
+    await submitDeletion();
+
+    await waitFor(() => expect(supabase.auth.signOut).toHaveBeenCalled());
+    expect(window.location.reload).toHaveBeenCalled();
+  });
+
+  it('never reaches the server when the password is wrong', async () => {
+    // Password re-entry is the only guard on this button; a failed sign-in must
+    // stop here, not fall through to a DELETE the server would honour.
+    vi.mocked(supabase.auth.signInWithPassword).mockResolvedValueOnce({
+      data: { user: null, session: null },
+      error: { message: 'Invalid login credentials' },
+    } as never);
+    let called = false;
+    server.use(
+      http.delete('*/api/users/:uid', () => {
+        called = true;
+        return HttpResponse.json({ success: true });
+      })
+    );
+
+    await submitDeletion();
+
+    expect(await screen.findByText(/incorrect password/i)).toBeInTheDocument();
+    expect(called).toBe(false);
+    expect(supabase.auth.signOut).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [401, 'Your session has expired. Please sign in again.', /session has expired/i],
+    [403, 'You can only delete your own account.', /only delete your own account/i],
+    [500, 'Could not delete that account.', /could not delete that account/i],
+  ])('surfaces the server\'s message on a %i, and stays signed in', async (status, error, shown) => {
+    // Before #52 every one of these read as "Error deleting account", which is
+    // how a missing header went unnoticed.
+    server.use(refuseDeletion(status, error));
+
+    await submitDeletion();
+
+    expect(await screen.findByText(shown)).toBeInTheDocument();
+    expect(supabase.auth.signOut).not.toHaveBeenCalled();
+  });
+});

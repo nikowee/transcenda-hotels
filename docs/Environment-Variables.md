@@ -19,8 +19,11 @@ The backend requires a `.env` file located at `server/.env`. Below is the comple
 | Variable | Required | Description | Example Value |
 |----------|----------|-------------|---------------|
 | `SUPABASE_URL` | ✅ Yes | Your Supabase project URL | `https://abc123.supabase.co` |
-| `SUPABASE_ANON_KEY` | ✅ Yes | Supabase anonymous (public) API key | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` |
+| `SUPABASE_SECRET_KEY` | ✅ Yes | Supabase service role (secret) key for admin operations | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` |
 | `STRIPE_SECRET_KEY` | ✅ Yes | Stripe secret key for server-side payments | `sk_live_51H3...` or `sk_test_51H3...` |
+| `PORT` | ❌ No | Backend server port (defaults to 5000) | `5000` |
+| `RESEND_API_KEY` | ❌ No | Resend API key for confirmation emails; blank → emails are logged, not sent | `re_abc123...` |
+| `EMAIL_FROM` | ❌ No | Sender address for confirmation emails, on a Resend-verified domain | `bookings@yourdomain.com` |
 
 ---
 
@@ -32,11 +35,12 @@ The backend requires a `.env` file located at `server/.env`. Below is the comple
 - **Where to find it:** Log in to [Supabase Dashboard](https://supabase.com/dashboard) → Your Project → **Settings** → **API** → **Project URL**.
 - **How it's used:** The `@supabase/supabase-js` client uses this URL to connect to your database and authentication services.
 
-### `SUPABASE_ANON_KEY`
+### `SUPABASE_SECRET_KEY`
 
-- **What it is:** The public anonymous key for your Supabase project. This key is safe to expose to the client side (it's meant to be public), but Row-Level Security (RLS) policies control what data can be accessed.
-- **Where to find it:** Supabase Dashboard → Your Project → **Settings** → **API** → **anon public** key.
-- **How it's used:** The Supabase client uses this key to authenticate requests. RLS policies on your database tables determine what each request can read/write.
+- **What it is:** The Supabase **service role** key for server-side admin operations. This key bypasses Row-Level Security (RLS) and has full access to your database. It must **never** be exposed to the client side.
+- **Where to find it:** Supabase Dashboard → Your Project → **Settings** → **API** → **service_role** key.
+- **How it's used:** The server-side Supabase admin client uses this key for privileged operations like user management (e.g., `deleteUser`), token verification, and admin-level queries.
+- **⚠️ Security:** Never commit this key to version control. Only use it in the backend, never in client-side code.
 
 ### `STRIPE_SECRET_KEY`
 
@@ -47,6 +51,14 @@ The backend requires a `.env` file located at `server/.env`. Below is the comple
 
 ---
 
+### `RESEND_API_KEY` and `EMAIL_FROM`
+
+- **What they are:** The confirmation-email transport. When both are set, booking confirmations are delivered through [Resend](https://resend.com)'s HTTP API; when either is blank, the email is written to the server log instead — which is what development, docker-compose and the test suite run on.
+- **Where to find them:** Resend Dashboard → **API Keys** for the key. `EMAIL_FROM` is any address on a domain you have verified in Resend (**Domains** → **Add Domain**, then publish the SPF and DKIM records it gives you).
+- **⚠️ Keep both blank outside production:** E2E test bookings use throwaway `@example.com` addresses, which accept no mail — every send would hard-bounce against your domain's sending reputation.
+
+---
+
 ### Frontend (`client/.env`)
 
 The frontend uses a `.env` file located at `client/.env` for build-time environment variables:
@@ -54,8 +66,16 @@ The frontend uses a `.env` file located at `client/.env` for build-time environm
 | Variable | Required | Description | Example Value |
 |----------|----------|-------------|---------------|
 | `VITE_API_URL` | ✅ Yes | Backend API base URL (used by SearchForm and API calls) | `http://localhost:5000` |
+| `VITE_SUPABASE_URL` | ✅ Yes | Your Supabase project URL (same as backend) | `https://abc123.supabase.co` |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅ Yes | Supabase anonymous (public) API key for client-side auth | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` |
 
-> 💡 **Note:** When running via Docker Compose, this value is read from `client/.env` at build time. For cloud deployment, change this to your production backend URL.
+> 💡 **Note:** When running via Docker Compose, these values are read from `client/.env` at build time. For cloud deployment, change `VITE_API_URL` to your production backend URL.
+
+### `VITE_SUPABASE_PUBLISHABLE_KEY`
+
+- **What it is:** The public anonymous key for your Supabase project. This key is safe to expose to the client side (it's meant to be public), but Row-Level Security (RLS) policies control what data can be accessed.
+- **Where to find it:** Supabase Dashboard → Your Project → **Settings** → **API** → **anon public** key.
+- **How it's used:** The client-side Supabase client uses this key to authenticate requests. RLS policies on your database tables determine what each request can read/write.
 
 ---
 
@@ -86,7 +106,7 @@ Open `server/.env` in your editor:
 
 # Supabase (Database & Auth)
 SUPABASE_URL=https://your-project-id.supabase.co
-SUPABASE_ANON_KEY=your-anon-key-here
+SUPABASE_SECRET_KEY=your-service-role-key-here
 
 # Stripe (Payments)
 STRIPE_SECRET_KEY=sk_test_your-stripe-secret-key
@@ -117,12 +137,23 @@ git check-ignore server/.env
 The backend uses **dotenv** to load variables at startup:
 
 ```typescript
-// server/src/index.ts
-import 'dotenv/config';
+// server/src/lib/supabaseClient.ts
+import dotenv from 'dotenv';
 
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
-const stripeKey = process.env.STRIPE_SECRET_KEY;
+const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
+
+export const supabaseAdmin = createClient(supabaseUrl, supabaseSecretKey);
+```
+
+The frontend uses Vite's built-in environment variable handling with the `import.meta.env` pattern:
+
+```typescript
+// client/src/lib/supabaseClient.ts
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabasePubKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+export const supabase = createClient(supabaseUrl, supabasePubKey);
 ```
 
 When running via Docker Compose, the `.env` file is passed to the container:
@@ -154,6 +185,8 @@ services:
 |---------|---------|-----|
 | Missing `.env` file | Backend crashes on startup | Create `server/.env` with required variables |
 | Wrong key type | Stripe API errors | Use `sk_test_...` for dev, `sk_live_...` for prod |
+| Using `SUPABASE_ANON_KEY` instead of `SUPABASE_SECRET_KEY` on server | Admin operations fail with 401/403 | Use the **service_role** key from Supabase dashboard, not the anon public key |
+| Using `SUPABASE_SECRET_KEY` on the client | Secret key exposed in browser | Never use the service role key on the frontend; use `VITE_SUPABASE_PUBLISHABLE_KEY` instead |
 | Committed `.env` to git | Security leak | Add `.env` to `.gitignore` and rotate compromised keys |
 | Typo in variable name | `undefined` environment variable | Check spelling matches exactly (`SUPABASE_URL` not `SUPABASE_URLS`) |
 

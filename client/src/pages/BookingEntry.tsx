@@ -1,0 +1,73 @@
+import { Navigate, useSearchParams, Link } from 'react-router';
+import { AlertCircle } from 'lucide-react';
+
+/** `/booking` — the seam between hotel details and UC4. */
+export default function BookingEntry() {
+  const [params] = useSearchParams();
+
+  const hotelId = params.get('hotel')?.trim() ?? '';
+  const destinationId = params.get('dest')?.trim() ?? '';
+  const startDate = params.get('in')?.trim() ?? '';
+  const endDate = params.get('out')?.trim() ?? '';
+  const roomKey = params.get('key')?.trim() ?? '';
+
+  /** Search collects a single head-count and a room count; it has no separate children field, so every guest is an adult until one exists. */
+  const guestsRaw = params.get('guests')?.trim() ?? '';
+  const adults = guestsRaw
+    .split('|')
+    .map((part) => Number.parseInt(part, 10))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .reduce((sum, n) => sum + n, 0);
+
+  const missing = [
+    !hotelId && 'hotel',
+    !destinationId && 'dest',
+    !startDate && 'in',
+    !endDate && 'out',
+    !roomKey && 'key',
+    !adults && 'guests',
+  ].filter(Boolean) as string[];
+
+  if (missing.length > 0) {
+    /** Named rather than swallowed. */
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-900 px-4">
+        <div className="max-w-md rounded-2xl bg-white p-8 text-center shadow-xl">
+          <AlertCircle className="mx-auto h-12 w-12 text-amber-500" />
+          <h1 className="mt-4 text-xl font-bold text-slate-800">
+            That room selection is incomplete
+          </h1>
+          <p className="mt-2 text-slate-500">
+            The link is missing <code className="rounded bg-slate-100 px-1">{missing.join(', ')}</code>,
+            so we cannot price the stay. Please pick the room again from the hotel page.
+          </p>
+          <Link
+            to="/"
+            className="mt-6 inline-flex h-12 items-center rounded-xl bg-blue-600 px-8 font-bold text-white transition-colors hover:bg-blue-700"
+          >
+            Start a new search
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const checkout = new URLSearchParams({
+    destinationId,
+    hotelId,
+    roomTypes: roomKey,
+    startDate,
+    endDate,
+    adults: String(adults),
+    children: '0',
+  });
+
+  // Optional, and forwarded only when RoomList had it on screen: the server
+  // resolves a missing name from the supplier, but that lookup cannot succeed
+  // for a hotel the supplier's details endpoint does not know — so a name we
+  // already have must not be thrown away between two pages.
+  const hotelName = params.get('name')?.trim() ?? '';
+  if (hotelName) checkout.set('hotelName', hotelName);
+
+  return <Navigate to={`/checkout?${checkout.toString()}`} replace />;
+}

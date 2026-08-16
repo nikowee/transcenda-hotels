@@ -101,6 +101,11 @@ docker compose up --build
 
 ```
 
+> ⚠️ **Important:** When running with `--build`, Redis is automatically handled as part of the build process. However, if you need to perform local development or testing without the full build, you must start Redis separately first:
+> ```bash
+> docker compose up -d redis
+> ```
+
 > 🚫 **The Lockfile Mandate:** If you add custom auxiliary libraries or system adjustments, **never run `npm install**`. You must execute **`npm ci` (Clean Install)** inside the localized directory parameters. This forces the system to map dependencies precisely against the unchangeable `package-lock.json` manifest, keeping package configurations stable across all computers.
 
 #### 4. Stage and Deliver Contributions

@@ -51,7 +51,11 @@ Transcenda Hotels is a production-ready hotel reservation system designed with d
 | [📦 Frontend Dependencies](frontend-dependencies) | Client package breakdown |
 | [📦 Backend Dependencies](backend-dependencies) | Server package breakdown |
 | [🔐 Environment Variables](environment-variables) | Required config and secrets |
+| [💳 UC4 — Book & Make Payment](uc4-book-and-make-payment) | Booking flow diagrams and security properties |
+| [😈 Misuse Cases](misuse-cases) | How the system is attacked, what mitigates each threat, and the test that proves it |
+| [🧪 Testing](testing) | Test suites, how to run them, security regressions |
 | [📡 API Reference](api-reference) | Complete API endpoint documentation |
+| [🚀 Deployment](deployment) | AWS + Supabase: images, secrets, webhook, scale rules |
 | [🐛 Troubleshooting](troubleshooting) | Common issues and fixes |
 | [🤝 Contributing](contributing) | Branch naming, commits, PRs |
 

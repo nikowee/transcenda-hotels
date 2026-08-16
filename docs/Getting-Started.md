@@ -18,7 +18,7 @@ Make sure you have the following installed:
 |------|---------|---------|
 | **Docker Desktop** | Latest | Container orchestration for backend + frontend |
 | **Git** | 2.x+ | Version control |
-| **Node.js** (optional) | 20.x | Running locally without Docker |
+| **Node.js** (optional) | 22.22+ | Running locally without Docker — `nvm install 22.22`. react-router 8.3 declares `node >=22.22.0`; older 22.x still works but prints an `EBADENGINE` warning on every install |
 
 > 🐳 **Docker Desktop is the recommended approach.** The entire stack runs in containers, so you don't need to install Node.js, npm, or any other runtime on your host machine.
 
@@ -100,6 +100,11 @@ Build and launch both services with a single command:
 ```bash
 docker compose up --build
 ```
+
+> ⚠️ **Important:** When running with `--build`, Redis is automatically handled as part of the build process. However, if you need to perform local development or testing without the full build, you must start Redis separately first:
+> ```bash
+> docker compose up -d redis
+> ```
 
 This command will:
 
